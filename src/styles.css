@@ -142,3 +142,63 @@
     color: var(--color-foreground);
   }
 }
+
+/* ---------- Stream console design system ---------- */
+.console-root {
+  --c-bg: oklch(0.16 0.01 260);
+  --c-chassis: linear-gradient(180deg, oklch(0.32 0.01 260), oklch(0.22 0.01 260));
+  --c-module: linear-gradient(180deg, oklch(0.26 0.008 260), oklch(0.2 0.008 260));
+  --c-edge: oklch(0.38 0.01 260);
+  --c-text: oklch(0.92 0.01 90);
+  --c-dim: oklch(0.68 0.01 260);
+  --c-accent: oklch(0.78 0.17 70);
+  --c-led-off: oklch(0.3 0.02 30);
+  --c-hot: oklch(0.62 0.22 27);
+  --c-ok: oklch(0.75 0.19 145);
+  --c-knob: radial-gradient(circle at 35% 30%, oklch(0.55 0.005 260), oklch(0.2 0.005 260) 70%);
+  --c-screen: oklch(0.13 0.02 200);
+  --grid: oklch(0.35 0.03 200 / 0.6);
+  --curve: oklch(0.82 0.16 75);
+  --spectrum: oklch(0.6 0.12 200 / 0.35);
+  --c-shadow: 0 1px 0 oklch(1 0 0 / 0.08) inset, 0 8px 24px oklch(0 0 0 / 0.5);
+  font-family: "Chakra Petch", system-ui, sans-serif;
+  background: radial-gradient(ellipse at top, oklch(0.24 0.01 260), var(--c-bg));
+  color: var(--c-text);
+}
+.console-root[data-skin="modern"] {
+  --c-bg: oklch(0.14 0.005 240);
+  --c-chassis: oklch(0.17 0.006 240);
+  --c-module: oklch(0.2 0.008 240);
+  --c-edge: oklch(0.27 0.01 240);
+  --c-accent: oklch(0.8 0.14 195);
+  --c-knob: oklch(0.27 0.01 240);
+  --c-screen: oklch(0.15 0.01 240);
+  --curve: oklch(0.82 0.14 195);
+  --spectrum: oklch(0.7 0.12 195 / 0.2);
+  --grid: oklch(0.3 0.01 240);
+  --c-shadow: none;
+  background: var(--c-bg);
+}
+.console-chassis { background: var(--c-chassis); border: 1px solid var(--c-edge); box-shadow: var(--c-shadow); }
+.module { background: var(--c-module); border: 1px solid var(--c-edge); box-shadow: var(--c-shadow); transition: opacity .2s; }
+.module[data-on="false"] > div { opacity: .45; }
+.module-title, .brand { color: var(--c-text); }
+.brand-accent { color: var(--c-accent); }
+.label-text { color: var(--c-dim); }
+.readout { font-family: "JetBrains Mono", monospace; color: var(--c-accent); }
+.knob { background: conic-gradient(from -135deg, var(--c-accent) var(--knob-fill), var(--c-edge) 0 270deg, transparent 0); }
+.knob-cap { background: var(--c-knob); box-shadow: 0 2px 6px oklch(0 0 0 / .6); }
+.knob-pointer { background: var(--c-text); }
+.led { background: var(--c-led-off); }
+.led[data-on="true"] { background: var(--c-accent); box-shadow: 0 0 8px var(--c-accent); }
+.console-btn { background: var(--c-screen); border: 1px solid var(--c-edge); color: var(--c-dim); }
+.console-btn[data-on="true"] { color: var(--c-text); }
+.console-select { background: var(--c-screen); border: 1px solid var(--c-edge); color: var(--c-text); }
+.power-btn { background: var(--c-screen); border: 1px solid var(--c-accent); color: var(--c-accent); }
+.power-btn[data-on="true"] { background: var(--c-hot); border-color: var(--c-hot); color: var(--c-text); box-shadow: 0 0 16px var(--c-hot); }
+.error-box { background: oklch(0.3 0.1 27); color: var(--c-text); }
+.eq-screen { background: var(--c-screen); border: 1px solid var(--c-edge); }
+.meter-track { background: var(--c-screen); border: 1px solid var(--c-edge); }
+.meter-fill { background: linear-gradient(to top, var(--c-ok) 0 70%, var(--c-accent) 70% 90%, var(--c-hot) 90%); background-size: 100% 10rem; background-position: bottom; }
+.meter-gr { background: var(--c-hot); }
+.fader { accent-color: var(--c-accent); width: 1.5rem; }
