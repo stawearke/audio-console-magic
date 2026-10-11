@@ -37,7 +37,7 @@ export function EqGraph({ params, getFilters, getAnalyser }: {
         for (let i = 0; i < w; i += 3) {
           const f = 20 * Math.pow(1000, i / w);
           const bin = Math.min(data.length - 1, Math.round((f / (an.context.sampleRate / 2)) * data.length));
-          const y = h - ((data[bin] + 100) / 80) * h;
+          const y = h - (((data[bin] ?? -100) + 100) / 80) * h;
           g.lineTo(i, Math.min(h, Math.max(0, y)));
         }
         g.lineTo(w, h); g.fill();
@@ -45,7 +45,7 @@ export function EqGraph({ params, getFilters, getAnalyser }: {
 
       const filters = getFilters();
       const total = new Float32Array(N);
-      filters.forEach((f) => { f.getFrequencyResponse(freqs, mag, ph); for (let i = 0; i < N; i++) total[i] += 20 * Math.log10(mag[i]); });
+      filters.forEach((f) => { f.getFrequencyResponse(freqs, mag, ph); for (let i = 0; i < N; i++) total[i] = (total[i] ?? 0) + 20 * Math.log10(mag[i] ?? 1); });
       if (!filters.length) {
         const e = pRef.current.eq;
         void e;
@@ -55,7 +55,7 @@ export function EqGraph({ params, getFilters, getAnalyser }: {
       g.beginPath();
       for (let i = 0; i < N; i++) {
         const x = (i / (N - 1)) * w;
-        const y = h / 2 - (total[i] / 18) * (h / 2);
+        const y = h / 2 - ((total[i] ?? 0) / 18) * (h / 2);
         i ? g.lineTo(x, y) : g.moveTo(x, y);
       }
       g.stroke();

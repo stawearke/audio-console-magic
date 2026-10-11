@@ -147,7 +147,7 @@ export class AudioEngine {
     this.stopStream();
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         noiseSuppression: browserNS,
         echoCancellation: false,
         autoGainControl: false,
@@ -213,6 +213,6 @@ export class AudioEngine {
 export function levelDb(a: AnalyserNode, buf: Float32Array<ArrayBuffer>) {
   a.getFloatTimeDomainData(buf);
   let pk = 0;
-  for (let i = 0; i < buf.length; i++) pk = Math.max(pk, Math.abs(buf[i]));
+  for (let i = 0; i < buf.length; i++) pk = Math.max(pk, Math.abs(buf[i] ?? 0));
   return pk > 0 ? 20 * Math.log10(pk) : -100;
 }
