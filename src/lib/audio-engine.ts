@@ -96,7 +96,8 @@ export class AudioEngine {
   ctx!: AudioContext;
   stream: MediaStream | null = null;
   private src: MediaStreamAudioSourceNode | null = null;
-  private n: Record<string, any> = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private n: any = {};
   private reverbSize = 0;
   deessReduction = 0;
   inAnalyser!: AnalyserNode;
