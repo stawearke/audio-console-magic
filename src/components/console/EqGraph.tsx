@@ -18,7 +18,8 @@ export function EqGraph({ params, getFilters, getAnalyser }: {
     const draw = () => {
       const cv = ref.current;
       if (!cv) return;
-      const g = cv.getContext("2d")!;
+      const g = cv.getContext("2d");
+      if (!g) return;
       const w = (cv.width = cv.clientWidth * devicePixelRatio);
       const h = (cv.height = cv.clientHeight * devicePixelRatio);
       const css = getComputedStyle(cv);

@@ -8,3 +8,6 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep browser audio processing and source routing in AudioEngine; console views only control it so all sources share one master output.
+- Mixer scenes are explicit JSON file imports/exports; do not introduce hosted storage for device-specific mixer settings.
