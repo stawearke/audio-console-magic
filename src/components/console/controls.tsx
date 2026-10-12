@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 type KnobProps = {
   label: string; value: number; min: number; max: number; step?: number;
@@ -37,6 +38,8 @@ export function Knob({ label, value, min, max, step = 1, unit = "", def, log, on
         onDoubleClick={() => def !== undefined && onChange(def)}
         onWheel={(e) => onChange(fromNorm(Math.min(1, Math.max(0, norm - Math.sign(e.deltaY) * 0.03))))}
         role="slider" aria-label={label} aria-valuenow={value} aria-valuemin={min} aria-valuemax={max}
+         tabIndex={0}
+         onKeyDown={(e) => { if (["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft", "Home", "End"].includes(e.key)) { e.preventDefault(); onChange(e.key === "Home" ? min : e.key === "End" ? max : Math.min(max, Math.max(min, value + (["ArrowUp", "ArrowRight"].includes(e.key) ? step : -step)))); } }}
         style={{ ["--knob-fill" as string]: `${norm * 270}deg` }}
       >
         <div className="knob-cap absolute inset-1.5 rounded-full" style={{ transform: `rotate(${angle}deg)` }}>
@@ -44,17 +47,17 @@ export function Knob({ label, value, min, max, step = 1, unit = "", def, log, on
         </div>
       </div>
       <span className="readout text-[10px]">{shown}{unit}</span>
-      <span className="label-text text-[9px] uppercase tracking-widest">{label}</span>
+      <span className="label-text min-h-6 text-center text-[9px] uppercase tracking-widest">{label}</span>
     </div>
   );
 }
 
 export function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button onClick={onClick} className="console-btn flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-widest" data-on={on}>
+    <Button variant="ghost" size="sm" aria-pressed={on} onClick={onClick} className="console-btn flex h-7 items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-widest" data-on={on}>
       <span className="led size-1.5 rounded-full" data-on={on} />
       {children}
-    </button>
+    </Button>
   );
 }
 

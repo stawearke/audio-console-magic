@@ -93,21 +93,26 @@ function impulse(ctx: AudioContext, seconds: number) {
 }
 
 export class AudioEngine {
-  ctx!: AudioContext;
+  declare ctx: AudioContext;
   stream: MediaStream | null = null;
   private src: MediaStreamAudioSourceNode | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private n: any = {};
   private reverbSize = 0;
   deessReduction = 0;
-  inAnalyser!: AnalyserNode;
-  outAnalyser!: AnalyserNode;
+  declare inAnalyser: AnalyserNode;
+  declare outAnalyser: AnalyserNode;
   eqFilters: BiquadFilterNode[] = [];
+  private channels = new Map<string, { gain: GainNode; pan: StereoPannerNode; analyser: AnalyserNode }>();
+  private sources = new Map<string, AudioBufferSourceNode | MediaStreamAudioSourceNode>();
+  private sharedStream: MediaStream | null = null;
+  declare recordingStream: MediaStream;
 
   async init() {
     this.ctx = new AudioContext({ latencyHint: "interactive" });
     const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
     await this.ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
     const c = this.ctx;
     const n = this.n;
     n.inGain = c.createGain();
@@ -128,6 +133,7 @@ export class AudioEngine {
     n.verb = c.createConvolver(); n.verbSend = c.createGain();
     n.lim = c.createDynamicsCompressor(); n.lim.knee.value = 0; n.lim.attack.value = 0.001; n.lim.release.value = 0.05;
     n.out = c.createGain();
+    n.mix = c.createGain();
     this.inAnalyser = c.createAnalyser(); this.inAnalyser.fftSize = 1024;
     this.outAnalyser = c.createAnalyser(); this.outAnalyser.fftSize = 2048;
 
@@ -138,7 +144,18 @@ export class AudioEngine {
     n.warm.connect(n.delaySend).connect(n.delay).connect(n.bus);
     n.delay.connect(n.fb).connect(n.delay);
     n.warm.connect(n.verbSend).connect(n.verb).connect(n.bus);
-    n.bus.connect(n.lim).connect(n.out).connect(this.outAnalyser).connect(c.destination);
+    for (const id of ["voice", "music", "desktop", "sample"]) {
+      const gain = c.createGain(), pan = c.createStereoPanner(), analyser = c.createAnalyser();
+      analyser.fftSize = 1024;
+      gain.connect(pan).connect(analyser).connect(n.mix);
+      this.channels.set(id, { gain, pan, analyser });
+    }
+    const voice = this.channels.get("voice");
+    if (voice) n.bus.connect(voice.gain);
+    n.mix.connect(n.lim).connect(n.out).connect(this.outAnalyser).connect(c.destination);
+    const recorder = c.createMediaStreamDestination();
+    this.outAnalyser.connect(recorder);
+    this.recordingStream = recorder.stream;
   }
 
   async start(deviceId: string | undefined, browserNS: boolean) {
@@ -166,11 +183,63 @@ export class AudioEngine {
 
   async stop() {
     this.stopStream();
-    await this.ctx?.suspend();
   }
+
+  setChannel(id: string, gain: number, pan: number, audible: boolean) {
+    const ch = this.channels.get(id);
+    if (!ch) return;
+    ch.gain.gain.setTargetAtTime(audible ? db(gain) : 0, this.ctx.currentTime, 0.02);
+    ch.pan.pan.setTargetAtTime(pan / 100, this.ctx.currentTime, 0.02);
+  }
+
+  analyser(id: string) { return this.channels.get(id)?.analyser ?? null; }
+
+  async loadAudio(file: File) {
+    if (!this.ctx) await this.init();
+    return this.ctx.decodeAudioData(await file.arrayBuffer());
+  }
+
+  async playBuffer(id: string, buffer: AudioBuffer, loop: boolean, onEnded: () => void) {
+    if (!this.ctx) await this.init();
+    await this.ctx.resume();
+    this.stopSource(id);
+    const ch = this.channels.get(id);
+    if (!ch) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer; src.loop = loop;
+    src.connect(ch.gain);
+    this.sources.set(id, src);
+    src.onended = () => { if (this.sources.get(id) === src) { this.sources.delete(id); onEnded(); } };
+    src.start();
+  }
+
+  async shareDesktop(onEnded: () => void) {
+    if (!this.ctx) await this.init();
+    await this.ctx.resume();
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    if (!stream.getAudioTracks().length) { stream.getTracks().forEach(t => t.stop()); throw new Error("No audio was shared. Select a browser tab and enable Share tab audio."); }
+    this.stopSource("desktop");
+    this.sharedStream = stream;
+    const ch = this.channels.get("desktop");
+    if (!ch) { stream.getTracks().forEach(t => t.stop()); return; }
+    const src = this.ctx.createMediaStreamSource(stream); src.connect(ch.gain);
+    this.sources.set("desktop", src);
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => { this.stopSource("desktop"); onEnded(); }, { once: true });
+  }
+
+  stopSource(id: string) {
+    const src = this.sources.get(id);
+    this.sources.delete(id);
+    if (src instanceof AudioBufferSourceNode) { src.onended = null; src.stop(); }
+    src?.disconnect();
+    if (id === "desktop") { this.sharedStream?.getTracks().forEach(t => t.stop()); this.sharedStream = null; }
+  }
+
+  async dispose() { await this.stop(); this.stopSource("music"); this.stopSource("sample"); this.stopSource("desktop"); await this.ctx?.close(); }
 
   async setOutput(sinkId: string) {
     const c = this.ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+    if (!c?.setSinkId && sinkId !== "default") throw new Error("Output selection is not supported in this browser.");
     if (c?.setSinkId) await c.setSinkId(sinkId === "default" ? "" : sinkId);
   }
 

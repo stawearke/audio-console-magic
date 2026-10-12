@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioEngine, defaultParams, levelDb, type Params } from "@/lib/audio-engine";
 import { Fader, Knob, Meter, Module, Toggle } from "./controls";
 import { EqGraph } from "./EqGraph";
+import { Mixer } from "./Mixer";
+import { Button } from "@/components/ui/button";
+import { SlidersHorizontal, AudioLines, Power } from "lucide-react";
 
 const PRESETS: Record<string, (p: Params) => Params> = {
   "Broadcast Voice": () => structuredClone(defaultParams),
@@ -17,6 +20,9 @@ export function Console() {
   const engine = useRef<AudioEngine | null>(null);
   const [params, setParams] = useState<Params>(defaultParams);
   const [running, setRunning] = useState(false);
+  const [view, setView] = useState<"mixer" | "rack">("mixer");
+  const getEngine = useCallback(() => { engine.current ??= new AudioEngine(); return engine.current; }, []);
+  useEffect(() => () => { engine.current?.dispose(); }, []);
   const [error, setError] = useState<string | null>(null);
   const [skin, setSkin] = useState<"hardware" | "modern">("hardware");
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
@@ -36,7 +42,8 @@ export function Console() {
   useEffect(() => { localStorage.setItem(STORE, JSON.stringify({ params, skin })); engine.current?.apply(params); }, [params, skin]);
 
   const refreshDevices = useCallback(async () => {
-    const d = await navigator.mediaDevices.enumerateDevices();
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const d = await navigator.mediaDevices.enumerateDevices().catch(() => []);
     setInputs(d.filter((x) => x.kind === "audioinput"));
     setOutputs(d.filter((x) => x.kind === "audiooutput"));
   }, []);
@@ -70,11 +77,11 @@ export function Console() {
 
   return (
     <div data-skin={skin} className="console-root min-h-screen px-3 py-6 md:px-8">
-      <div className="console-chassis mx-auto max-w-7xl rounded-2xl p-4 md:p-6">
+      <div className="console-chassis mx-auto max-w-7xl rounded-lg p-4 md:p-6">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="brand text-2xl font-black tracking-tight md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="label-text text-xs font-semibold tracking-[0.3em]">STREAM CONSOLE</span></h1>
-            <p className="label-text mt-1 text-xs">Clean your mic live, then send it to OBS.</p>
+            <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="label-text text-xs font-semibold tracking-[0.3em]">STREAM CONSOLE</span></h1>
+            <p className="label-text mt-1 text-xs">DIGITAL MIXING DESK / 4 CHANNELS / STEREO BUS</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const f = PRESETS[e.target.value]; if (f) setParams(f(params)); }}>
@@ -83,15 +90,26 @@ export function Console() {
             </select>
             <Toggle on={skin === "modern"} onClick={() => setSkin(skin === "hardware" ? "modern" : "hardware")}>{skin === "hardware" ? "Hardware look" : "Modern look"}</Toggle>
             {running ? (
-              <button onClick={stop} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="true">● Live — Stop</button>
+              <Button variant="ghost" onClick={stop} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="true">● Live — Stop</Button>
             ) : (
-              <button onClick={() => start()} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="false">Power On</button>
+              <Button variant="ghost" onClick={() => start()} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="false"><Power className="size-4" />Start mic</Button>
             )}
           </div>
         </header>
 
         {error && <p className="error-box mb-4 rounded-md p-3 text-sm">{error}</p>}
 
+        <nav aria-label="Console view" className="console-tabs mb-4 flex gap-1">
+          <Button variant="ghost" className="console-tab" aria-pressed={view === "mixer"} data-on={view === "mixer"} onClick={() => setView("mixer")}><SlidersHorizontal />Mixing desk</Button>
+          <Button variant="ghost" className="console-tab" aria-pressed={view === "rack"} data-on={view === "rack"} onClick={() => setView("rack")}><AudioLines />Voice processing</Button>
+        </nav>
+        <div hidden={view !== "mixer"}>
+          <Mixer getEngine={getEngine} params={params} setParams={setParams} running={running} start={() => start()} stop={stop} inputs={inputs} outputs={outputs} inId={inId} outId={outId}
+            onInput={id => { setInId(id); if (running) start(id); }}
+            onOutput={id => { setOutId(id); engine.current?.setOutput(id).catch(() => setError("This browser cannot choose an output. Use Chrome or Edge.")); }} onError={setError} />
+        </div>
+        <div hidden={view !== "rack"}>
+        <div className="mb-3 label-text text-[10px] uppercase tracking-widest">CH 01 / Voice insert chain</div>
         <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Module title="Input">
@@ -101,7 +119,7 @@ export function Console() {
                   <option value="">Default mic</option>
                   {inputs.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Mic"}</option>)}
                 </select>
-                <label className="label-text text-[9px] uppercase tracking-widest">Send to (pick your virtual cable)</label>
+                <label className="label-text text-[9px] uppercase tracking-widest">Program output</label>
                 <select className="console-select w-full rounded px-2 py-1 text-xs" value={outId} onChange={(e) => { setOutId(e.target.value); engine.current?.setOutput(e.target.value).catch(() => setError("This browser can't choose an output. Use Chrome or Edge.")); }}>
                   {outputs.length === 0 && <option value="default">Default output</option>}
                   {outputs.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Output"}</option>)}
@@ -111,7 +129,7 @@ export function Console() {
               <Knob label="Low cut" value={input.hpf} min={20} max={400} log def={80} unit="Hz" onChange={(v) => up("input", { hpf: v })} />
               <div className="flex w-full flex-wrap justify-center gap-2">
                 <Toggle on={input.hpfOn} onClick={() => up("input", { hpfOn: !input.hpfOn })}>Low cut</Toggle>
-                <Toggle on={input.browserNS} onClick={() => { up("input", { browserNS: !input.browserNS }); if (running) start(inId, !input.browserNS); }}>AI denoise</Toggle>
+                <Toggle on={input.browserNS} onClick={() => { up("input", { browserNS: !input.browserNS }); if (running) start(inId, !input.browserNS); }}>Noise suppress</Toggle>
               </div>
             </Module>
 
@@ -185,14 +203,15 @@ export function Console() {
           </aside>
         </div>
 
-        <details className="module mt-4 rounded-lg p-4 text-sm">
+        </div>
+        <details className="obs-help mt-4 rounded-lg p-4 text-sm">
           <summary className="module-title cursor-pointer text-xs font-bold uppercase tracking-[0.2em]">How to connect to OBS</summary>
           <ol className="label-text mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed">
-            <li>Install a free virtual audio cable (VB-Audio Cable on Windows, BlackHole on Mac).</li>
-            <li>Open this page in Chrome or Edge, press <b>Power On</b> and allow the microphone.</li>
-            <li>Under <b>Send to</b>, pick "CABLE Input" (or BlackHole).</li>
-            <li>In OBS, add an <b>Audio Input Capture</b> source set to "CABLE Output", and mute your raw mic in OBS.</li>
-            <li>Keep this tab open while streaming. Settings save on their own.</li>
+            <li>On Windows, open OBS and add <b>Application Audio Capture</b>. Choose the Chrome or Edge window running VOXONE.</li>
+            <li>Start your microphone here, then mute the raw microphone source in OBS to avoid doubled audio.</li>
+            <li>Keep Program output on your headphones or default output. OBS captures the browser’s entire mix, including music and samples.</li>
+            <li>Use headphones to prevent feedback. Capturing the browser may also include its other tabs.</li>
+            <li>On systems without application capture, select a virtual cable or an audio interface loopback as Program output.</li>
           </ol>
         </details>
       </div>
