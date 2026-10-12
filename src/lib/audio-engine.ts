@@ -183,8 +183,6 @@ export class AudioEngine {
 
   async stop() {
     this.stopStream();
-    this.stopSource("music"); this.stopSource("sample"); this.stopSource("desktop");
-    await this.ctx?.suspend();
   }
 
   setChannel(id: string, gain: number, pan: number, audible: boolean) {
@@ -237,10 +235,11 @@ export class AudioEngine {
     if (id === "desktop") { this.sharedStream?.getTracks().forEach(t => t.stop()); this.sharedStream = null; }
   }
 
-  async dispose() { await this.stop(); await this.ctx?.close(); }
+  async dispose() { await this.stop(); this.stopSource("music"); this.stopSource("sample"); this.stopSource("desktop"); await this.ctx?.close(); }
 
   async setOutput(sinkId: string) {
     const c = this.ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+    if (!c?.setSinkId && sinkId !== "default") throw new Error("Output selection is not supported in this browser.");
     if (c?.setSinkId) await c.setSinkId(sinkId === "default" ? "" : sinkId);
   }
 

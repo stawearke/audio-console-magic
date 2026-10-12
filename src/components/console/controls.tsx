@@ -47,7 +47,7 @@ export function Knob({ label, value, min, max, step = 1, unit = "", def, log, on
         </div>
       </div>
       <span className="readout text-[10px]">{shown}{unit}</span>
-      <span className="label-text text-[9px] uppercase tracking-widest">{label}</span>
+      <span className="label-text min-h-6 text-center text-[9px] uppercase tracking-widest">{label}</span>
     </div>
   );
 }
