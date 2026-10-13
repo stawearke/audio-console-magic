@@ -3,6 +3,7 @@ import { AudioEngine, defaultParams, levelDb, type Params } from "@/lib/audio-en
 import { Fader, Knob, Meter, Module, Toggle } from "./controls";
 import { EqGraph } from "./EqGraph";
 import { Mixer } from "./Mixer";
+import { ObsPlugin } from "./ObsPlugin";
 import { Button } from "@/components/ui/button";
 import { SlidersHorizontal, AudioLines, Power } from "lucide-react";
 
@@ -204,6 +205,7 @@ export function Console() {
         </div>
 
         </div>
+        <ObsPlugin />
         <details className="obs-help mt-4 rounded-lg p-4 text-sm">
           <summary className="module-title cursor-pointer text-xs font-bold uppercase tracking-[0.2em]">How to connect to OBS</summary>
           <ol className="label-text mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed">
