@@ -49,8 +49,12 @@ export function ObsPlugin() {
   const download = () => {
     const blob = new Blob([luaScript(url)], { type: "text/x-lua" });
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = "voxone-obs.lua"; a.click();
-    URL.revokeObjectURL(a.href);
+    a.href = URL.createObjectURL(blob);
+    a.download = "voxone-obs.lua";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
   };
   return (
     <details className="obs-help mt-4 rounded-lg p-4 text-sm" open>
