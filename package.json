@@ -1,5 +1,6 @@
 {
   "name": "tanstack_start_ts",
+  "main": "electron/main.cjs",
   "private": true,
   "sideEffects": false,
   "type": "module",
