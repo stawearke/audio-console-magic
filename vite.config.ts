@@ -10,12 +10,12 @@ export default defineConfig({
   // Relative base + SPA mode only for the Electron desktop packaging build
   // (ELECTRON_BUILD=1); normal dev/publish builds keep SSR untouched.
   vite: {
-    ...(process.env.ELECTRON_BUILD ? { base: "./" } : {}),
+    ...(process.env["ELECTRON_BUILD"] ? { base: "./" } : {}),
   },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
-    ...(process.env.ELECTRON_BUILD ? { spa: { enabled: true } } : {}),
+    ...(process.env["ELECTRON_BUILD"] ? { spa: { enabled: true } } : {}),
   },
 });
