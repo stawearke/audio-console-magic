@@ -81,11 +81,11 @@ export function Console() {
       <div className="console-chassis mx-auto max-w-7xl rounded-lg p-4 md:p-6">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="label-text text-xs font-semibold tracking-[0.3em]">STREAM CONSOLE</span></h1>
-            <p className="label-text mt-1 text-xs">DIGITAL MIXING DESK / 4 CHANNELS / STEREO BUS</p>
+            <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="brand-model">D4</span></h1>
+            <p className="label-text mt-1 text-[10px]">DIGITAL MIXING CONSOLE · 4 CHANNELS / STEREO</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const f = PRESETS[e.target.value]; if (f) setParams(f(params)); }}>
+            <select aria-label="Load voice preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const f = PRESETS[e.target.value]; if (f) setParams(f(params)); }}>
               <option value="">Load preset…</option>
               {Object.keys(PRESETS).map((k) => <option key={k}>{k}</option>)}
             </select>
@@ -103,6 +103,7 @@ export function Console() {
         <nav aria-label="Console view" className="console-tabs mb-4 flex gap-1">
           <Button variant="ghost" className="console-tab" aria-pressed={view === "mixer"} data-on={view === "mixer"} onClick={() => setView("mixer")}><SlidersHorizontal />Mixing desk</Button>
           <Button variant="ghost" className="console-tab" aria-pressed={view === "rack"} data-on={view === "rack"} onClick={() => setView("rack")}><AudioLines />Voice processing</Button>
+          <span className="desk-bus-label">MAIN LR <span className="status-dot" data-on={running} /></span>
         </nav>
         <div hidden={view !== "mixer"}>
           <Mixer getEngine={getEngine} params={params} setParams={setParams} running={running} start={() => start()} stop={stop} inputs={inputs} outputs={outputs} inId={inId} outId={outId}

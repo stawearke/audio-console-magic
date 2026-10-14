@@ -3,6 +3,7 @@ import { Download, FileAudio, Mic, Monitor, Music2, Play, Power, Radio, Square, 
 import { Button } from "@/components/ui/button";
 import { AudioEngine, levelDb, type Params } from "@/lib/audio-engine";
 import { Fader, Knob, Meter, Toggle } from "./controls";
+import { ChannelOverview } from "./ChannelOverview";
 
 type Channel = { id: string; name: string; gain: number; pan: number; mute: boolean; solo: boolean };
 const initial: Channel[] = [
@@ -21,6 +22,7 @@ export function Mixer({ getEngine, params, setParams, running, start, stop, inpu
   inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[]; inId: string; outId: string; onInput: (id: string) => void; onOutput: (id: string) => void; onError: (message: string) => void;
 }) {
   const [channels, setChannels] = useState(initial);
+  const [selected, setSelected] = useState("voice");
   const [playing, setPlaying] = useState<Record<string, boolean>>({});
   const [files, setFiles] = useState<Record<string, string>>({});
   const [recording, setRecording] = useState(false);
@@ -83,6 +85,7 @@ export function Mixer({ getEngine, params, setParams, running, start, stop, inpu
   };
   const outputBuffer = useRef(new Float32Array(2048));
   return <section className="mixer-surface">
+    <ChannelOverview channel={channels.find(c => c.id === selected) ?? initial[0]} number={channels.findIndex(c => c.id === selected) + 1} params={params} setParams={setParams} getEngine={getEngine} update={patch => update(selected, patch)} />
     <div className="mixer-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <div className="flex items-center gap-2"><span className="status-dot" data-on={running || Object.values(playing).some(Boolean)} /><span className="label-text text-[10px] uppercase tracking-widest">{running || Object.values(playing).some(Boolean) ? "Audio engine active" : "Audio engine standby"}</span></div>
       <div className="flex flex-wrap gap-2">
@@ -93,10 +96,11 @@ export function Mixer({ getEngine, params, setParams, running, start, stop, inpu
       </div>
     </div>
     <div className="mixer-bank">
-      {channels.map((ch, i) => { const Icon = icons[i] ?? Mic; const active = ch.id === "voice" ? running : playing[ch.id]; return <div key={ch.id} className="channel-strip" data-channel={ch.id}>
+      {channels.map((ch, i) => { const Icon = icons[i] ?? Mic; const active = ch.id === "voice" ? running : playing[ch.id]; return <div key={ch.id} className="channel-strip" data-channel={ch.id} data-selected={selected === ch.id}>
         <div className="channel-heading flex items-center justify-between"><span className="readout text-xs">0{i + 1}</span><Icon className="size-4 label-text" /></div>
-        <h2 className="mt-3 text-sm font-bold tracking-widest">{ch.name}</h2>
+        <Button variant="ghost" className="channel-name" aria-label={`Select ${ch.name.toLowerCase()} channel`} aria-pressed={selected === ch.id} onClick={() => setSelected(ch.id)}>{ch.name}</Button>
         <div className="channel-source mt-1 truncate text-[10px] label-text" title={files[ch.id]}>{ch.id === "voice" ? "Processed microphone" : ch.id === "desktop" ? "Shared tab / screen" : files[ch.id] || "No audio loaded"}</div>
+        <div className="strip-inserts">{ch.id === "voice" ? <><Toggle on={params.gate.on} onClick={() => setParams({ ...params, gate: { ...params.gate, on: !params.gate.on } })}>Gate</Toggle><Toggle on={params.comp.on} onClick={() => setParams({ ...params, comp: { ...params.comp, on: !params.comp.on } })}>Comp</Toggle></> : <><span>STEREO IN</span><span>LR BUS</span></>}</div>
         <div className="source-controls mt-3 flex gap-1">
           {ch.id === "voice" ? <Button variant="ghost" size="sm" className="console-btn w-full" onClick={active ? stop : start}><Power />{active ? "Stop mic" : "Start mic"}</Button> : <>
             {ch.id !== "desktop" && <><input hidden type="file" accept="audio/*" ref={el => { audioInputs.current[ch.id] = el; }} onChange={e => { load(ch.id, e.target.files?.[0]); e.target.value = ""; }} /><Button variant="ghost" size="icon" className="console-btn size-8" title={`Load ${ch.name.toLowerCase()} audio`} aria-label={`Load ${ch.name.toLowerCase()} audio`} onClick={() => audioInputs.current[ch.id]?.click()}><FileAudio /></Button></>}
@@ -104,8 +108,8 @@ export function Mixer({ getEngine, params, setParams, running, start, stop, inpu
           </>}
         </div>
         <div className="my-4 flex justify-center"><Knob label={`${ch.name} pan`} value={ch.pan} min={-100} max={100} def={0} onChange={v => update(ch.id, { pan: v })} /></div>
-        <div className="flex justify-center gap-4"><div className="fader-scale label-text flex h-40 flex-col justify-between text-[9px]"><span>+12</span><span>0</span><span>−12</span><span>−30</span></div><Fader label={`${ch.name} level`} value={ch.gain} onChange={v => update(ch.id, { gain: v })} /><Meter label="Signal" read={read(ch.id)} /></div>
-        <div className="mt-4 flex justify-center gap-2"><Toggle on={ch.mute} onClick={() => update(ch.id, { mute: !ch.mute })}>Mute</Toggle><Toggle on={ch.solo} onClick={() => update(ch.id, { solo: !ch.solo })}>Solo</Toggle></div>
+        <div className="strip-switches flex justify-center gap-2"><Toggle on={ch.mute} onClick={() => update(ch.id, { mute: !ch.mute })}>Mute</Toggle><Toggle on={ch.solo} onClick={() => update(ch.id, { solo: !ch.solo })}>Solo</Toggle></div>
+        <div className="fader-section flex justify-center gap-4"><div className="fader-scale label-text flex h-40 flex-col justify-between text-[9px]"><span>+12</span><span>+6</span><span>0</span><span>−6</span><span>−12</span><span>−18</span><span>−24</span><span>−30</span></div><Fader label={`${ch.name} level`} value={ch.gain} onChange={v => update(ch.id, { gain: v })} /><Meter label="Signal" read={read(ch.id)} /></div>
         <div className="channel-foot mt-4 text-center text-[9px] uppercase tracking-widest" data-on={active}>{active ? "● On air" : "Standby"}</div>
       </div>; })}
       <div className="channel-strip master-strip">
@@ -113,7 +117,7 @@ export function Mixer({ getEngine, params, setParams, running, start, stop, inpu
         <h2 className="mt-3 text-sm font-bold tracking-widest">MASTER</h2><div className="mt-1 text-[10px] label-text">Stereo program bus</div>
         <div className="my-3 flex justify-center"><Knob label="Ceiling" value={params.limiter.ceiling} min={-12} max={0} step={0.5} unit="dB" onChange={v => setParams({ ...params, limiter: { ...params.limiter, ceiling: v } })} /></div>
         <div className="mb-4 flex justify-center"><Toggle on={params.limiter.on} onClick={() => setParams({ ...params, limiter: { ...params.limiter, on: !params.limiter.on } })}>Limiter</Toggle></div>
-        <div className="flex justify-center gap-4"><Fader label="Master level" value={params.output.gain} onChange={v => setParams({ ...params, output: { ...params.output, gain: v } })} /><Meter label="Out" read={() => { const a = getEngine().outAnalyser; return a ? levelDb(a, outputBuffer.current) : -100; }} /></div>
+        <div className="fader-section flex justify-center gap-4"><Fader label="Master level" value={params.output.gain} onChange={v => setParams({ ...params, output: { ...params.output, gain: v } })} /><Meter label="Out" read={() => { const a = getEngine().outAnalyser; return a ? levelDb(a, outputBuffer.current) : -100; }} /></div>
         <div className="mt-4 flex justify-center"><Toggle on={params.output.mute} onClick={() => setParams({ ...params, output: { ...params.output, mute: !params.output.mute } })}>Mute all</Toggle></div>
         <div className="channel-foot mt-4 text-center text-[9px] uppercase tracking-widest">Program output</div>
       </div>
