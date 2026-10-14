@@ -11,3 +11,4 @@
 
 - Keep browser audio processing and source routing in AudioEngine; console views only control it so all sources share one master output.
 - Mixer scenes are explicit JSON file imports/exports; do not introduce hosted storage for device-specific mixer settings.
+- Keep the selected-channel overview in ChannelOverview and drive it with Mixer channel state and shared Params so duplicated controls always operate on the same audio settings.

@@ -231,3 +231,98 @@
 .console-btn:hover { border-color: var(--c-accent); background: var(--c-screen); }
 .knob:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 3px; }
 @media (max-width: 640px) { .mixer-bank { grid-template-columns: repeat(5, 175px); } .console-root { padding: 12px 8px; } .console-chassis { padding: 12px; } }
+
+/* D4 hardware desk: metal faceplate, recessed displays and motor-fader rails. */
+.console-root {
+  --c-bg: oklch(0.12 0.004 220);
+  --c-chassis: linear-gradient(180deg, oklch(0.27 0.006 220), oklch(0.19 0.004 220));
+  --c-module: linear-gradient(90deg, oklch(0.38 0.004 220), oklch(0.43 0.004 220) 48%, oklch(0.35 0.004 220));
+  --c-edge: oklch(0.49 0.005 220);
+  --c-accent: oklch(0.77 0.13 195);
+  --curve: oklch(0.85 0.15 90);
+  --c-dim: oklch(0.75 0.006 220);
+  --c-screen: oklch(0.14 0.005 220);
+  --c-panel: oklch(0.22 0.005 220);
+  --c-display: linear-gradient(180deg, oklch(0.67 0.12 195), oklch(0.5 0.095 195));
+  --c-display-text: oklch(0.13 0.015 200);
+  --c-metal: linear-gradient(180deg, oklch(0.81 0.004 220), oklch(0.53 0.005 220) 43%, oklch(0.18 0.002 220) 48%, oklch(0.15 0.002 220) 53%, oklch(0.72 0.004 220) 58%, oklch(0.88 0.004 220));
+  --c-inset: inset 0 2px 5px oklch(0 0 0 / .7);
+  --c-control-shadow: 0 2px 3px oklch(0 0 0 / .6), inset 0 1px 0 oklch(1 0 0 / .2);
+  --c-highlight: oklch(1 0 0 / .08);
+  --c-brush: repeating-linear-gradient(0deg, transparent 0 2px, oklch(1 0 0 / .018) 2px 3px);
+  background: var(--c-bg);
+  padding: 22px 20px;
+}
+.console-chassis { max-width: 1440px; padding: 16px; border: 3px solid var(--c-panel); border-radius: 7px; box-shadow: 0 12px 40px oklch(0 0 0 / .6), inset 0 1px 0 var(--c-edge); }
+.console-chassis > header { margin-bottom: 15px; padding: 3px 6px 14px; border-bottom: 1px solid var(--c-edge); }
+.brand { font-style: italic; }
+.brand-model { font-size: 14px; font-style: normal; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--c-edge); color: var(--c-dim); }
+.console-select { box-shadow: var(--c-inset); border-radius: 3px; }
+.console-btn { border-radius: 3px; box-shadow: var(--c-control-shadow); background: linear-gradient(180deg, var(--c-panel), var(--c-screen)); font-size: 10px; }
+.console-btn[data-on="true"] { background: var(--c-display); color: var(--c-display-text); border-color: var(--c-accent); }
+.console-btn[data-on="true"] .led { background: var(--c-display-text); box-shadow: none; }
+.console-tabs { margin-bottom: 0; padding: 0; gap: 3px; border-bottom: none; align-items: stretch; }
+.console-tab { border: 1px solid var(--c-edge); background: var(--c-panel); font-size: 11px; height: 40px; min-width: 150px; box-shadow: var(--c-control-shadow); }
+.console-tab[data-on="true"] { background: var(--c-display); color: var(--c-display-text); border-bottom-color: var(--c-accent); }
+.desk-bus-label { margin-left: auto; display: flex; align-items: center; gap: 10px; padding: 0 12px; font: 10px "JetBrains Mono", monospace; color: var(--c-dim); }
+.mixer-surface { border-radius: 0 0 4px 4px; border: 1px solid var(--c-edge); }
+.selected-channel { display: grid; grid-template-columns: 1.05fr 1.25fr 1.5fr .75fr; background: var(--c-brush), var(--c-chassis); border-bottom: 3px solid var(--c-screen); padding: 16px 12px; gap: 0; }
+.selected-channel > div { min-width: 0; padding: 0 16px; border-right: 1px solid var(--c-edge); }
+.selected-channel > div:last-child { border: 0; }
+.desk-caption { display: block; color: var(--c-dim); font-size: 9px; font-weight: 700; margin-bottom: 12px; }
+.selected-display { display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--c-display); color: var(--c-display-text); box-shadow: var(--c-inset); border: 2px solid var(--c-screen); border-radius: 3px; margin-bottom: 12px; }
+.selected-number { font: 28px "JetBrains Mono", monospace; }
+.selected-display h2 { font-size: 15px; font-weight: 700; }
+.selected-display div { flex: 1; }
+.selected-display div span { font-size: 8px; }
+.selected-eq .eq-screen { height: 92px; border-radius: 2px; box-shadow: var(--c-inset); }
+.eq-axis { display: flex; justify-content: space-between; color: var(--c-dim); font: 8px "JetBrains Mono", monospace; margin-top: 4px; }
+.insert-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.insert-grid .console-btn { font-size: 8px; padding: 0 5px; gap: 4px; }
+.insert-grid .console-btn:nth-child(2)[data-on="true"] { background: var(--c-music); border-color: var(--c-music); }
+.insert-grid .console-btn:nth-child(3)[data-on="true"] { background: var(--c-sample); border-color: var(--c-sample); }
+.insert-grid .console-btn:nth-child(4)[data-on="true"] { background: var(--curve); border-color: var(--curve); }
+.bus-diagram { display: flex; min-height: 94px; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--c-edge); background: var(--c-screen); color: var(--c-accent); font: 10px "JetBrains Mono", monospace; }
+.bus-route { background: var(--c-display); color: var(--c-display-text); padding: 12px; font-size: 22px; text-align: center; }
+.bus-route span { display: block; font-size: 9px; }
+.mixer-toolbar { padding: 9px 15px; background: var(--c-panel); }
+.mixer-toolbar .console-btn { height: 28px; }
+.mixer-bank { grid-template-columns: repeat(4, minmax(170px, 1fr)) minmax(175px, .88fr); gap: 3px; padding: 5px; background: var(--c-screen); }
+.channel-strip { padding: 10px 14px; border-top: 0; background: var(--c-brush), var(--c-module); border: 1px solid var(--c-edge); position: relative; }
+.channel-strip[data-selected="true"] { border-color: var(--c-accent); }
+.channel-strip .channel-heading { color: var(--c-dim); }
+.channel-heading .readout { color: var(--c-dim); font-size: 10px; }
+.channel-name { display: flex; width: 100%; height: 35px; margin-top: 7px; border: 2px solid var(--c-screen); border-radius: 2px; background: var(--c-display); color: var(--c-display-text); font-size: 13px; font-weight: 700; box-shadow: var(--c-inset); }
+.channel-name:hover { background: var(--c-display); color: var(--c-display-text); }
+.channel-source { text-align: center; margin-top: 6px; }
+.strip-inserts { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
+.strip-inserts .console-btn { height: 22px; font-size: 8px; padding: 0 4px; }
+.strip-inserts > span { border: 1px solid var(--c-edge); padding: 4px 0; color: var(--c-accent); background: var(--c-screen); text-align: center; font: 8px "JetBrains Mono", monospace; }
+.source-controls { min-height: 32px; }
+.channel-strip .knob { --c-accent: var(--c-accent); }
+.channel-strip .knob-cap { background: var(--c-knob); }
+.strip-switches { margin: 0 0 16px; }
+.strip-switches .console-btn { width: 64px; }
+.strip-switches .console-btn:first-child[data-on="true"] { background: var(--c-hot); border-color: var(--c-hot); color: var(--c-text); }
+.strip-switches .console-btn:last-child[data-on="true"] { background: var(--curve); border-color: var(--curve); }
+.fader-section { padding: 12px 0 0; background: linear-gradient(90deg, transparent, var(--c-highlight), transparent); border-top: 1px solid var(--c-edge); }
+.fader-section .fader, .fader-section .meter-track, .fader-section .fader-scale { height: 260px; }
+.fader { appearance: none; background: transparent; cursor: ns-resize; width: 30px; }
+.fader::-webkit-slider-runnable-track { width: 6px; background: var(--c-screen); border: 1px solid var(--c-edge); border-radius: 2px; box-shadow: var(--c-inset); }
+.fader::-webkit-slider-thumb { appearance: none; width: 28px; height: 42px; margin-left: -12px; border: 1px solid var(--c-screen); border-radius: 3px; background: var(--c-metal); box-shadow: 2px 3px 5px oklch(0 0 0 / .7); }
+.fader::-moz-range-track { width: 6px; background: var(--c-screen); }
+.fader::-moz-range-thumb { width: 28px; height: 42px; border-radius: 3px; background: var(--c-metal); border: 1px solid var(--c-screen); }
+.fader:focus-visible { outline: 1px solid var(--c-accent); outline-offset: 4px; }
+.meter-track { width: 12px; box-shadow: var(--c-inset); }
+.meter-track::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0 4px, var(--c-screen) 4px 6px); pointer-events: none; }
+.meter-fill { background-size: 100% 260px; }
+.channel-foot { border: 2px solid var(--c-screen); border-bottom: 3px solid var(--channel-color); background: var(--c-screen); padding: 7px 2px; color: var(--c-dim); }
+.master-strip { background: var(--c-brush), var(--c-chassis); }
+.master-strip h2 { background: var(--c-display); color: var(--c-display-text); padding: 7px; text-align: center; border: 2px solid var(--c-screen); margin-top: 7px; }
+.master-strip .fader-section { margin-top: 68px; }
+.routing-bar { padding: 12px 16px; }
+.obs-help { border-radius: 0; }
+.module { background: var(--c-chassis); }
+.console-root[data-skin="modern"] { --c-module: oklch(0.24 0.005 220); --c-chassis: oklch(0.18 0.005 220); --c-brush: none; --c-control-shadow: none; }
+@media (max-width: 1050px) { .selected-channel { grid-template-columns: 1fr 1.25fr 1.25fr; } .selected-inserts { grid-column: 1 / -1; margin-top: 14px; padding-top: 12px !important; border-top: 1px solid var(--c-edge) !important; display: flex; align-items: center; gap: 16px; } .selected-inserts .desk-caption { margin: 0; } .insert-grid { display: flex; } .insert-grid .console-btn { min-width: 65px; } .selected-eq { border-right: 0 !important; } }
+@media (max-width: 700px) { .console-root { padding: 10px 6px; } .console-chassis { padding: 9px; } .console-chassis > header { gap: 12px; } .console-chassis > header > div:last-child { gap: 6px; } .selected-channel { grid-template-columns: 1fr; padding: 12px 4px; gap: 14px; } .selected-channel > div { border-right: 0; padding: 0 10px; } .selected-identity .selected-display { margin-bottom: 8px; } .selected-processing { border-top: 1px solid var(--c-edge); padding-top: 12px !important; } .selected-eq { display: none; } .selected-inserts { margin-top: 0; flex-wrap: wrap; } .desk-bus-label { font-size: 8px; padding: 0 5px; } .console-tab { min-width: 0; flex: 1; padding: 0 9px; font-size: 10px; } .mixer-bank { grid-template-columns: repeat(5, 170px); } .routing-bar { grid-template-columns: 1fr; } }
