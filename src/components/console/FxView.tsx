@@ -1,5 +1,6 @@
 import { useDesk } from "./desk-context";
 import { Knob, Module } from "./controls";
+import { MasterSection } from "./MasterSection";
 
 // Aux returns. Every channel feeds these buses with its REV / DLY / MON send knobs.
 export function FxView() {
@@ -32,5 +33,6 @@ export function FxView() {
         </div>
       </Module>
     </div>
+    <MasterSection />
   </div>;
 }

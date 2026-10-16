@@ -32,6 +32,14 @@ export function Mixer() {
         {midiOn && <span className="readout text-[10px]">BANK {d.bank + 1}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <select aria-label="Program output" title="Program output (main mix)" className="console-select max-w-44 rounded px-2 py-1.5 text-xs" value={d.programOut} onChange={(e) => d.setProgramOut(e.target.value)}>
+          <option value="default">Out: Default</option>
+          {d.outputs.filter((o) => o.deviceId !== "default").map((o) => <option key={o.deviceId} value={o.deviceId}>Out: {o.label || "Audio output"}</option>)}
+        </select>
+        <select aria-label="Monitor output" title="Headphone monitor output" className="console-select max-w-44 rounded px-2 py-1.5 text-xs" value={d.monitorOut} onChange={(e) => d.setMonitorOut(e.target.value)}>
+          <option value="off">Mon: Off</option>
+          {d.outputs.filter((o) => o.deviceId !== "default").map((o) => <option key={o.deviceId} value={o.deviceId}>Mon: {o.label || "Audio output"}</option>)}
+        </select>
         <Button variant="ghost" size="sm" className="console-btn" disabled={!anySolo} onClick={d.clearSolo}>Clear solo</Button>
         <Button variant="ghost" size="sm" className="console-btn" disabled={!anyPfl} onClick={d.clearPfl}>Clear PFL</Button>
         <select aria-label="Add channel" className="console-select rounded px-2 py-1.5 text-xs" value="" disabled={mixer.channels.length >= MAX_CHANNELS}

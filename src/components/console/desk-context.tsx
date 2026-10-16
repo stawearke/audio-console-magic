@@ -40,6 +40,9 @@ export type DeskApi = {
   patchDca: (i: number, p: Partial<Dca>) => void;
   toggleMuteGroup: (i: number) => void;
   copyDsp: (id: string) => void; pasteDsp: () => void; canPaste: boolean;
+  undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
+  pads: { name: string; loaded: boolean }[]; padChannel: string; setPadChannel: (id: string) => void;
+  loadPad: (i: number, file?: File) => Promise<void>; firePad: (i: number) => Promise<void>; stopPads: () => void;
 };
 
 export const DeskContext = createContext<DeskApi | null>(null);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Square } from "lucide-react";
+import { FileAudio, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDesk } from "./desk-context";
 import { Meter, Module, Toggle } from "./controls";
@@ -39,6 +39,49 @@ function Rta() {
   return <canvas ref={ref} className="eq-screen h-48 w-full rounded-md" aria-label="Master spectrum analyser" />;
 }
 
+const fmtL = (v: number | null) => (v === null ? "--" : v.toFixed(1));
+
+// Loudness in LUFS (K-weighted, ITU-R BS.1770 style gating). Streams are commonly mastered around -14 to -16 LUFS.
+function Loudness() {
+  const d = useDesk();
+  const [l, setL] = useState<{ momentary: number | null; short: number | null; integrated: number | null }>({ momentary: null, short: null, integrated: null });
+  useEffect(() => { const t = setInterval(() => { if (d.getEngine().ready) setL(d.getEngine().loudness()); }, 250); return () => clearInterval(t); }, [d]);
+  const tone = (v: number | null) => (v === null ? "idle" : v > -9 ? "hot" : v > -20 ? "ok" : "low");
+  return <Module title="Loudness (LUFS)" extra={<Button variant="ghost" size="sm" className="console-btn h-7" onClick={() => { d.getEngine().resetLoudness(); setL({ momentary: null, short: null, integrated: null }); }}>Reset</Button>}>
+    <div className="lufs-grid w-full">
+      {([["Momentary", l.momentary], ["Short-term", l.short], ["Integrated", l.integrated]] as const).map(([label, v]) => (
+        <div key={label} className="lufs-cell" data-tone={tone(v)}><span className="label-text text-[9px] uppercase tracking-widest">{label}</span><span className="readout lufs-num">{fmtL(v)}</span><span className="label-text text-[9px]">LUFS</span></div>
+      ))}
+    </div>
+    <p className="label-text w-full text-xs">Short-term needs 3 seconds of audio. Integrated keeps averaging until you press Reset.</p>
+  </Module>;
+}
+
+// Twelve one-shot pads (stingers, sound effects). They play through the chosen channel, so its fader, EQ and sends apply.
+function Pads() {
+  const d = useDesk();
+  const files = useRef<(HTMLInputElement | null)[]>([]);
+  const targets = d.mixer.channels.filter((c) => c.kind !== "mic");
+  return <Module title="Sound pads" extra={<div className="flex items-center gap-2">
+    <select aria-label="Pad output channel" className="console-select rounded px-2 py-1 text-[10px]" value={targets.some((c) => c.id === d.padChannel) ? d.padChannel : (targets[0]?.id ?? "")} onChange={(e) => d.setPadChannel(e.target.value)}>
+      {targets.map((c) => <option key={c.id} value={c.id}>via {c.name}</option>)}
+    </select>
+    <Button variant="ghost" size="sm" className="console-btn h-7" onClick={d.stopPads}><Square />Stop all</Button></div>}>
+    <div className="pad-grid w-full">
+      {d.pads.map((p, i) => (
+        <div key={i} className="pad" data-loaded={p.loaded}>
+          <button type="button" className="pad-hit" disabled={!p.loaded} onClick={() => void d.firePad(i)} aria-label={p.loaded ? `Play ${p.name}` : `Pad ${i + 1} is empty`}>
+            <span className="readout text-[10px]">{i + 1}</span><span className="text-xs font-bold">{p.loaded ? p.name : "Empty"}</span>
+          </button>
+          <input hidden type="file" accept="audio/*" ref={(el) => { files.current[i] = el; }} onChange={(e) => { void d.loadPad(i, e.target.files?.[0]); e.target.value = ""; }} />
+          <button type="button" className="pad-load" onClick={() => files.current[i]?.click()} aria-label={`Load sound for pad ${i + 1}`}><FileAudio className="size-3.5" /></button>
+        </div>
+      ))}
+    </div>
+    <p className="label-text w-full text-xs">Load a sound into a pad, then tap it to play. Sounds are not saved between sessions.</p>
+  </Module>;
+}
+
 function useClock() {
   const [t, setT] = useState("--:--:--");
   useEffect(() => { const f = () => setT(new Date().toLocaleTimeString([], { hour12: false })); f(); const i = setInterval(f, 1000); return () => clearInterval(i); }, []);
@@ -73,6 +116,8 @@ export function Show() {
         {d.mixer.muteGroups.map((g, i) => <Toggle key={i} on={g.on} onClick={() => d.toggleMuteGroup(i)}>{g.name}</Toggle>)}
       </div>
     </Module>
+    <Loudness />
+    <Pads />
     <div className="lg:col-span-2"><Module title="Master spectrum (RTA)"><div className="w-full"><Rta /></div>
       <div className="eq-axis w-full"><span>20</span><span>100</span><span>1k</span><span>10k</span><span>20k Hz</span></div></Module></div>
   </div>;

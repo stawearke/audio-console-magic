@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AudioLines, Cable, ChevronLeft, ChevronRight, MonitorPlay, Power, SlidersHorizontal, Sparkles, Wrench, Waves } from "lucide-react";
+import { AudioLines, Cable, ChevronLeft, ChevronRight, MonitorPlay, Power, Redo2, SlidersHorizontal, Sparkles, Undo2, Wrench, Waves } from "lucide-react";
 import { AudioEngine } from "@/lib/audio-engine";
 import { useMidi } from "@/lib/midi";
 import { useScenes } from "@/lib/scenes";
@@ -67,6 +67,22 @@ export function Console() {
   const recorder = useRef<MediaRecorder | null>(null);
   const outputsApplied = useRef(false);
   const [clip, setClip] = useState<Dsp | null>(null);
+  const padBuffers = useRef<(AudioBuffer | null)[]>(Array(12).fill(null));
+  const [pads, setPads] = useState<{ name: string; loaded: boolean }[]>(() => Array.from({ length: 12 }, (_, i) => ({ name: `Pad ${i + 1}`, loaded: false })));
+  const [padChannel, setPadChannel] = useState("sample");
+
+  // Undo / redo: a burst of edits (dragging a fader) counts as one step.
+  const hist = useRef({ past: [] as Mixer[], future: [] as Mixer[], last: mixer, at: 0, skip: false });
+  useEffect(() => {
+    const h = hist.current;
+    if (mixer === h.last) return;
+    if (h.skip) { h.skip = false; h.last = mixer; return; }
+    const now = Date.now();
+    if (now - h.at > 600) { h.past.push(h.last); if (h.past.length > 100) h.past.shift(); }
+    h.at = now; h.future = []; h.last = mixer;
+  }, [mixer]);
+  const undo = () => { const h = hist.current, prev = h.past.pop(); if (!prev) return; h.future.push(mixerRef.current); h.skip = true; setMixer(prev); };
+  const redo = () => { const h = hist.current, next = h.future.pop(); if (!next) return; h.past.push(mixerRef.current); h.skip = true; setMixer(next); };
 
   // Restore the last session (and upgrade the old single-rack save).
   useEffect(() => {
@@ -193,6 +209,25 @@ export function Console() {
     if (key === "input" && "browserNS" in p) restartMic(id);
   };
   const setSend = (id: string, aux: number, db: number) => patch(id, { sends: (mixerRef.current.channels.find((c) => c.id === id)?.sends ?? [-60, -60, -60]).map((s, i) => (i === aux ? db : s)) });
+  const loadPad = async (i: number, file?: File) => {
+    if (!file) return;
+    try {
+      const e = await ready();
+      padBuffers.current[i] = await e.loadAudio(file);
+      setPads((p) => p.map((x, j) => (j === i ? { name: file.name.replace(/\.[^.]+$/, "").slice(0, 16), loaded: true } : x)));
+    } catch (err) { fail(err); }
+  };
+  const firePad = async (i: number) => {
+    const b = padBuffers.current[i];
+    if (!b) return;
+    try {
+      const e = await ready();
+      const target = mixerRef.current.channels.find((c) => c.id === padChannel) ?? mixerRef.current.channels.find((c) => c.kind !== "mic");
+      if (!target) throw new Error("Add a channel to play pads through.");
+      await e.playOneShot(target.id, b);
+    } catch (err) { fail(err); }
+  };
+  const stopPads = () => getEngine().stopOneShots();
   const patchDca = (i: number, p: Partial<Dca>) => setMixer((m) => ({ ...m, dcas: m.dcas.map((x, j) => (j === i ? { ...x, ...p } : x)) }));
   const toggleMuteGroup = (i: number) => setMixer((m) => ({ ...m, muteGroups: m.muteGroups.map((g, j) => (j === i ? { ...g, on: !g.on } : g)) }));
   const copyDsp = (id: string) => { const c = mixerRef.current.channels.find((x) => x.id === id); if (c) setClip(structuredClone(c.dsp)); };
@@ -274,8 +309,14 @@ export function Console() {
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
     const t = e.target as HTMLElement | null;
-    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || t?.closest("input, select, textarea, [contenteditable], [role=slider]")) return;
     const k = e.key.toLowerCase();
+    const typing = !!t?.closest?.("input:not([type=range]), select, textarea, [contenteditable]");
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !typing && !e.defaultPrevented) {
+      if (k === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+      else if (k === "y") { e.preventDefault(); redo(); }
+      return;
+    }
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || t?.closest?.("input, select, textarea, [contenteditable], [role=slider]")) return;
     const i = mixer.channels.findIndex((c) => c.id === primary.id);
     if (k === "m") patch(primary.id, { mute: !primary.mute });
     else if (k === "s") patch(primary.id, { solo: !primary.solo });
@@ -293,6 +334,8 @@ export function Console() {
     toggleSource, loadFile, addChannel, removeChannel, clearSolo, clearPfl, fail, bank, setBank, midiLearn, setMidiLearn,
     midiInputs: midi.inputs, midiStatus: midi.status, recording, seconds, toggleRecord, scenes, applyMixer,
     patchDca, toggleMuteGroup, copyDsp, pasteDsp, canPaste: clip !== null,
+    undo, redo, canUndo: hist.current.past.length > 0, canRedo: hist.current.future.length > 0,
+    pads, padChannel, setPadChannel, loadPad, firePad, stopPads,
   };
 
   return (
@@ -302,13 +345,15 @@ export function Console() {
           <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="brand-model">D16</span></h1>
-              <p className="label-text mt-1 text-[10px]">DIGITAL MIXING CONSOLE · {mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7</p>
+              <p className="label-text mt-1 text-[10px]">DIGITAL MIXING CONSOLE · {mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7 · CTRL+Z</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select aria-label="Load channel preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const f = PRESETS[e.target.value]; if (f) setMixer((m) => f(m, primary.id)); }}>
                 <option value="">Preset for {primary.name}…</option>
                 {Object.keys(PRESETS).map((k) => <option key={k}>{k}</option>)}
               </select>
+              <Button variant="ghost" size="icon" className="console-btn size-8" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={hist.current.past.length === 0} onClick={undo}><Undo2 /></Button>
+              <Button variant="ghost" size="icon" className="console-btn size-8" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={hist.current.future.length === 0} onClick={redo}><Redo2 /></Button>
               <Button variant="ghost" size="icon" className="console-btn size-8" aria-label="Previous scene" onClick={() => { const ids = scenes.slots.map((x, n) => (x ? n : -1)).filter((n) => n >= 0); const prev = ids.filter((n) => n < scenes.current).pop() ?? ids[ids.length - 1]; if (prev !== undefined) scenes.recall(prev); }}><ChevronLeft /></Button>
               <select aria-label="Recall scene" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const i = Number(e.target.value); if (Number.isInteger(i)) scenes.recall(i); }}>
                 <option value="">{scenes.current >= 0 ? `Scene: ${scenes.slots[scenes.current]?.name ?? ""}` : "No scene"}</option>
