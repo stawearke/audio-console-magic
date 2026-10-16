@@ -16,6 +16,19 @@ describe("console smoke", () => {
   });
 });
 
+describe("undo", () => {
+  it("restores a muted channel", () => {
+    window.requestAnimationFrame = () => 0;
+    HTMLCanvasElement.prototype.getContext = (() => null) as never;
+    render(<Console />);
+    const mute = () => screen.getAllByRole("button", { name: /^Mute$/ })[0] as HTMLElement;
+    fireEvent.click(mute());
+    expect(mute().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(mute().getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
 describe("scene state", () => {
   it("round-trips and fills new fields on older saves", () => {
     const m = defaultMixer();
@@ -24,6 +37,13 @@ describe("scene state", () => {
     delete old["dcas"]; delete old["muteGroups"];
     expect(sanitizeMixer(old).muteGroups).toHaveLength(4);
     expect(migrateV1({ channels: [{ id: "voice", gain: 3, pan: 10, mute: true, solo: false }] }).channels[0]?.mute).toBe(true);
+  });
+  it("adds master EQ and compressor to older saves", () => {
+    const old = JSON.parse(JSON.stringify(defaultMixer())) as { master: Record<string, unknown> };
+    delete old.master["eq"]; delete old.master["comp"];
+    const m = sanitizeMixer(old);
+    expect(m.master.eq.on).toBe(false);
+    expect(m.master.comp.ratio).toBe(2);
   });
   it("rejects junk", () => { expect(() => sanitizeMixer({ channels: [] })).toThrow(); });
 });
