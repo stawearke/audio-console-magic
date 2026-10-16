@@ -1,13 +1,29 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Console } from "@/components/console/Console";
+import { defaultMixer, migrateV1, sanitizeMixer } from "@/lib/mixer-state";
 
 describe("console smoke", () => {
-  it("renders every tab", () => {
+  it("renders every tab and the compact and fader-mode switches", () => {
     window.requestAnimationFrame = () => 0;
     HTMLCanvasElement.prototype.getContext = (() => null) as never;
     render(<Console />);
-    for (const t of ["Channel", "FX", "Patch", "Setup", "Mixer"]) fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${t}$`, "i") }));
+    for (const t of ["Mixer 2", "Channel", "FX", "Show", "Patch", "Setup", "Mixer"]) fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${t}$`, "i") }));
+    fireEvent.click(screen.getByRole("button", { name: /compact view/i }));
+    fireEvent.click(screen.getByRole("button", { name: "REVERB" }));
+    fireEvent.click(screen.getByRole("button", { name: "1" }));
     expect(screen.getAllByText("VOICE").length).toBeGreaterThan(0);
   });
+});
+
+describe("scene state", () => {
+  it("round-trips and fills new fields on older saves", () => {
+    const m = defaultMixer();
+    expect(sanitizeMixer(JSON.parse(JSON.stringify(m))).dcas).toHaveLength(4);
+    const old = JSON.parse(JSON.stringify(m)) as Record<string, unknown>;
+    delete old["dcas"]; delete old["muteGroups"];
+    expect(sanitizeMixer(old).muteGroups).toHaveLength(4);
+    expect(migrateV1({ channels: [{ id: "voice", gain: 3, pan: 10, mute: true, solo: false }] }).channels[0]?.mute).toBe(true);
+  });
+  it("rejects junk", () => { expect(() => sanitizeMixer({ channels: [] })).toThrow(); });
 });
