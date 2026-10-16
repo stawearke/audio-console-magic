@@ -34,7 +34,14 @@ class DeEss extends AudioWorkletProcessor {
     this.t+=n;if(this.t>2048){this.t=0;this.port.postMessage(-20*Math.log10(this.g));}
     return true;}
 }
-registerProcessor('sc-gate',Gate);registerProcessor('sc-deess',DeEss);
+class Lufs extends AudioWorkletProcessor {
+  constructor(){super();this.a=0;this.n=0;}
+  process(inputs){const i=inputs[0];if(!i||!i.length)return true;const len=i[0].length;
+    for(let c=0;c<i.length;c++){const x=i[c];for(let s=0;s<len;s++)this.a+=x[s]*x[s];}
+    this.n+=len;if(this.n>=sampleRate*0.1){this.port.postMessage(this.a/this.n);this.a=0;this.n=0;}
+    return true;}
+}
+registerProcessor('sc-gate',Gate);registerProcessor('sc-deess',DeEss);registerProcessor('sc-lufs',Lufs);
 `;
 
 const db = (v: number) => (v <= -59.9 ? 0 : Math.pow(10, v / 20));
@@ -86,7 +93,12 @@ export class AudioEngine {
     verbPre: DelayNode; verb: ConvolverNode; verbTone: BiquadFilterNode; verbRet: GainNode;
     dly: DelayNode; fb: GainNode; dlyTone: BiquadFilterNode; dlyRet: GainNode;
     monLevel: GainNode; pflBus: GainNode; pflLevel: GainNode; monOut: GainNode; monDest: MediaStreamAudioDestinationNode;
+    mLow: BiquadFilterNode; mLm: BiquadFilterNode; mHm: BiquadFilterNode; mHigh: BiquadFilterNode; mComp: DynamicsCompressorNode; mMake: GainNode;
   };
+  private blocks: number[] = [];
+  private gateBlocks: number[] = [];
+  private mom = 0;
+  private oneShots = new Set<AudioBufferSourceNode>();
   private reverbSize = 0;
   private noiseBuf: Record<string, AudioBuffer> = {};
   private monEl: HTMLAudioElement | null = null;
@@ -114,10 +126,19 @@ export class AudioEngine {
       verbPre: c.createDelay(0.5), verb: c.createConvolver(), verbTone: c.createBiquadFilter(), verbRet: c.createGain(),
       dly: c.createDelay(2), fb: c.createGain(), dlyTone: c.createBiquadFilter(), dlyRet: c.createGain(),
       monLevel: c.createGain(), pflBus: c.createGain(), pflLevel: c.createGain(), monOut: c.createGain(), monDest: c.createMediaStreamDestination(),
+      mLow: c.createBiquadFilter(), mLm: c.createBiquadFilter(), mHm: c.createBiquadFilter(), mHigh: c.createBiquadFilter(),
+      mComp: c.createDynamicsCompressor(), mMake: c.createGain(),
     };
     this.n = n;
     n.verbTone.type = "lowpass"; n.dlyTone.type = "lowpass";
-    masterBus.connect(lim).connect(out).connect(c.destination);
+    n.mLow.type = "lowshelf"; n.mLm.type = "peaking"; n.mHm.type = "peaking"; n.mHigh.type = "highshelf"; n.mComp.knee.value = 6;
+    masterBus.connect(n.mLow).connect(n.mLm).connect(n.mHm).connect(n.mHigh).connect(n.mComp).connect(n.mMake).connect(lim).connect(out).connect(c.destination);
+    // Loudness meter: K-weighting (ITU-R BS.1770) into a block-energy worklet, silenced so it never reaches the speakers.
+    const kHs = c.createBiquadFilter(); kHs.type = "highshelf"; kHs.frequency.value = 1681.97; kHs.gain.value = 3.9998;
+    const kHp = c.createBiquadFilter(); kHp.type = "highpass"; kHp.frequency.value = 38.14; kHp.Q.value = 0.5;
+    const lufs = new AudioWorkletNode(c, "sc-lufs"), mute = c.createGain(); mute.gain.value = 0;
+    out.connect(kHs).connect(kHp).connect(lufs).connect(mute).connect(c.destination);
+    lufs.port.onmessage = (e: MessageEvent<number>) => this.onBlock(e.data);
     out.connect(n.anMix); out.connect(split); split.connect(n.anL, 0); split.connect(n.anR, 1);
     const rec = c.createMediaStreamDestination(); out.connect(rec); this.recordingStream = rec.stream;
     // Aux 1: reverb return
@@ -265,7 +286,50 @@ export class AudioEngine {
     set(this.n.lim.threshold, m.limiter.on ? m.limiter.ceiling - 2 : 0);
     set(this.n.lim.ratio, m.limiter.on ? 20 : 1);
     set(this.n.out.gain, m.mute ? 0 : db(m.fader));
+    const q = m.eq, n = this.n;
+    set(n.mLow.frequency, q.lowFreq); set(n.mLow.gain, q.on ? q.lowGain : 0);
+    set(n.mLm.frequency, q.lmFreq); set(n.mLm.Q, q.lmQ); set(n.mLm.gain, q.on ? q.lmGain : 0);
+    set(n.mHm.frequency, q.hmFreq); set(n.mHm.Q, q.hmQ); set(n.mHm.gain, q.on ? q.hmGain : 0);
+    set(n.mHigh.frequency, q.highFreq); set(n.mHigh.gain, q.on ? q.highGain : 0);
+    const c = m.comp;
+    set(n.mComp.threshold, c.on ? c.threshold : 0); set(n.mComp.ratio, c.on ? c.ratio : 1);
+    set(n.mComp.attack, c.attack / 1000); set(n.mComp.release, c.release / 1000);
+    set(n.mMake.gain, c.on ? db(c.makeup) : 1);
   }
+
+  // ---- loudness (LUFS) ----------------------------------------------------------------------
+  private onBlock(e: number) {
+    const b = this.blocks; b.push(e); if (b.length > 30) b.shift();
+    if (b.length >= 4) {
+      const m = b.slice(-4).reduce((a, x) => a + x, 0) / 4;
+      this.mom = m; this.gateBlocks.push(m);
+      if (this.gateBlocks.length > 72000) this.gateBlocks.shift();
+    }
+  }
+  resetLoudness() { this.blocks = []; this.gateBlocks = []; this.mom = 0; }
+  // Momentary (400 ms), short-term (3 s) and gated integrated loudness in LUFS; null when silent.
+  loudness() {
+    const toL = (z: number) => (z > 1e-10 ? -0.691 + 10 * Math.log10(z) : null);
+    const avg = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
+    const short = this.blocks.length >= 30 ? avg(this.blocks) : 0;
+    const abs = Math.pow(10, (-70 + 0.691) / 10);
+    const g1 = this.gateBlocks.filter((z) => z > abs);
+    let integrated: number | null = null;
+    if (g1.length) { const rel = avg(g1) * 0.1; const g2 = g1.filter((z) => z > rel); integrated = g2.length ? toL(avg(g2)) : null; }
+    return { momentary: toL(this.mom), short: toL(short), integrated };
+  }
+
+  // ---- one-shot pads ------------------------------------------------------------------------
+  async playOneShot(id: string, buffer: AudioBuffer) {
+    await this.ensure(); await this.ctx.resume();
+    const s = this.strip(id);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer; src.connect(s.in);
+    this.oneShots.add(src);
+    src.onended = () => { this.oneShots.delete(src); src.disconnect(); };
+    src.start();
+  }
+  stopOneShots() { for (const src of [...this.oneShots]) { src.onended = null; try { src.stop(); } catch { /* ended */ } src.disconnect(); } this.oneShots.clear(); }
 
   private applyFx(fx: Fx, anyPfl: boolean) {
     const t = this.ctx.currentTime, set = (p: AudioParam, v: number) => p.setTargetAtTime(v, t, 0.02), n = this.n;
@@ -378,6 +442,7 @@ export class AudioEngine {
   async dispose() {
     window.clearInterval(this.timer);
     for (const id of [...this.sources.keys()]) this.stopSource(id);
+    this.stopOneShots();
     this.monEl?.pause();
     this.monEl = null;
     this.ready = false;

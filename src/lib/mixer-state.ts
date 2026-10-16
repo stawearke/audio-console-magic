@@ -40,7 +40,7 @@ export type Channel = {
   dca: number; muteGrp: boolean[];
 };
 export type Group = { id: "g1" | "g2"; name: string; fader: number; mute: boolean };
-export type Master = { fader: number; mute: boolean; limiter: { on: boolean; ceiling: number } };
+export type Master = { fader: number; mute: boolean; limiter: { on: boolean; ceiling: number }; eq: Dsp["eq"]; comp: Dsp["comp"] };
 export type Fx = {
   reverb: { size: number; tone: number; predelay: number; level: number };
   delay: { time: number; feedback: number; tone: number; level: number };
@@ -102,7 +102,7 @@ export function defaultMixer(): Mixer {
     groups: [{ id: "g1", name: "GROUP 1", fader: 0, mute: false }, { id: "g2", name: "GROUP 2", fader: 0, mute: false }],
     dcas: [1, 2, 3, 4].map((n) => ({ name: `DCA ${n}`, fader: 0, mute: false })),
     muteGroups: [1, 2, 3, 4].map((n) => ({ name: `MUTE ${n}`, on: false })),
-    master: { fader: 0, mute: false, limiter: { on: true, ceiling: -1 } },
+    master: { fader: 0, mute: false, limiter: { on: true, ceiling: -1 }, eq: flatDsp().eq, comp: { on: false, threshold: -18, ratio: 2, attack: 30, release: 250, makeup: 0 } },
     fx: {
       reverb: { size: 1.5, tone: 6000, predelay: 0, level: -6 },
       delay: { time: 280, feedback: 25, tone: 5000, level: -6 },
