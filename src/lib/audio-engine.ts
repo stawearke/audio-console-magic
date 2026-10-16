@@ -18,6 +18,7 @@ class Gate extends AudioWorkletProcessor {
       const target=!p.on?1:(this.env>thr?1:(this.env>thr*0.7&&this.g>0.5?1:floor));
       this.g=target>this.g?a*this.g+(1-a)*target:r*this.g+(1-r)*target;
       for(let c=0;c<o.length;c++)o[c][s]=(i[c]||i[0])[s]*this.g;}
+    this.t=(this.t||0)+n;if(this.t>2048){this.t=0;this.port.postMessage(-20*Math.log10(Math.max(this.g,1e-4)));}
     return true;}
 }
 class DeEss extends AudioWorkletProcessor {
@@ -65,7 +66,7 @@ type Strip = {
   toMono: GainNode; split: ChannelSplitterNode; gL: GainNode; gR: GainNode; merge: ChannelMergerNode; post: GainNode;
   pre: AnalyserNode; postAn: AnalyserNode;
   sendPre: GainNode[]; sendPost: GainNode[];
-  stereo: boolean; route: string; deessRed: number; warmDrive: number; cache: { gate: string; deess: string };
+  stereo: boolean; route: string; deessRed: number; gateRed: number; warmDrive: number; cache: { gate: string; deess: string };
 };
 type Source = { stop: () => void; setLoop?: (l: boolean) => void; gen?: { out: GainNode; node: AudioScheduledSourceNode; type: string } };
 type Bus = { in: GainNode; fader: GainNode; an: AnalyserNode };
@@ -153,9 +154,10 @@ export class AudioEngine {
       comp, makeup: g(), warm, dly: c.createDelay(0.1), duck: g(), pfl: g(), mute: g(), fader: g(),
       toMono, split: c.createChannelSplitter(2), gL: g(), gR: g(), merge, post: g(), pre: an(1024), postAn: an(1024),
       sendPre: [g(), g(), g()], sendPost: [g(), g(), g()],
-      stereo: ch.stereo, route: "", deessRed: 0, warmDrive: -1, cache: { gate: "", deess: "" },
+      stereo: ch.stereo, route: "", deessRed: 0, gateRed: 0, warmDrive: -1, cache: { gate: "", deess: "" },
     };
     s.deess.port.onmessage = (e: MessageEvent) => { s.deessRed = e.data; };
+    s.gate.port.onmessage = (e: MessageEvent) => { s.gateRed = e.data; };
     s.in.connect(s.pol).connect(s.dc.inp);
     s.dc.out.connect(s.hpf.inp); s.hpf.out.connect(s.lpf.inp); s.lpf.out.connect(s.gate);
     s.gate.connect(low).connect(lm).connect(hm).connect(high).connect(s.deess).connect(comp).connect(s.makeup).connect(warm).connect(s.dly).connect(s.duck);
@@ -205,7 +207,11 @@ export class AudioEngine {
     const anySolo = m.channels.some(c => c.solo), anyPfl = m.channels.some(c => c.pfl);
     for (const ch of m.channels) {
       const s = this.strips.get(ch.id) ?? this.makeStrip(ch);
-      this.applyChannel(ch, s, !ch.mute && (!anySolo || ch.solo), m.desk.panLaw);
+      const dca = ch.dca > 0 ? m.dcas[ch.dca - 1] : undefined;
+      const grpMute = m.muteGroups.some((g, i) => g.on && ch.muteGrp[i]);
+      const muted = ch.mute || grpMute || !!dca?.mute;
+      const fader = Math.max(-60, Math.min(12, ch.fader + (dca?.fader ?? 0)));
+      this.applyChannel(ch, s, !muted && (!anySolo || ch.solo), m.desk.panLaw, fader);
     }
     const t = this.ctx.currentTime, set = (p: AudioParam, v: number) => p.setTargetAtTime(v, t, 0.02);
     for (const gr of m.groups) { const b = this.groups.get(gr.id); if (b) set(b.fader.gain, gr.mute ? 0 : db(gr.fader)); }
@@ -214,7 +220,7 @@ export class AudioEngine {
     this.mixer = m;
   }
 
-  private applyChannel(ch: Channel, s: Strip, audible: boolean, law: Mixer["desk"]["panLaw"]) {
+  private applyChannel(ch: Channel, s: Strip, audible: boolean, law: Mixer["desk"]["panLaw"], faderDb: number) {
     const d: Dsp = ch.dsp, t = this.ctx.currentTime, set = (p: AudioParam, v: number) => p.setTargetAtTime(v, t, 0.02);
     set(s.in.gain, db(d.input.gain));
     set(s.pol.gain, d.input.polarity ? -1 : 1);
@@ -237,7 +243,7 @@ export class AudioEngine {
     set(s.dly.delayTime, Math.min(0.1, d.input.delaySamples / this.ctx.sampleRate));
     set(s.pfl.gain, ch.pfl ? 1 : 0);
     set(s.mute.gain, audible ? 1 : 0);
-    set(s.fader.gain, db(ch.fader));
+    set(s.fader.gain, db(faderDb));
     if (s.stereo !== ch.stereo) this.wirePan(s, ch.stereo);
     const [l, r] = ch.stereo ? balanceGains(ch.pan) : panGains(ch.pan, law);
     set(s.gL.gain, l); set(s.gR.gain, r);
@@ -418,6 +424,7 @@ export class AudioEngine {
   get masterAnalyser(): AnalyserNode | null { return this.ready ? this.n.anMix : null; }
   channelAnalyser(id: string) { return this.strips.get(id)?.pre ?? null; }
   compReduction(id: string) { return -(this.strips.get(id)?.comp.reduction ?? 0); }
+  gateReduction(id: string) { return this.strips.get(id)?.gateRed ?? 0; }
   deessReduction(id: string) { return this.strips.get(id)?.deessRed ?? 0; }
   latency() {
     const c = this.ctx as AudioContext | undefined;
