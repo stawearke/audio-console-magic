@@ -1,19 +1,27 @@
+import { useState } from "react";
 import { Plus, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MAX_CHANNELS, type SourceKind } from "@/lib/mixer-state";
+import { auxLabel } from "@/lib/aux-labels";
 import { useDesk } from "./desk-context";
 import { ChannelOverview } from "./ChannelOverview";
 import { ChannelStrip, GroupStrip, MasterStrip } from "./Strips";
+import { Toggle } from "./controls";
 
 const ADD: [SourceKind, string][] = [["mic", "Microphone"], ["file", "Audio file"], ["desktop", "Desktop audio"], ["gen", "Signal generator"]];
+const LAYERS = [["all", "All"], ["a", "1–8"], ["b", "9–16"], ["inputs", "Mic / Gen"], ["media", "Media"]] as const;
+type Layer = (typeof LAYERS)[number][0];
 
 export function Mixer() {
   const d = useDesk();
   const { mixer } = d;
+  const [layer, setLayer] = useState<Layer>("all");
   const anyActive = Object.values(d.active).some(Boolean);
   const anySolo = mixer.channels.some((c) => c.solo), anyPfl = mixer.channels.some((c) => c.pfl);
   const midiOn = mixer.desk.midi.on;
   const lat = d.getEngine().ready ? d.getEngine().latency() : null;
+  const visible = mixer.channels.map((ch, i) => ({ ch, i })).filter(({ ch, i }) =>
+    layer === "all" || (layer === "a" && i < 8) || (layer === "b" && i >= 8) || (layer === "inputs" && (ch.kind === "mic" || ch.kind === "gen")) || (layer === "media" && (ch.kind === "file" || ch.kind === "desktop")));
   return <section className="mixer-surface">
     <ChannelOverview />
     <div className="mixer-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -36,10 +44,22 @@ export function Mixer() {
         </Button>
       </div>
     </div>
-    <div className="mixer-bank" role="group" aria-label="Channel strips">
-      {mixer.channels.map((ch, i) => <ChannelStrip key={ch.id} ch={ch} index={i} />)}
+    <div className="desk-modes">
+      <div className="mode-group" role="group" aria-label="Layer"><span className="desk-caption">LAYER</span>
+        {LAYERS.map(([k, label]) => <button key={k} type="button" className="mode-chip" aria-pressed={layer === k} data-on={layer === k} onClick={() => setLayer(k)}>{label}</button>)}
+      </div>
+      <div className="mode-group" role="group" aria-label="Fader mode"><span className="desk-caption">FADERS</span>
+        <button type="button" className="mode-chip" aria-pressed={mixer.desk.faderMode === 0} data-on={mixer.desk.faderMode === 0} onClick={() => d.patchDesk({ faderMode: 0 })}>Level</button>
+        {[0, 1, 2].map((i) => <button key={i} type="button" className="mode-chip" aria-pressed={mixer.desk.faderMode === i + 1} data-on={mixer.desk.faderMode === i + 1} data-aux="true" onClick={() => d.patchDesk({ faderMode: i + 1 })}>{auxLabel(i)}</button>)}
+      </div>
+      <div className="mode-group" role="group" aria-label="Mute groups"><span className="desk-caption">MUTE GRP</span>
+        {mixer.muteGroups.map((g, i) => <button key={i} type="button" className="mode-chip" data-hot="true" aria-pressed={g.on} data-on={g.on} onClick={() => d.toggleMuteGroup(i)}>{i + 1}</button>)}
+      </div>
+      <Toggle on={mixer.desk.compact} onClick={() => d.patchDesk({ compact: !mixer.desk.compact })} title="Narrow strips so 16 channels fit on screen">Compact view</Toggle>
+    </div>
+    <div className="mixer-bank" data-compact={mixer.desk.compact} role="group" aria-label="Channel strips">
+      {visible.map(({ ch, i }) => <ChannelStrip key={ch.id} ch={ch} index={i} />)}
       <button type="button" className="add-strip" onClick={() => d.addChannel("mic")} disabled={mixer.channels.length >= MAX_CHANNELS} aria-label="Add microphone channel"><Plus className="size-5" />Add</button>
-      {mixer.groups.map((g) => <GroupStrip key={g.id} g={g} />)}
       <MasterStrip />
     </div>
   </section>;

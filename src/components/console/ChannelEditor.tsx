@@ -1,20 +1,22 @@
 import { useCallback, useMemo } from "react";
-import { Trash2 } from "lucide-react";
+import { ClipboardPaste, Copy, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { compOut } from "@/lib/dsp-math";
-import { AUX_NAMES, type GenType } from "@/lib/mixer-state";
+import { AUX_NAMES, type Dsp, type GenType } from "@/lib/mixer-state";
 import { useDesk } from "./desk-context";
+import { CompCurve } from "./Dyn";
 import { EqGraph } from "./EqGraph";
 import { Fader, Knob, Meter, Module, NumberField, Toggle } from "./controls";
 
-function CompCurve({ comp }: { comp: { on: boolean; threshold: number; ratio: number; makeup: number; attack: number; release: number } }) {
-  const pts = [-60, -50, -40, -30, -20, -10, 0].map((x) => [x, comp.on ? compOut({ ...comp }, x) : x] as const);
-  const sx = (v: number) => ((v + 60) / 60) * 100, sy = (v: number) => 100 - ((Math.max(-60, Math.min(0, v)) + 60) / 60) * 100;
-  return <svg viewBox="0 0 100 100" className="eq-screen h-24 w-24 rounded-md" role="img" aria-label="Compressor transfer curve">
-    <line x1="0" y1="100" x2="100" y2="0" stroke="var(--grid)" strokeWidth="1" />
-    <polyline fill="none" stroke="var(--curve)" strokeWidth="2" points={pts.map(([x, y]) => `${sx(x)},${sy(y)}`).join(" ")} />
-  </svg>;
-}
+const FLAT = { lowGain: 0, lowFreq: 120, lmGain: 0, lmFreq: 350, lmQ: 1, hmGain: 0, hmFreq: 3000, hmQ: 1, highGain: 0, highFreq: 10000 };
+const EQ_PRESETS: Record<string, Partial<Dsp["eq"]>> = {
+  Flat: FLAT,
+  "Vocal presence": { ...FLAT, lowGain: -3, lowFreq: 100, lmGain: -2, lmFreq: 300, hmGain: 3.5, hmFreq: 3500, highGain: 2, highFreq: 11000 },
+  "Warm voice": { ...FLAT, lowGain: 3, lowFreq: 140, lmGain: 1.5, lmFreq: 250, hmGain: -1.5, hmFreq: 4500, highGain: -1, highFreq: 9000 },
+  "Bright / air": { ...FLAT, lowGain: -2, hmGain: 2, hmFreq: 5000, highGain: 5, highFreq: 12000 },
+  "Bass boost": { ...FLAT, lowGain: 6, lowFreq: 90, lmGain: 1, lmFreq: 180 },
+  Telephone: { ...FLAT, lowGain: -15, lowFreq: 400, lmGain: 4, lmFreq: 1200, hmGain: 3, hmFreq: 2500, highGain: -15, highFreq: 4000 },
+  "Cut mud": { ...FLAT, lmGain: -5, lmFreq: 280, lmQ: 1.4 },
+};
 
 export function ChannelEditor() {
   const d = useDesk();
@@ -39,7 +41,11 @@ export function ChannelEditor() {
           {d.mixer.channels.map((c, i) => <option key={c.id} value={c.id}>{String(i + 1).padStart(2, "0")} {c.name}</option>)}
         </select>
       </div>
-      <Button variant="ghost" size="sm" className="console-btn" disabled={d.mixer.channels.length <= 1} onClick={() => d.removeChannel(id)}><Trash2 />Remove channel</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="ghost" size="sm" className="console-btn" onClick={() => d.copyDsp(id)}><Copy />Copy settings</Button>
+        <Button variant="ghost" size="sm" className="console-btn" disabled={!d.canPaste} onClick={d.pasteDsp}><ClipboardPaste />Paste to {d.selected.length > 1 ? `${d.selected.length} selected` : "channel"}</Button>
+        <Button variant="ghost" size="sm" className="console-btn" disabled={d.mixer.channels.length <= 1} onClick={() => d.removeChannel(id)}><Trash2 />Remove channel</Button>
+      </div>
     </div>
     <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -99,7 +105,10 @@ export function ChannelEditor() {
         </Module>
 
         <div className="sm:col-span-2 xl:col-span-4">
-          <Module title="4-Band Parametric EQ" on={dsp.eq.on} onToggle={() => up(id, "eq", { on: !dsp.eq.on })}>
+          <Module title="4-Band Parametric EQ" on={dsp.eq.on} onToggle={() => up(id, "eq", { on: !dsp.eq.on })} extra={
+            <select aria-label="EQ preset" className="console-select rounded px-2 py-1 text-[10px]" value="" onChange={(e) => { const p = EQ_PRESETS[e.target.value]; if (p) up(id, "eq", { ...p, on: true }); }}>
+              <option value="">EQ preset…</option>{Object.keys(EQ_PRESETS).map((k) => <option key={k}>{k}</option>)}
+            </select>}>
             <div className="w-full"><EqGraph eq={dsp.eq} getAnalyser={analyser} onChange={(p) => up(id, "eq", p)} /></div>
             <Knob label="Low" value={dsp.eq.lowGain} min={-15} max={15} step={0.5} def={0} unit="dB" onChange={(v) => up(id, "eq", { lowGain: v })} />
             <Knob label="Low Hz" value={dsp.eq.lowFreq} min={30} max={500} log def={120} onChange={(v) => up(id, "eq", { lowFreq: v })} />
@@ -138,6 +147,18 @@ export function ChannelEditor() {
               <Toggle on={ch.sendPre[i] ?? false} title="Send before the fader" onClick={() => d.patch(id, { sendPre: ch.sendPre.map((p, j) => (j === i ? !p : p)) })}>Pre</Toggle>
             </div>
           ))}
+        </Module>
+
+        <Module title="DCA / mute groups">
+          <div className="flex w-full flex-col gap-1">
+            <label className="label-text text-[9px] uppercase tracking-widest">DCA (master fader for a set of channels)</label>
+            <select aria-label="DCA" className="console-select w-full rounded px-2 py-1 text-xs" value={ch.dca} onChange={(e) => d.patch(id, { dca: Number(e.target.value) })}>
+              <option value={0}>None</option>{d.mixer.dcas.map((x, i) => <option key={i} value={i + 1}>{x.name}</option>)}
+            </select>
+          </div>
+          <div className="flex w-full flex-wrap justify-center gap-2">
+            {d.mixer.muteGroups.map((g, i) => <Toggle key={i} on={ch.muteGrp[i] ?? false} onClick={() => d.patch(id, { muteGrp: ch.muteGrp.map((v, j) => (j === i ? !v : v)) })}>{g.name}</Toggle>)}
+          </div>
         </Module>
 
         {ch.kind === "gen" && (

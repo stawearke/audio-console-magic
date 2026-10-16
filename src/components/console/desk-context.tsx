@@ -1,10 +1,10 @@
 import { createContext, useContext } from "react";
 import type { AudioEngine } from "@/lib/audio-engine";
-import type { Channel, Desk, Dsp, Fx, Group, Master, Mixer, SourceKind } from "@/lib/mixer-state";
+import type { Channel, Dca, Desk, Dsp, Fx, Group, Master, Mixer, SourceKind } from "@/lib/mixer-state";
 import type { MidiInfo, MidiStatus } from "@/lib/midi";
 import type { ScenesApi } from "@/lib/scenes";
 
-export type View = "mixer" | "channel" | "fx" | "patch" | "setup";
+export type View = "mixer" | "mixer2" | "channel" | "fx" | "show" | "patch" | "setup";
 
 export type DeskApi = {
   mixer: Mixer;
@@ -37,6 +37,9 @@ export type DeskApi = {
   midiInputs: MidiInfo[]; midiStatus: MidiStatus;
   recording: boolean; seconds: number; toggleRecord: () => Promise<void>;
   scenes: ScenesApi; applyMixer: (m: Mixer) => void;
+  patchDca: (i: number, p: Partial<Dca>) => void;
+  toggleMuteGroup: (i: number) => void;
+  copyDsp: (id: string) => void; pasteDsp: () => void; canPaste: boolean;
 };
 
 export const DeskContext = createContext<DeskApi | null>(null);

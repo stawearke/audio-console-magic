@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AudioLines, Cable, Power, SlidersHorizontal, Sparkles, Wrench, Waves } from "lucide-react";
+import { AudioLines, Cable, ChevronLeft, ChevronRight, MonitorPlay, Power, SlidersHorizontal, Sparkles, Wrench, Waves } from "lucide-react";
 import { AudioEngine } from "@/lib/audio-engine";
 import { useMidi } from "@/lib/midi";
 import { useScenes } from "@/lib/scenes";
 import {
   FADER_MAX, FADER_MIN, HUES, MAX_CHANNELS, clamp, defaultMixer, flatDsp, makeChannel, migrateV1, sanitizeMixer, uid, voiceDsp,
-  type Channel, type Desk, type Dsp, type Fx, type Group, type Master, type MidiMap, type Mixer, type SourceKind,
+  type Channel, type Dca, type Desk, type Dsp, type Fx, type Group, type Master, type MidiMap, type Mixer, type SourceKind,
 } from "@/lib/mixer-state";
 import { Button } from "@/components/ui/button";
 import { DeskContext, type DeskApi, type View } from "./desk-context";
@@ -15,6 +15,8 @@ import { ChannelEditor } from "./ChannelEditor";
 import { FxView } from "./FxView";
 import { PatchView } from "./PatchView";
 import { SetupView } from "./SetupView";
+import { Mixer2 } from "./Mixer2";
+import { Show } from "./Show";
 import { ObsPlugin } from "./ObsPlugin";
 
 // Presets change the selected channel (and the shared FX returns for the echo preset).
@@ -31,7 +33,7 @@ function withDsp(m: Mixer, id: string, dsp: Dsp): Mixer {
 
 const STORE = "stream-console-v2";
 const NAMES: Record<SourceKind, string> = { mic: "MIC", file: "MEDIA", desktop: "DESKTOP", gen: "TONE" };
-const TABS: [View, string, typeof Power][] = [["mixer", "Mixer", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["patch", "Patch", Cable], ["setup", "Setup", Wrench]];
+const TABS: [View, string, typeof Power][] = [["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench]];
 const midiToDb = (v: number) => Math.round((FADER_MIN + (v / 127) * (FADER_MAX - FADER_MIN)) * 2) / 2;
 
 function saveBlob(blob: Blob, name: string) {
@@ -64,6 +66,7 @@ export function Console() {
   const buffers = useRef<Record<string, AudioBuffer>>({});
   const recorder = useRef<MediaRecorder | null>(null);
   const outputsApplied = useRef(false);
+  const [clip, setClip] = useState<Dsp | null>(null);
 
   // Restore the last session (and upgrade the old single-rack save).
   useEffect(() => {
@@ -190,6 +193,14 @@ export function Console() {
     if (key === "input" && "browserNS" in p) restartMic(id);
   };
   const setSend = (id: string, aux: number, db: number) => patch(id, { sends: (mixerRef.current.channels.find((c) => c.id === id)?.sends ?? [-60, -60, -60]).map((s, i) => (i === aux ? db : s)) });
+  const patchDca = (i: number, p: Partial<Dca>) => setMixer((m) => ({ ...m, dcas: m.dcas.map((x, j) => (j === i ? { ...x, ...p } : x)) }));
+  const toggleMuteGroup = (i: number) => setMixer((m) => ({ ...m, muteGroups: m.muteGroups.map((g, j) => (j === i ? { ...g, on: !g.on } : g)) }));
+  const copyDsp = (id: string) => { const c = mixerRef.current.channels.find((x) => x.id === id); if (c) setClip(structuredClone(c.dsp)); };
+  const pasteDsp = () => {
+    if (!clip) return;
+    const targets = selectedRef.current;
+    setMixer((m) => ({ ...m, channels: m.channels.map((c) => (targets.includes(c.id) ? { ...c, dsp: { ...structuredClone(clip), input: { ...clip.input, delaySamples: c.dsp.input.delaySamples }, duck: c.dsp.duck } } : c)) }));
+  };
   const patchGroup = (id: Group["id"], p: Partial<Group>) => setMixer((m) => ({ ...m, groups: m.groups.map((g) => (g.id === id ? { ...g, ...p } : g)) }));
   const patchMaster = (p: Partial<Master>) => setMixer((m) => ({ ...m, master: { ...m.master, ...p } }));
   const patchFx: DeskApi["patchFx"] = (key, p) => setMixer((m) => ({ ...m, fx: { ...m.fx, [key]: { ...m.fx[key], ...p } } as Fx }));
@@ -259,11 +270,29 @@ export function Console() {
   const primary = mixer.channels.find((c) => c.id === selectedIds[0]) ?? (mixer.channels[0] as Channel);
   const firstMic = mixer.channels.find((c) => c.kind === "mic");
 
+  // Keyboard: M mute, S solo, P PFL, arrows change channel, 1-7 switch page.
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyRef.current = (e) => {
+    const t = e.target as HTMLElement | null;
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || t?.closest("input, select, textarea, [contenteditable], [role=slider]")) return;
+    const k = e.key.toLowerCase();
+    const i = mixer.channels.findIndex((c) => c.id === primary.id);
+    if (k === "m") patch(primary.id, { mute: !primary.mute });
+    else if (k === "s") patch(primary.id, { solo: !primary.solo });
+    else if (k === "p") patch(primary.id, { pfl: !primary.pfl });
+    else if (k === "arrowright" || k === "arrowleft") { const n = mixer.channels[clamp(i + (k === "arrowright" ? 1 : -1), 0, mixer.channels.length - 1)]; if (n) select(n.id); }
+    else if (/^[1-7]$/.test(k)) { const v = TABS[Number(k) - 1]; if (v) setView(v[0]); }
+    else return;
+    e.preventDefault();
+  };
+  useEffect(() => { const f = (e: KeyboardEvent) => keyRef.current(e); window.addEventListener("keydown", f); return () => window.removeEventListener("keydown", f); }, []);
+
   const api: DeskApi = {
     mixer, setMixer, getEngine, selected: selectedIds, primary, select, view, setView, active, files, inputs, outputs,
     programOut, monitorOut, setProgramOut, setMonitorOut, patch, patchDsp, patchGroup, patchMaster, patchFx, patchDesk, setSend,
     toggleSource, loadFile, addChannel, removeChannel, clearSolo, clearPfl, fail, bank, setBank, midiLearn, setMidiLearn,
     midiInputs: midi.inputs, midiStatus: midi.status, recording, seconds, toggleRecord, scenes, applyMixer,
+    patchDca, toggleMuteGroup, copyDsp, pasteDsp, canPaste: clip !== null,
   };
 
   return (
@@ -272,18 +301,20 @@ export function Console() {
         <div className="console-chassis mx-auto max-w-[1600px] rounded-lg p-4 md:p-6">
           <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="brand-model">D12</span></h1>
-              <p className="label-text mt-1 text-[10px]">DIGITAL MIXING CONSOLE · {mixer.channels.length} CHANNELS / 2 GROUPS / 3 AUX / STEREO</p>
+              <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="brand-model">D16</span></h1>
+              <p className="label-text mt-1 text-[10px]">DIGITAL MIXING CONSOLE · {mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select aria-label="Load channel preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const f = PRESETS[e.target.value]; if (f) setMixer((m) => f(m, primary.id)); }}>
                 <option value="">Preset for {primary.name}…</option>
                 {Object.keys(PRESETS).map((k) => <option key={k}>{k}</option>)}
               </select>
+              <Button variant="ghost" size="icon" className="console-btn size-8" aria-label="Previous scene" onClick={() => { const ids = scenes.slots.map((x, n) => (x ? n : -1)).filter((n) => n >= 0); const prev = ids.filter((n) => n < scenes.current).pop() ?? ids[ids.length - 1]; if (prev !== undefined) scenes.recall(prev); }}><ChevronLeft /></Button>
               <select aria-label="Recall scene" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const i = Number(e.target.value); if (Number.isInteger(i)) scenes.recall(i); }}>
                 <option value="">{scenes.current >= 0 ? `Scene: ${scenes.slots[scenes.current]?.name ?? ""}` : "No scene"}</option>
                 {scenes.slots.map((s, i) => s && <option key={i} value={i}>{i + 1} · {s.name}</option>)}
               </select>
+              <Button variant="ghost" size="icon" className="console-btn size-8" aria-label="Next scene" onClick={() => { const ids = scenes.slots.map((x, n) => (x ? n : -1)).filter((n) => n >= 0); const next = ids.find((n) => n > scenes.current) ?? ids[0]; if (next !== undefined) scenes.recall(next); }}><ChevronRight /></Button>
               <Toggle on={skin === "modern"} onClick={() => setSkin(skin === "hardware" ? "modern" : "hardware")}>{skin === "hardware" ? "Hardware look" : "Modern look"}</Toggle>
               {firstMic && (active[firstMic.id]
                 ? <Button variant="ghost" onClick={() => void toggleSource(firstMic.id)} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="true">● Live — Stop</Button>
@@ -301,6 +332,8 @@ export function Console() {
           </nav>
 
           {view === "mixer" && <MixerView />}
+          {view === "mixer2" && <Mixer2 />}
+          {view === "show" && <Show />}
           {view === "channel" && <ChannelEditor />}
           {view === "fx" && <FxView />}
           {view === "patch" && <PatchView />}

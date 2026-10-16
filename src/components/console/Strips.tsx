@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { HUES, type Channel, type Group, type Route, type SourceKind } from "@/lib/mixer-state";
 import { auxLabel } from "@/lib/aux-labels";
 import { useDesk } from "./desk-context";
+import { ActivityBadges, CompCurve } from "./Dyn";
 import { EqGraph } from "./EqGraph";
 import { Fader, Knob, Meter, Toggle } from "./controls";
+import type { Dca } from "@/lib/mixer-state";
 
 export const KIND_ICON: Record<SourceKind, typeof Mic> = { mic: Mic, file: Music2, desktop: Monitor, gen: AudioLines };
 const hueColor = (h: number) => `oklch(0.78 0.14 ${h})`;
@@ -19,6 +21,10 @@ export function ChannelStrip({ ch, index }: { ch: Channel; index: number }) {
   const live = d.active[ch.id] ?? false;
   const dsp = ch.dsp;
   const mode = d.mixer.desk.meterMode;
+  const compact = d.mixer.desk.compact, fm = d.mixer.desk.faderMode;
+  const faderValue = fm ? (ch.sends[fm - 1] ?? -60) : ch.fader;
+  const onFader = (v: number) => (fm ? d.setSend(ch.id, fm - 1, v) : d.patch(ch.id, { fader: v }));
+  const banked = d.mixer.desk.midi.on && index >= d.bank * 8 && index < d.bank * 8 + 8;
   const read = useMemo(() => () => d.getEngine().level(ch.id, mode), [d, ch.id, mode]);
   const inserts: [string, boolean, () => void][] = [
     ["Filters", dsp.input.hpfOn || dsp.input.lpfOn, () => { const on = !(dsp.input.hpfOn || dsp.input.lpfOn); d.patchDsp(ch.id, "input", { hpfOn: on, lpfOn: false }); }],
@@ -32,7 +38,7 @@ export function ChannelStrip({ ch, index }: { ch: Channel; index: number }) {
   const nextHue = () => d.patch(ch.id, { hue: HUES[(HUES.indexOf(ch.hue) + 1) % HUES.length] ?? 195 });
 
   return (
-    <div className="channel-strip" data-selected={selected} data-kind={ch.kind} style={{ ["--channel-color" as string]: hueColor(ch.hue) }}>
+    <div className="channel-strip" data-selected={selected} data-kind={ch.kind} data-compact={compact} data-banked={banked} style={{ ["--channel-color" as string]: hueColor(ch.hue) }}>
       <div className="channel-heading flex items-center justify-between">
         <span className="readout text-xs">{String(index + 1).padStart(2, "0")}</span>
         <button type="button" className="hue-dot" onClick={nextHue} title="Change channel colour" aria-label={`Change ${ch.name} colour`} />
@@ -41,7 +47,7 @@ export function ChannelStrip({ ch, index }: { ch: Channel; index: number }) {
       <Button variant="ghost" className="channel-name" aria-label={`Select ${ch.name.toLowerCase()} channel`} aria-pressed={selected}
         title="Click to select. Shift-click adds to the selection. Double-click opens the channel editor."
         onClick={(e) => d.select(ch.id, e.shiftKey || e.metaKey || e.ctrlKey)} onDoubleClick={() => { d.select(ch.id); d.setView("channel"); }}>{ch.name}</Button>
-      <div className="channel-source mt-1 truncate text-[10px] label-text" title={d.files[ch.id]}>
+      <div className="channel-source hide-compact mt-1 truncate text-[10px] label-text" title={d.files[ch.id]}>
         {ch.kind === "mic" ? (ch.stereo ? "Stereo mic" : "Mono mic") : ch.kind === "desktop" ? "Shared tab / screen" : ch.kind === "gen" ? `Generator · ${ch.gen.type}` : d.files[ch.id] || "No audio loaded"}
       </div>
 
@@ -56,9 +62,10 @@ export function ChannelStrip({ ch, index }: { ch: Channel; index: number }) {
         </Button>
       </div>
 
-      <div className="strip-eq mt-2"><EqGraph eq={dsp.eq} compact /></div>
+      <div className="strip-eq mt-2 flex items-center gap-1"><div className="min-w-0 flex-1"><EqGraph eq={dsp.eq} compact /></div><CompCurve comp={dsp.comp} size="size-10 shrink-0" /></div>
+      <div className="show-compact"><ActivityBadges id={ch.id} dsp={dsp} /></div>
 
-      <div className="strip-inserts">
+      <div className="strip-inserts hide-compact">
         {inserts.map(([name, on, toggle]) => (
           <button key={name} type="button" className="insert-slot" data-on={on} aria-pressed={on} onClick={toggle}>
             <span className="led size-1.5 rounded-full" data-on={on} />{name}
@@ -82,20 +89,20 @@ export function ChannelStrip({ ch, index }: { ch: Channel; index: number }) {
         <Toggle on={ch.pfl} title="Pre-fader listen on the monitor output" onClick={() => d.patch(ch.id, { pfl: !ch.pfl })}>PFL</Toggle>
       </div>
 
-      <div className="fader-section flex justify-center gap-3">
-        <div className="fader-scale label-text flex flex-col justify-between text-[9px]">{SCALE.map((s) => <span key={s}>{s}</span>)}</div>
-        <Fader label={`${ch.name} level`} hideLabel value={ch.fader} onChange={(v) => d.patch(ch.id, { fader: v })} />
+      <div className="fader-section flex justify-center gap-3" data-aux={fm > 0}>
+        <div className="fader-scale hide-compact label-text flex flex-col justify-between text-[9px]">{SCALE.map((s) => <span key={s}>{s}</span>)}</div>
+        <Fader label={fm ? `${ch.name} ${auxLabel(fm - 1).toLowerCase()} send` : `${ch.name} level`} hideLabel value={faderValue} onChange={onFader} />
         <Meter read={read} />
       </div>
 
-      <div className="strip-route mt-3 flex items-center gap-1">
+      <div className="strip-route hide-compact mt-3 flex items-center gap-1">
         <select aria-label={`${ch.name} output`} className="console-select w-full rounded px-1 py-1 text-[10px]" value={ch.route} onChange={(e) => d.patch(ch.id, { route: e.target.value as Route })}>
           <option value="master">Master</option><option value="g1">Group 1</option><option value="g2">Group 2</option>
         </select>
         <Toggle on={dsp.input.polarity} title="Invert polarity" onClick={() => d.patchDsp(ch.id, "input", { polarity: !dsp.input.polarity })}>Ø</Toggle>
       </div>
       <div className="channel-foot mt-3 text-center text-[9px] uppercase tracking-widest" data-on={live}>
-        {live ? "● On air" : "Standby"}{dsp.input.delaySamples > 0 ? ` · ${dsp.input.delaySamples} smp` : ""}
+        {fm ? `${auxLabel(fm - 1)} send` : live ? "● On air" : "Standby"}{ch.dca > 0 ? ` · D${ch.dca}` : ""}{ch.muteGrp.some(Boolean) ? " · MG" : ""}{dsp.input.delaySamples > 0 ? ` · ${dsp.input.delaySamples} smp` : ""}
       </div>
     </div>
   );
@@ -139,6 +146,40 @@ export function MasterStrip() {
       </div>
       <div className="mt-4 flex justify-center"><Toggle on={m.mute} onClick={() => d.patchMaster({ mute: !m.mute })}>Mute all</Toggle></div>
       <div className="channel-foot mt-4 text-center text-[9px] uppercase tracking-widest">Program output</div>
+    </div>
+  );
+}
+
+export function DcaStrip({ i, dca }: { i: number; dca: Dca }) {
+  const d = useDesk();
+  const members = d.mixer.channels.filter((c) => c.dca === i + 1).length;
+  return (
+    <div className="channel-strip group-strip" style={{ ["--channel-color" as string]: "oklch(0.8 0.12 60)" }}>
+      <div className="channel-heading flex items-center justify-between"><span className="readout text-xs">DCA{i + 1}</span><Volume2 className="size-4" /></div>
+      <input aria-label={`DCA ${i + 1} name`} className="channel-name-input" value={dca.name} maxLength={12} onChange={(e) => d.patchDca(i, { name: e.target.value.toUpperCase() })} />
+      <div className="channel-source mt-1 text-[10px] label-text">{members} channel{members === 1 ? "" : "s"}</div>
+      <div className="strip-switches mt-4 flex justify-center"><Toggle on={dca.mute} onClick={() => d.patchDca(i, { mute: !dca.mute })}>Mute</Toggle></div>
+      <div className="fader-section group-fader flex justify-center gap-3">
+        <div className="fader-scale label-text flex flex-col justify-between text-[9px]">{SCALE.map((s) => <span key={s}>{s}</span>)}</div>
+        <Fader label={`${dca.name} level`} hideLabel value={dca.fader} onChange={(v) => d.patchDca(i, { fader: v })} />
+      </div>
+      <div className="channel-foot mt-3 text-center text-[9px] uppercase tracking-widest">Trims its channels</div>
+    </div>
+  );
+}
+
+// A plain fader for an effect return or the monitor level.
+export function ReturnStrip({ name, tag, value, onChange, note }: { name: string; tag: string; value: number; onChange: (v: number) => void; note: string }) {
+  return (
+    <div className="channel-strip group-strip" style={{ ["--channel-color" as string]: "oklch(0.78 0.12 300)" }}>
+      <div className="channel-heading flex items-center justify-between"><span className="readout text-xs">{tag}</span><Volume2 className="size-4" /></div>
+      <h2 className="channel-name-input flex items-center justify-center">{name}</h2>
+      <div className="channel-source mt-1 text-[10px] label-text">{note}</div>
+      <div className="fader-section group-fader mt-8 flex justify-center gap-3">
+        <div className="fader-scale label-text flex flex-col justify-between text-[9px]">{SCALE.map((s) => <span key={s}>{s}</span>)}</div>
+        <Fader label={`${name} level`} hideLabel value={value} onChange={onChange} />
+      </div>
+      <div className="channel-foot mt-3 text-center text-[9px] uppercase tracking-widest">Return</div>
     </div>
   );
 }

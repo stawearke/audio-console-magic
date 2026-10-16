@@ -37,7 +37,7 @@ export function Knob({ label, value, min, max, step = 1, unit = "", def, log, si
   const sm = size === "sm";
 
   return (
-    <div className={`flex ${sm ? "w-10" : "w-16"} flex-col items-center gap-1 select-none`}>
+    <div className={`knob-wrap flex ${sm ? "w-10" : "w-16"} flex-col items-center gap-1 select-none`}>
       <div
         className={`knob relative ${sm ? "size-8" : "size-11"} cursor-ns-resize touch-none rounded-full`}
         onPointerDown={onPointerDown}
@@ -87,6 +87,7 @@ export function Meter({ read, label, mode = "level", tall }: { read: () => numbe
   const bar = useRef<HTMLDivElement>(null);
   const txt = useRef<HTMLSpanElement>(null);
   const clipEl = useRef<HTMLButtonElement>(null);
+  const holdEl = useRef<HTMLDivElement>(null);
   const clip = useRef(false);
   useEffect(() => {
     let raf = 0; let hold = -100;
@@ -97,6 +98,7 @@ export function Meter({ read, label, mode = "level", tall }: { read: () => numbe
         bar.current.style.height = `${pct}%`;
       }
       hold = Math.max(v, hold - 0.4);
+      if (holdEl.current) { holdEl.current.style.bottom = `${Math.min(100, Math.max(0, ((hold + 60) / 60) * 100))}%`; holdEl.current.style.display = mode === "level" && hold > -60 ? "block" : "none"; }
       if (mode === "level" && v > -0.5) clip.current = true;
       if (clipEl.current) clipEl.current.dataset["on"] = String(clip.current);
       if (txt.current) txt.current.textContent = mode === "gr" ? `-${v.toFixed(1)}` : hold <= -60 ? "-∞" : hold.toFixed(1);
@@ -110,6 +112,7 @@ export function Meter({ read, label, mode = "level", tall }: { read: () => numbe
       {mode === "level" && <button type="button" ref={clipEl} className="clip-led" aria-label="Clear clip indicator" onClick={() => { clip.current = false; }} />}
       <div className={`meter-track relative ${tall ? "meter-tall" : ""} h-40 w-3 overflow-hidden rounded-sm`}>
         <div ref={bar} className={`${mode === "gr" ? "meter-gr top-0" : "meter-fill bottom-0"} absolute inset-x-0`} style={{ height: 0 }} />
+        {mode === "level" && <div ref={holdEl} className="meter-hold absolute inset-x-0" />}
       </div>
       <span ref={txt} className="readout w-10 text-center text-[10px]">-∞</span>
       {label && <span className="label-text text-[9px] uppercase tracking-widest">{label}</span>}
