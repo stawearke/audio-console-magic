@@ -18,6 +18,7 @@ import { SetupView } from "./SetupView";
 import { Mixer2 } from "./Mixer2";
 import { Show } from "./Show";
 import { ObsPlugin } from "./ObsPlugin";
+import { SpeakerPlanner } from "./SpeakerPlanner";
 
 // Presets change the selected channel (and the shared FX returns for the echo preset).
 const PRESETS: Record<string, (m: Mixer, id: string) => Mixer> = {
@@ -33,7 +34,7 @@ function withDsp(m: Mixer, id: string, dsp: Dsp): Mixer {
 
 const STORE = "stream-console-v2";
 const NAMES: Record<SourceKind, string> = { mic: "MIC", file: "MEDIA", desktop: "DESKTOP", gen: "TONE" };
-const TABS: [View, string, typeof Power][] = [["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench]];
+const TABS: [View, string, typeof Power][] = [["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench], ["speakers", "Speakers", Waves]];
 const midiToDb = (v: number) => Math.round((FADER_MIN + (v / 127) * (FADER_MAX - FADER_MIN)) * 2) / 2;
 
 function saveBlob(blob: Blob, name: string) {
@@ -383,6 +384,7 @@ export function Console() {
           {view === "fx" && <FxView />}
           {view === "patch" && <PatchView />}
           {view === "setup" && <SetupView />}
+          <div hidden={view !== "speakers"}><SpeakerPlanner /></div>
 
           <ObsPlugin />
           <details className="obs-help mt-4 rounded-lg p-4 text-sm">
