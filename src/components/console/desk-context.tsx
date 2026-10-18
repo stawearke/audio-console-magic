@@ -4,7 +4,7 @@ import type { Channel, Dca, Desk, Dsp, Fx, Group, Master, Mixer, SourceKind } fr
 import type { MidiInfo, MidiStatus } from "@/lib/midi";
 import type { ScenesApi } from "@/lib/scenes";
 
-export type View = "mixer" | "mixer2" | "channel" | "fx" | "show" | "patch" | "setup";
+export type View = "mixer" | "mixer2" | "channel" | "fx" | "show" | "patch" | "setup" | "speakers";
 
 export type DeskApi = {
   mixer: Mixer;
