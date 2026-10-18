@@ -11,3 +11,8 @@
 # Updated Windows app delivery
 - [x] Bundle the current mixer into the Windows desktop app and verify its screen and mute control.
 - [x] Provide smaller download parts with an automatic join-and-open launcher. Native Windows launch and hardware audio remain unverified because this environment is Linux.
+
+# Speaker placement planner
+- [ ] Add a scaled, drawable floor plan, speaker types, and editable placement.
+- [ ] Add estimated coverage and per-speaker level, aiming, and delay recommendations with file-based plan saving.
+- [ ] Test placement calculations and verify drawing, recommendations, and narrow-screen controls.
