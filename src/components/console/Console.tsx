@@ -36,7 +36,7 @@ function withDsp(m: Mixer, id: string, dsp: Dsp): Mixer {
 const STORE = "stream-console-v2";
 const NAMES: Record<SourceKind, string> = { mic: "MIC", file: "MEDIA", desktop: "DESKTOP", gen: "TONE" };
 const TABS: [View, string, typeof Power][] = [["obs", "OBS", Radio], ["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench], ["speakers", "Speakers", Waves]];
-// With "Built-in channels" off the console is just your OBS audio: no VOICE / MUSIC / DESKTOP / SOUNDPAD desk.
+// The console is just your OBS audio plus MAIN OUT: no VOICE / MUSIC / DESKTOP / SOUNDPAD desk (a saved flag can still open it).
 const OBS_ONLY: View[] = ["obs", "speakers"];
 const BUILTIN_KEY = "voxone-builtin-channels";
 const midiToDb = (v: number) => Math.round((FADER_MIN + (v / 127) * (FADER_MAX - FADER_MIN)) * 2) / 2;
@@ -54,11 +54,6 @@ export function Console() {
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const [view, setView] = useState<View>("obs");
   const [builtin, setBuiltinState] = useState(false);
-  const setBuiltin = (on: boolean) => {
-    setBuiltinState(on);
-    if (!on) setView((v) => (OBS_ONLY.includes(v) ? v : "obs"));
-    try { localStorage.setItem(BUILTIN_KEY, on ? "1" : "0"); } catch { /* storage blocked */ }
-  };
   // Opened from MK VISION's "Audio Studio" button: /audio?input=<name> lands on the OBS tab.
   const [obsInput, setObsInput] = useState<string | null>(null);
   useEffect(() => {
@@ -363,7 +358,7 @@ export function Console() {
           <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="brand-model">D16</span></h1>
-              <p className="label-text mt-1 text-[10px]">{builtin ? `DIGITAL MIXING CONSOLE · ${mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7 · CTRL+Z` : "OBS AUDIO CONSOLE · every audio input you add in OBS appears here as it is added"}</p>
+              <p className="label-text mt-1 text-[10px]">{builtin ? `DIGITAL MIXING CONSOLE · ${mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7 · CTRL+Z` : "OBS AUDIO CONSOLE · every input you add in OBS appears here as it is added · MAIN OUT = the final mix to stream and recording"}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <a href="/" className="console-btn inline-flex h-8 items-center rounded px-3 text-xs" title="Open the MK VISION switcher">Switcher</a>
@@ -383,7 +378,6 @@ export function Console() {
               <Button variant="ghost" size="icon" className="console-btn size-8" aria-label="Next scene" onClick={() => { const ids = scenes.slots.map((x, n) => (x ? n : -1)).filter((n) => n >= 0); const next = ids.find((n) => n > scenes.current) ?? ids[0]; if (next !== undefined) scenes.recall(next); }}><ChevronRight /></Button>
               </>}
               <Toggle on={skin === "modern"} onClick={() => setSkin(skin === "hardware" ? "modern" : "hardware")}>{skin === "hardware" ? "Hardware look" : "Modern look"}</Toggle>
-              <Toggle on={builtin} onClick={() => setBuiltin(!builtin)} title="Show VOXONE's own browser channels (VOICE, MUSIC, DESKTOP, SOUNDPAD). Off = OBS audio only.">Built-in channels</Toggle>
               {builtin && firstMic && (active[firstMic.id]
                 ? <Button variant="ghost" onClick={() => void toggleSource(firstMic.id)} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="true">● Live — Stop</Button>
                 : <Button variant="ghost" onClick={() => void toggleSource(firstMic.id)} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="false"><Power className="size-4" />Start mic</Button>)}

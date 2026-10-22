@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, useRouter } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
-import { EQ_RANGE, FLAT_EQ, type AudioChannel, type EqValues } from "@/lib/mk/types";
+import { EQ_RANGE, FLAT_EQ, LIMITER_MAX, LIMITER_MIN, type AudioChannel, type EqValues, type LimiterConfig } from "@/lib/mk/types";
+import { powerSum } from "@/lib/mk/audio-math";
 import { DEFAULT_VOICE, VOICE_RANGE as R, voiceFromDsp, type ObsVoice } from "@/lib/mk/obs-voice";
 import { Fader, Knob, Meter, Module, Toggle } from "./controls";
 import { useDesk } from "./desk-context";
@@ -42,6 +43,43 @@ function ObsStrip({ c, level, focused }: { c: AudioChannel; level: number; focus
   );
 }
 
+
+/** A stable `read()` for the meters that always returns the latest value. */
+function useReader(v: number) {
+  const ref = useRef(v);
+  ref.current = v;
+  return useCallback(() => ref.current, []);
+}
+
+// MAIN OUT, like OBS's own mixer and MK VISION's Master: the final mix (every input on MN) to the stream and
+// recording, with the limiter and MUTE OUT. Same engine calls as MK VISION, so both stay in step.
+export function MainOut({ inputs, levels, limiter, gr, muted }: { inputs: AudioChannel[]; levels: Record<string, number>; limiter: LimiterConfig; gr: number | null; muted: boolean }) {
+  const live = inputs.filter((c) => c.stream && !c.muted);
+  const mix = powerSum(live.map((c) => levels[c.name] ?? -100));
+  const out = muted ? -100 : mix;
+  // OBS cannot report gain reduction, so estimate it from how close the mix is to the ceiling.
+  const engaged = limiter.on && !muted && mix >= limiter.threshold - 0.6;
+  const reduction = !limiter.on ? 0 : (gr ?? (engaged ? 2.5 : 0));
+  const readL = useReader(out);
+  const readR = useReader(out - 0.7);
+  const readGr = useReader(reduction);
+  return (
+    <div className="channel-strip master-strip flex min-w-[170px] flex-col items-center gap-2 rounded-md p-2" aria-label="Main out">
+      <span className="selected-display text-xs font-bold uppercase tracking-[0.2em]">Main out</span>
+      <span className="label-text text-[10px]">{live.length} on air</span>
+      <div className="flex items-end gap-2">
+        <Meter read={readL} label="L" />
+        <Meter read={readR} label="R" />
+        <Meter read={readGr} label="GR" mode="gr" />
+      </div>
+      <Knob label="Ceiling" size="sm" min={LIMITER_MIN} max={LIMITER_MAX} step={0.5} unit=" dB" def={-6} value={limiter.threshold} onChange={(v) => engine.setLimiter({ threshold: v })} />
+      <div className="flex flex-wrap justify-center gap-1">
+        <Toggle on={limiter.on} onClick={() => engine.setLimiter({ on: !limiter.on })} title={`Limiter: a ceiling at ${limiter.threshold} dB on every input of the final mix`}>Limiter</Toggle>
+        <Toggle on={muted} onClick={() => void engine.toggleMasterMute()} title="Silence the whole final mix. Press again to bring back exactly what was live.">Mute out</Toggle>
+      </div>
+    </div>
+  );
+}
 
 // The VOXONE voice rack, but running INSIDE OBS: native OBS filters on the chosen input
 // (denoise -> gate -> EQ -> compressor -> gain), so it works for stream, recording and every track.
@@ -104,7 +142,9 @@ function VoicePanel({ names, initial }: { names: string[]; initial: string | nul
 export function ObsDesk({ focus }: { focus: string | null }) {
   const state = useSwitcher();
   const hidden = state.config.hiddenAudio;
-  const strips = state.audio.filter((c) => !hidden.includes(c.name));
+  // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
+  const inputs = state.audio.filter((c) => !/^MK /i.test(c.name));
+  const strips = inputs.filter((c) => !hidden.includes(c.name));
   const connected = state.status === "connected";
   return (
     <>
@@ -112,7 +152,7 @@ export function ObsDesk({ focus }: { focus: string | null }) {
       <div className="flex flex-wrap items-center gap-3 p-3">
         <NavLink to="/" className="console-btn flex h-7 items-center gap-1.5 rounded px-2 text-[10px] font-semibold uppercase tracking-widest"><ArrowLeft className="size-3" />MK VISION</NavLink>
         <span className="label-text text-[11px]">
-          {connected ? `Live OBS audio: ${strips.length} input${strips.length === 1 ? "" : "s"}. Same faders, mutes, MN / PC routing and EQ as the MK mixer.` : `Not connected to OBS (${state.status}). Connect in MK VISION → Settings.`}
+          {connected ? `Live OBS audio: ${strips.length} input${strips.length === 1 ? "" : "s"}. Same faders, mutes, MN / PC routing, EQ and MAIN OUT as the MK mixer.` : `Not connected to OBS (${state.status}). Connect in MK VISION → Settings.`}
         </span>
         {!connected && <NavLink to="/settings" className="console-btn rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-widest">Settings</NavLink>}
       </div>
@@ -120,6 +160,7 @@ export function ObsDesk({ focus }: { focus: string | null }) {
         {strips.length === 0
           ? <p className="label-text p-6 text-xs">{connected ? "OBS reports no audio inputs." : "Waiting for OBS."}</p>
           : strips.map((c) => <ObsStrip key={c.name} c={c} level={state.levels[c.name] ?? -100} focused={c.name === focus} />)}
+        {connected && <MainOut inputs={inputs} levels={state.levels} limiter={state.config.limiter} gr={state.gr} muted={state.masterMuted} />}
       </div>
     </section>
     {connected && strips.length > 0 && <VoicePanel names={strips.map((c) => c.name)} initial={focus} />}

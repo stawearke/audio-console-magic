@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 beforeEach(() => { localStorage.clear(); });
 import { Console } from "@/components/console/Console";
+import { MainOut } from "@/components/console/ObsDesk";
 import { defaultMixer, migrateV1, sanitizeMixer } from "@/lib/mixer-state";
 
-const enableBuiltin = () => fireEvent.click(screen.getByRole("button", { name: /^Built-in channels$/i }));
+// The built-in desk has no button any more; a saved flag still opens it (used to keep testing its tabs).
+const enableBuiltin = () => localStorage.setItem("voxone-builtin-channels", "1");
 
 describe("OBS-only console", () => {
   it("opens on the OBS tab with no built-in VOICE / MUSIC / DESKTOP / SOUNDPAD channels", () => {
@@ -16,6 +18,19 @@ describe("OBS-only console", () => {
     for (const t of [/^Mixer$/, /^Mixer 2$/, /^Channel$/, /^FX$/, /^Patch$/, /^Setup$/]) expect(screen.queryByRole("button", { name: t })).toBeNull();
     for (const n of ["VOICE", "MUSIC", "DESKTOP", "SOUNDPAD"]) expect(screen.queryByText(n)).toBeNull();
     expect(screen.getByLabelText("OBS inputs")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Built-in channels$/i })).toBeNull();
+  });
+
+  it("MAIN OUT shows the final mix with limiter and mute out", () => {
+    window.requestAnimationFrame = () => 0;
+    const lim = { on: true, threshold: -6 };
+    const ch = (name: string, stream: boolean, muted = false) => ({ name, db: 0, muted, monitor: "none" as const, stream, pre: false });
+    const { rerender } = render(<MainOut inputs={[ch("Mic", true), ch("Music", false), ch("Muted", true, true)]} levels={{ Mic: -12 }} limiter={lim} gr={null} muted={false} />);
+    expect(screen.getByText("1 on air")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Mute out$/i }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: /^Limiter$/i }).getAttribute("aria-pressed")).toBe("true");
+    rerender(<MainOut inputs={[ch("Mic", true)]} levels={{ Mic: -12 }} limiter={lim} gr={null} muted />);
+    expect(screen.getByRole("button", { name: /^Mute out$/i }).getAttribute("aria-pressed")).toBe("true");
   });
 });
 
@@ -23,8 +38,8 @@ describe("console smoke", () => {
   it("renders every tab and the compact and fader-mode switches", () => {
     window.requestAnimationFrame = () => 0;
     HTMLCanvasElement.prototype.getContext = (() => null) as never;
-    render(<Console />);
     enableBuiltin();
+    render(<Console />);
     for (const t of ["Mixer 2", "Channel", "FX", "Show", "Patch", "Setup", "Mixer"]) fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${t}$`, "i") }));
     fireEvent.click(screen.getByRole("button", { name: /compact view/i }));
     fireEvent.click(screen.getByRole("button", { name: "REVERB" }));
@@ -37,8 +52,8 @@ describe("undo", () => {
   it("restores a muted channel", () => {
     window.requestAnimationFrame = () => 0;
     HTMLCanvasElement.prototype.getContext = (() => null) as never;
-    render(<Console />);
     enableBuiltin();
+    render(<Console />);
     fireEvent.click(screen.getByRole("button", { name: /^Mixer$/i }));
     const mute = () => screen.getAllByRole("button", { name: /^Mute$/ })[0] as HTMLElement;
     fireEvent.click(mute());
