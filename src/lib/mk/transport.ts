@@ -2,6 +2,7 @@
 // mixer backend. OBS WebSocket 5.x and Demo Mode both implement it, and a
 // future hardware bridge can too.
 import type { FxRect } from "./fx";
+import type { ObsVoice } from "./obs-voice";
 import type { AudioChannel, ConnectionStatus, EqValues, MonitorType, OutputCheckRow } from "./types";
 
 export type TransportEvent =
@@ -83,6 +84,9 @@ export interface Transport {
   playoutStatus?(): Promise<PlayoutStatus | null>;
   /** Set an input's gain + 3-band EQ (the MK Gain / MK EQ filters). */
   setInputEq(name: string, eq: EqValues): Promise<void>;
+  /** Read / write an input's voice chain: OBS native denoise, gate and compressor filters (see obs-voice.ts). */
+  getInputVoice?(name: string): Promise<ObsVoice>;
+  setInputVoice?(name: string, voice: ObsVoice): Promise<void>;
   /**
    * Master limiter: put / take an audio limiter on every named input (the ones on the
    * final mix). `threshold` is the ceiling in dBFS.

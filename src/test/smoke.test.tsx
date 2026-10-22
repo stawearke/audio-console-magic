@@ -1,13 +1,30 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+
+beforeEach(() => { localStorage.clear(); });
 import { Console } from "@/components/console/Console";
 import { defaultMixer, migrateV1, sanitizeMixer } from "@/lib/mixer-state";
+
+const enableBuiltin = () => fireEvent.click(screen.getByRole("button", { name: /^Built-in channels$/i }));
+
+describe("OBS-only console", () => {
+  it("opens on the OBS tab with no built-in VOICE / MUSIC / DESKTOP / SOUNDPAD channels", () => {
+    window.requestAnimationFrame = () => 0;
+    HTMLCanvasElement.prototype.getContext = (() => null) as never;
+    render(<Console />);
+    expect(screen.getByRole("button", { name: /^OBS$/ }).getAttribute("aria-pressed")).toBe("true");
+    for (const t of [/^Mixer$/, /^Mixer 2$/, /^Channel$/, /^FX$/, /^Patch$/, /^Setup$/]) expect(screen.queryByRole("button", { name: t })).toBeNull();
+    for (const n of ["VOICE", "MUSIC", "DESKTOP", "SOUNDPAD"]) expect(screen.queryByText(n)).toBeNull();
+    expect(screen.getByLabelText("OBS inputs")).toBeTruthy();
+  });
+});
 
 describe("console smoke", () => {
   it("renders every tab and the compact and fader-mode switches", () => {
     window.requestAnimationFrame = () => 0;
     HTMLCanvasElement.prototype.getContext = (() => null) as never;
     render(<Console />);
+    enableBuiltin();
     for (const t of ["Mixer 2", "Channel", "FX", "Show", "Patch", "Setup", "Mixer"]) fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${t}$`, "i") }));
     fireEvent.click(screen.getByRole("button", { name: /compact view/i }));
     fireEvent.click(screen.getByRole("button", { name: "REVERB" }));
@@ -21,6 +38,8 @@ describe("undo", () => {
     window.requestAnimationFrame = () => 0;
     HTMLCanvasElement.prototype.getContext = (() => null) as never;
     render(<Console />);
+    enableBuiltin();
+    fireEvent.click(screen.getByRole("button", { name: /^Mixer$/i }));
     const mute = () => screen.getAllByRole("button", { name: /^Mute$/ })[0] as HTMLElement;
     fireEvent.click(mute());
     expect(mute().getAttribute("aria-pressed")).toBe("true");

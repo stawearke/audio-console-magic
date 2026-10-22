@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AudioLines, Cable, ChevronLeft, ChevronRight, MonitorPlay, Power, Redo2, SlidersHorizontal, Sparkles, Undo2, Wrench, Waves } from "lucide-react";
+import { AudioLines, Cable, ChevronLeft, ChevronRight, MonitorPlay, Power, Redo2, SlidersHorizontal, Sparkles, Undo2, Wrench, Waves, Radio } from "lucide-react";
 import { AudioEngine } from "@/lib/audio-engine";
 import { useMidi } from "@/lib/midi";
 import { useScenes } from "@/lib/scenes";
@@ -19,6 +19,7 @@ import { Mixer2 } from "./Mixer2";
 import { Show } from "./Show";
 import { ObsPlugin } from "./ObsPlugin";
 import { SpeakerPlanner } from "./SpeakerPlanner";
+import { ObsDesk } from "./ObsDesk";
 
 // Presets change the selected channel (and the shared FX returns for the echo preset).
 const PRESETS: Record<string, (m: Mixer, id: string) => Mixer> = {
@@ -34,7 +35,10 @@ function withDsp(m: Mixer, id: string, dsp: Dsp): Mixer {
 
 const STORE = "stream-console-v2";
 const NAMES: Record<SourceKind, string> = { mic: "MIC", file: "MEDIA", desktop: "DESKTOP", gen: "TONE" };
-const TABS: [View, string, typeof Power][] = [["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench], ["speakers", "Speakers", Waves]];
+const TABS: [View, string, typeof Power][] = [["obs", "OBS", Radio], ["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench], ["speakers", "Speakers", Waves]];
+// With "Built-in channels" off the console is just your OBS audio: no VOICE / MUSIC / DESKTOP / SOUNDPAD desk.
+const OBS_ONLY: View[] = ["obs", "speakers"];
+const BUILTIN_KEY = "voxone-builtin-channels";
 const midiToDb = (v: number) => Math.round((FADER_MIN + (v / 127) * (FADER_MAX - FADER_MIN)) * 2) / 2;
 
 function saveBlob(blob: Blob, name: string) {
@@ -48,7 +52,19 @@ export function Console() {
   const mixerRef = useRef(mixer); mixerRef.current = mixer;
   const [selected, setSelected] = useState<string[]>(["voice"]);
   const selectedRef = useRef(selected); selectedRef.current = selected;
-  const [view, setView] = useState<View>("mixer");
+  const [view, setView] = useState<View>("obs");
+  const [builtin, setBuiltinState] = useState(false);
+  const setBuiltin = (on: boolean) => {
+    setBuiltinState(on);
+    if (!on) setView((v) => (OBS_ONLY.includes(v) ? v : "obs"));
+    try { localStorage.setItem(BUILTIN_KEY, on ? "1" : "0"); } catch { /* storage blocked */ }
+  };
+  // Opened from MK VISION's "Audio Studio" button: /audio?input=<name> lands on the OBS tab.
+  const [obsInput, setObsInput] = useState<string | null>(null);
+  useEffect(() => {
+    const name = new URLSearchParams(window.location.search).get("input");
+    if (name) { setObsInput(name); setView("obs"); }
+  }, []);
   const [skin, setSkin] = useState<"hardware" | "modern">("hardware");
   const [active, setActive] = useState<Record<string, boolean>>({});
   const activeRef = useRef(active); activeRef.current = active;
@@ -87,6 +103,7 @@ export function Console() {
 
   // Restore the last session (and upgrade the old single-rack save).
   useEffect(() => {
+    try { if (localStorage.getItem(BUILTIN_KEY) === "1") setBuiltinState(true); } catch { /* storage blocked */ }
     try {
       const raw = JSON.parse(localStorage.getItem(STORE) || "null");
       if (raw?.mixer) { const m = sanitizeMixer(raw.mixer); setMixer(m); setSelected([m.channels[0]?.id ?? "voice"]); }
@@ -346,11 +363,12 @@ export function Console() {
           <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="brand text-2xl font-black md:text-3xl">VOX<span className="brand-accent">ONE</span> <span className="brand-model">D16</span></h1>
-              <p className="label-text mt-1 text-[10px]">DIGITAL MIXING CONSOLE · {mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7 · CTRL+Z</p>
+              <p className="label-text mt-1 text-[10px]">{builtin ? `DIGITAL MIXING CONSOLE · ${mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7 · CTRL+Z` : "OBS AUDIO CONSOLE · every audio input you add in OBS appears here as it is added"}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <a href="/" className="console-btn inline-flex h-8 items-center rounded px-3 text-xs" title="Open the MK VISION switcher">Switcher</a>
               <a href="/onair" className="console-btn inline-flex h-8 items-center rounded px-3 text-xs" title="Open OnAir Studio (graphics)">Graphics</a>
+              {builtin && <>
               <select aria-label="Load channel preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const f = PRESETS[e.target.value]; if (f) setMixer((m) => f(m, primary.id)); }}>
                 <option value="">Preset for {primary.name}…</option>
                 {Object.keys(PRESETS).map((k) => <option key={k}>{k}</option>)}
@@ -363,8 +381,10 @@ export function Console() {
                 {scenes.slots.map((s, i) => s && <option key={i} value={i}>{i + 1} · {s.name}</option>)}
               </select>
               <Button variant="ghost" size="icon" className="console-btn size-8" aria-label="Next scene" onClick={() => { const ids = scenes.slots.map((x, n) => (x ? n : -1)).filter((n) => n >= 0); const next = ids.find((n) => n > scenes.current) ?? ids[0]; if (next !== undefined) scenes.recall(next); }}><ChevronRight /></Button>
+              </>}
               <Toggle on={skin === "modern"} onClick={() => setSkin(skin === "hardware" ? "modern" : "hardware")}>{skin === "hardware" ? "Hardware look" : "Modern look"}</Toggle>
-              {firstMic && (active[firstMic.id]
+              <Toggle on={builtin} onClick={() => setBuiltin(!builtin)} title="Show VOXONE's own browser channels (VOICE, MUSIC, DESKTOP, SOUNDPAD). Off = OBS audio only.">Built-in channels</Toggle>
+              {builtin && firstMic && (active[firstMic.id]
                 ? <Button variant="ghost" onClick={() => void toggleSource(firstMic.id)} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="true">● Live — Stop</Button>
                 : <Button variant="ghost" onClick={() => void toggleSource(firstMic.id)} className="power-btn rounded-md px-4 py-2 text-xs font-bold uppercase tracking-widest" data-on="false"><Power className="size-4" />Start mic</Button>)}
             </div>
@@ -373,7 +393,7 @@ export function Console() {
           {error && <p role="alert" className="error-box mb-4 rounded-md p-3 text-sm">{error}</p>}
 
           <nav aria-label="Console view" className="console-tabs mb-4 flex gap-1">
-            {TABS.map(([key, label, Icon]) => (
+            {TABS.filter(([key]) => builtin || OBS_ONLY.includes(key)).map(([key, label, Icon]) => (
               <Button key={key} variant="ghost" className="console-tab" aria-pressed={view === key} data-on={view === key} onClick={() => setView(key)}><Icon />{label}</Button>
             ))}
             <span className="desk-bus-label">MAIN LR <Waves className="size-3" /><span className="status-dot" data-on={Object.values(active).some(Boolean)} /></span>
@@ -386,8 +406,10 @@ export function Console() {
           {view === "fx" && <FxView />}
           {view === "patch" && <PatchView />}
           {view === "setup" && <SetupView />}
+          {view === "obs" && <ObsDesk focus={obsInput} />}
           <div hidden={view !== "speakers"}><SpeakerPlanner /></div>
 
+          {builtin && <>
           <ObsPlugin />
           <details className="obs-help mt-4 rounded-lg p-4 text-sm">
             <summary className="module-title cursor-pointer text-xs font-bold uppercase tracking-[0.2em]">How to connect to OBS</summary>
@@ -399,6 +421,7 @@ export function Console() {
               <li>On systems without application capture, select a virtual cable or an audio interface loopback as Program output.</li>
             </ol>
           </details>
+          </>}
         </div>
       </div>
     </DeskContext.Provider>

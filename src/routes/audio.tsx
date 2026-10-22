@@ -2,6 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Console } from "@/components/console/Console";
 
 export const Route = createFileRoute("/audio")({
+  // ?input=<OBS input name> opens the OBS tab with that input highlighted (set by MK VISION's Audio Studio button).
+  validateSearch: (s: Record<string, unknown>): { input?: string } => {
+    const input = s["input"];
+    return typeof input === "string" && input ? { input } : {};
+  },
   head: () => ({
     meta: [
       { title: "VOXONE Stream Console — Live mic cleanup for OBS" },

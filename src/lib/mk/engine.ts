@@ -50,6 +50,7 @@ import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, ta
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
+import { DEFAULT_VOICE, type ObsVoice } from "./obs-voice";
 import { PLAYOUT_SCENE, type PlayoutStatus, type Transport, type TransportEvent } from "./transport";
 import {
   CAM_COUNT,
@@ -783,6 +784,26 @@ export class SwitcherEngine {
         this.eqTimers.delete(name);
         void this.transport?.setInputEq(name, next).catch(() => {});
       }, 80),
+    );
+  }
+
+  /** The input's voice chain as it is in OBS (native denoise / gate / compressor filters). */
+  async readVoice(name: string): Promise<ObsVoice> {
+    return (await this.transport?.getInputVoice?.(name).catch(() => null)) ?? (JSON.parse(JSON.stringify(DEFAULT_VOICE)) as ObsVoice);
+  }
+
+  private voiceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Write the voice chain to OBS (debounced so dragging a knob does not flood OBS). */
+  setVoice(name: string, voice: ObsVoice) {
+    const old = this.voiceTimers.get(name);
+    if (old) clearTimeout(old);
+    this.voiceTimers.set(
+      name,
+      setTimeout(() => {
+        this.voiceTimers.delete(name);
+        void this.transport?.setInputVoice?.(name, voice).catch(() => {});
+      }, 120),
     );
   }
 

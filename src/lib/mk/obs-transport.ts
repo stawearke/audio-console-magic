@@ -6,6 +6,7 @@ import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
+import { DEFAULT_VOICE, FILTER_CHAIN, VOICE_FILTERS, applySettings, toSettings, type ObsVoice, type VoiceKey } from "./obs-voice";
 import { DSK_COUNT, FLAT_EQ, type AudioChannel, type EqValues, type MonitorType, type OutputCheckRow } from "./types";
 
 export interface ObsTransportOptions {
@@ -424,7 +425,7 @@ export class ObsTransport implements Transport {
     await this.upsertFilter(name, EQ_FILTER, "basic_eq_filter", { low: eq.lo, mid: eq.mid, high: eq.hi }, eq.lo !== 0 || eq.mid !== 0 || eq.hi !== 0);
   }
 
-  private async upsertFilter(sourceName: string, filterName: string, filterKind: string, filterSettings: Record<string, number>, enabled: boolean) {
+  private async upsertFilter(sourceName: string, filterName: string, filterKind: string, filterSettings: Record<string, number | string>, enabled: boolean) {
     const { filters } = await this.obs.call("GetSourceFilterList", { sourceName });
     const has = (filters as Array<Record<string, unknown>>).some((f) => f["filterName"] === filterName);
     if (!has) {
@@ -435,6 +436,49 @@ export class ObsTransport implements Transport {
     }
     await this.obs.call("SetSourceFilterSettings", { sourceName, filterName, filterSettings, overlay: true });
     await this.obs.call("SetSourceFilterEnabled", { sourceName, filterName, filterEnabled: enabled });
+  }
+
+  /** Read the MK Denoise / Gate / Compressor filters of an input (defaults and off when they do not exist). */
+  async getInputVoice(name: string): Promise<ObsVoice> {
+    const voice: ObsVoice = JSON.parse(JSON.stringify(DEFAULT_VOICE));
+    try {
+      const { filters } = await this.obs.call("GetSourceFilterList", { sourceName: name });
+      for (const f of filters as Array<Record<string, unknown>>) {
+        for (const key of Object.keys(VOICE_FILTERS) as VoiceKey[]) {
+          if (f["filterName"] !== VOICE_FILTERS[key].name) continue;
+          applySettings(key, voice, f["filterEnabled"] !== false, (f["filterSettings"] ?? {}) as Record<string, unknown>);
+        }
+      }
+    } catch {
+      /* input without filter support */
+    }
+    return voice;
+  }
+
+  /** Voice chain as native OBS filters, so it runs inside OBS (stream, recording, every track). */
+  async setInputVoice(name: string, voice: ObsVoice) {
+    for (const key of Object.keys(VOICE_FILTERS) as VoiceKey[]) {
+      const f = VOICE_FILTERS[key];
+      await this.upsertFilter(name, f.name, f.kind, toSettings(key, voice), voice[key].on);
+    }
+    await this.orderFilters(name);
+  }
+
+  /** Put our filters in signal-flow order (denoise, gate, EQ, compressor, gain, limiter); other filters follow. */
+  private async orderFilters(sourceName: string) {
+    try {
+      const { filters } = await this.obs.call("GetSourceFilterList", { sourceName });
+      const names = (filters as Array<Record<string, unknown>>).map((f) => String(f["filterName"]));
+      const want = [...FILTER_CHAIN.filter((n) => names.includes(n)), ...names.filter((n) => !FILTER_CHAIN.includes(n))];
+      for (let i = 0; i < want.length; i++) {
+        if (names[i] === want[i]) continue;
+        await this.obs.call("SetSourceFilterIndex", { sourceName, filterName: want[i]!, filterIndex: i });
+        names.splice(names.indexOf(want[i]!), 1);
+        names.splice(i, 0, want[i]!);
+      }
+    } catch {
+      /* ordering is cosmetic: the filters still work */
+    }
   }
 
   /** The limiter lives on each input as an OBS "Limiter" filter named MK Limiter. */

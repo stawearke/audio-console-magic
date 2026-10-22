@@ -1,0 +1,16 @@
+{
+  "name": "MK Vision Suite",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "postCreateCommand": "npm install --legacy-peer-deps",
+  "postAttachCommand": "echo 'Run: npm run dev -- --host   |   Tests: npx vitest run   |   Types: npx tsc --noEmit'",
+  "forwardPorts": [5173, 8080],
+  "portsAttributes": {
+    "5173": { "label": "MK Vision dev", "onAutoForward": "openBrowser" },
+    "8080": { "label": "MK Vision dev (alt)", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "bradlc.vscode-tailwindcss"]
+    }
+  }
+}

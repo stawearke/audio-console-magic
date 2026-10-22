@@ -1,6 +1,7 @@
 // Demo Mode: full switcher behaviour with no OBS present.
 import { EventBus, type Transport } from "./transport";
 import type { AudioChannel, EqValues, MonitorType, OutputCheckRow } from "./types";
+import { DEFAULT_VOICE, type ObsVoice } from "./obs-voice";
 
 const DEMO_SCENES = [
   "Camera 1 Wide",
@@ -132,6 +133,16 @@ export class DemoTransport implements Transport {
 
   async restorePrelistenOutput(): Promise<OutputCheckRow[]> {
     return this.checkPrelistenOutput();
+  }
+
+  private voices = new Map<string, ObsVoice>();
+
+  async getInputVoice(name: string): Promise<ObsVoice> {
+    return JSON.parse(JSON.stringify(this.voices.get(name) ?? DEFAULT_VOICE)) as ObsVoice;
+  }
+
+  async setInputVoice(name: string, voice: ObsVoice) {
+    this.voices.set(name, JSON.parse(JSON.stringify(voice)) as ObsVoice);
   }
 
   async setLimiter(_inputs: string[], on: boolean, threshold: number) {
