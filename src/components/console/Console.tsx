@@ -349,6 +349,7 @@ export function Console() {
               <p className="label-text mt-1 text-[10px]">DIGITAL MIXING CONSOLE · {mixer.channels.length} CHANNELS / 2 GROUPS / 4 DCA / 3 AUX · KEYS: M S P ← → 1-7 · CTRL+Z</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <a href="/" className="console-btn inline-flex h-8 items-center rounded px-3 text-xs" title="Open OnAir Studio (graphics)">Graphics</a>
               <select aria-label="Load channel preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const f = PRESETS[e.target.value]; if (f) setMixer((m) => f(m, primary.id)); }}>
                 <option value="">Preset for {primary.name}…</option>
                 {Object.keys(PRESETS).map((k) => <option key={k}>{k}</option>)}

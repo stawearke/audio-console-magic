@@ -29,7 +29,7 @@ function createWindow(port) {
     title: "VOXONE Stream Console", backgroundColor: "#0b0f14", autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
-  win.loadURL(`http://127.0.0.1:${port}/`);
+  win.loadURL(`http://127.0.0.1:${port}/audio`);
 }
 
 app.whenReady().then(async () => {
