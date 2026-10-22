@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ObsTransport } from "@/lib/mk/obs-transport";
-import { DEFAULT_VOICE, FILTER_CHAIN, VOICE_FILTERS, voiceFromDsp, type ObsVoice } from "@/lib/mk/obs-voice";
+import { DEFAULT_VOICE, FILTER_CHAIN, VOICE_FILTERS, normalizeVoice, voiceFromDsp, type ObsVoice } from "@/lib/mk/obs-voice";
 import { voiceDsp } from "@/lib/mixer-state";
 
 // A tiny fake OBS that keeps one input's filter list, like obs-websocket does.
@@ -28,7 +28,7 @@ function fakeObs(initial: string[] = []) {
   return { t, filters, calls };
 }
 
-const on = (v: ObsVoice): ObsVoice => ({ denoise: { on: true }, gate: { ...v.gate, on: true, threshold: -35 }, comp: { ...v.comp, on: true, ratio: 4 } });
+const on = (v: ObsVoice): ObsVoice => ({ ...v, denoise: { on: true }, gate: { ...v.gate, on: true, threshold: -35 }, comp: { ...v.comp, on: true, ratio: 4 } });
 
 describe("OBS voice filters", () => {
   it("creates the native filters with the right kinds and settings", async () => {
@@ -72,5 +72,42 @@ describe("OBS voice filters", () => {
 
   it("chain lists every filter we create", () => {
     for (const f of Object.values(VOICE_FILTERS)) expect(FILTER_CHAIN).toContain(f.name);
+  });
+
+  it("ducking is an OBS compressor listening to another input", async () => {
+    const { t, filters } = fakeObs();
+    await t.setInputVoice!("Music", { ...DEFAULT_VOICE, duck: { on: true, source: "Mic", threshold: -30, ratio: 16, attack: 10, release: 500 } });
+    const duck = filters.find((f) => f.filterName === "MK Duck")!;
+    expect(duck.filterKind).toBe("compressor_filter");
+    expect(duck.filterEnabled).toBe(true);
+    expect(duck.filterSettings).toMatchObject({ sidechain_source: "Mic", threshold: -30, ratio: 16, attack_time: 10, release_time: 500, output_gain: 0 });
+    const back = await t.getInputVoice!("Music");
+    expect(back.duck).toEqual({ on: true, source: "Mic", threshold: -30, ratio: 16, attack: 10, release: 500 });
+  });
+
+  it("a duck with no source is never switched on (it would compress the input against itself)", async () => {
+    const { t, filters } = fakeObs();
+    await t.setInputVoice!("Music", { ...DEFAULT_VOICE, duck: { ...DEFAULT_VOICE.duck, on: true, source: "" } });
+    expect(filters).toHaveLength(0);
+    await t.setInputVoice!("Music", { ...DEFAULT_VOICE, duck: { ...DEFAULT_VOICE.duck, on: true, source: "Mic" } });
+    await t.setInputVoice!("Music", { ...DEFAULT_VOICE, duck: { ...DEFAULT_VOICE.duck, on: true, source: "" } });
+    expect(filters.find((f) => f.filterName === "MK Duck")!.filterEnabled).toBe(false);
+  });
+
+  it("the duck sits after the voice compressor and before gain", async () => {
+    const { t, filters } = fakeObs(["MK Gain"]);
+    await t.setInputVoice!("Music", { ...on(DEFAULT_VOICE), duck: { ...DEFAULT_VOICE.duck, on: true, source: "Mic" } });
+    expect(filters.map((f) => f.filterName)).toEqual(["MK Denoise", "MK Gate", "MK Compressor", "MK Duck", "MK Gain"]);
+  });
+
+  it("older saves without a duck, and junk values, become a complete valid voice", () => {
+    const old = { denoise: { on: true }, gate: { on: true, threshold: -33, attack: 2, release: 90 }, comp: { on: false, threshold: "loud", ratio: 4 } };
+    const v = normalizeVoice(old);
+    expect(v.duck).toEqual(DEFAULT_VOICE.duck);
+    expect(v.denoise.on).toBe(true);
+    expect(v.gate.threshold).toBe(-33);
+    expect(v.comp.threshold).toBe(DEFAULT_VOICE.comp.threshold);
+    expect(v.comp.ratio).toBe(4);
+    expect(normalizeVoice(null)).toEqual(DEFAULT_VOICE);
   });
 });

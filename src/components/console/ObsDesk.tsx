@@ -87,7 +87,7 @@ export function MainOut({ inputs, levels, limiter, gr, muted }: { inputs: AudioC
 
 // The VOXONE voice rack, but running INSIDE OBS: native OBS filters on the chosen input
 // (denoise -> gate -> EQ -> compressor -> gain), so it works for stream, recording and every track.
-export function VoicePanel({ name }: { name: string }) {
+export function VoicePanel({ name, sources = [] }: { name: string; sources?: string[] }) {
   const [voice, setVoice] = useState<ObsVoice>(DEFAULT_VOICE);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -101,6 +101,9 @@ export function VoicePanel({ name }: { name: string }) {
   const commit = (next: ObsVoice) => { setVoice(next); engine.setVoice(name, next); };
   const gate = (p: Partial<ObsVoice["gate"]>) => commit({ ...voice, gate: { ...voice.gate, ...p } });
   const comp = (p: Partial<ObsVoice["comp"]>) => commit({ ...voice, comp: { ...voice.comp, ...p } });
+  const duck = (p: Partial<ObsVoice["duck"]>) => commit({ ...voice, duck: { ...voice.duck, ...p } });
+  const others = sources.filter((n) => n !== name);
+  const shown = voice.duck.source && !others.includes(voice.duck.source) ? [...others, voice.duck.source] : others;
   const k = (label: string, value: number, [min, max]: readonly [number, number], unit: string, def: number, onChange: (v: number) => void, step = 1) => (
     <Knob label={label} size="sm" min={min} max={max} step={step} unit={unit} def={def} value={value} onChange={onChange} />
   );
@@ -109,14 +112,14 @@ export function VoicePanel({ name }: { name: string }) {
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h3 className="module-title text-[11px] font-bold uppercase tracking-[0.2em]">Voice processing in OBS</h3>
         <span className="label-text text-[11px]">{name}</span>
-        <select aria-label="Voice preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const p = obsVoicePreset(e.target.value); if (p) commit(p); }}>
+        <select aria-label="Voice preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const p = obsVoicePreset(e.target.value); if (p) commit({ ...p, duck: voice.duck }); }}>
           <option value="">Preset…</option>
           {OBS_VOICE_PRESET_NAMES.map((n) => <option key={n}>{n}</option>)}
         </select>
-        <Toggle on={false} title="Switch all three stages off" onClick={() => commit(DEFAULT_VOICE)}>Reset</Toggle>
+        <Toggle on={false} title="Switch every stage off" onClick={() => commit(DEFAULT_VOICE)}>Reset</Toggle>
         <span className="label-text text-[10px]">{loaded ? "Native OBS filters: runs in OBS itself." : "Reading OBS…"}</span>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Module title="Noise suppression" on={voice.denoise.on} onToggle={() => commit({ ...voice, denoise: { on: !voice.denoise.on } })}>
           <span className="label-text max-w-[14rem] text-center text-[10px] leading-relaxed">AI denoise (RNNoise) from OBS. Takes hiss, fans and room noise out of the voice.</span>
         </Module>
@@ -132,10 +135,20 @@ export function VoicePanel({ name }: { name: string }) {
           {k("Release", voice.comp.release, R.compRelease, " ms", 60, (v) => comp({ release: v }), 5)}
           {k("Makeup", voice.comp.makeup, R.compMakeup, " dB", 0, (v) => comp({ makeup: v }), 0.5)}
         </Module>
+        <Module title="Duck under" on={voice.duck.on && !!voice.duck.source} onToggle={() => duck({ on: !(voice.duck.on && !!voice.duck.source) })}>
+          <select aria-label="Duck under this input" className="console-select max-w-[12rem] rounded px-2 py-1.5 text-xs" value={voice.duck.source} onChange={(e) => duck({ source: e.target.value, on: e.target.value ? true : false })}>
+            <option value="">Pick an input…</option>
+            {shown.map((n) => <option key={n} value={n}>{others.includes(n) ? n : `${n} (not in OBS)`}</option>)}
+          </select>
+          {k("Thresh", voice.duck.threshold, R.duckThreshold, " dB", -35, (v) => duck({ threshold: v }))}
+          {k("Depth", voice.duck.ratio, R.duckRatio, ":1", 12, (v) => duck({ ratio: v }))}
+          {k("Attack", voice.duck.attack, R.duckAttack, " ms", 20, (v) => duck({ attack: v }))}
+          {k("Release", voice.duck.release, R.duckRelease, " ms", 400, (v) => duck({ release: v }), 10)}
+        </Module>
       </div>
       <p className="label-text mt-3 text-[10px] leading-relaxed">
         EQ and gain are the strip knobs above. Limiter: MK VISION's master LIM. De-esser, warmth, reverb and delay exist only in VOXONE's browser rack: OBS has no filter for them.
-        Filters are named MK Denoise / MK Gate / MK Compressor and sit before MK EQ in the input's filter list.
+        Put "Duck under" on music or background inputs and pick the mic: the music drops while the mic talks (Depth = how far, Release = how fast it comes back). Filters are named MK Denoise / MK Gate / MK Compressor / MK Duck.
       </p>
     </section>
   );

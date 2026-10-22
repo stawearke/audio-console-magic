@@ -38,6 +38,9 @@ describe("groups and snapshots logic", () => {
     expect(slots[0]!.inputs["A"]).toMatchObject({ db: -3, muted: true });
     expect(slots[0]!.inputs["A"]!.eq.hi).toBe(2);
     expect(slots[0]!.inputs["B"]!.stream).toBe(false);
+    // A snapshot saved before ducking existed still loads, with the duck off.
+    const old = sanitizeSnapshots([{ name: "Old", inputs: { A: { db: 0, muted: false, stream: true, eq: {}, voice: { denoise: { on: true }, gate: { on: false }, comp: { on: false } } } } }]);
+    expect(old[0]!.inputs["A"]!.voice!.duck).toMatchObject({ on: false, source: "" });
     expect(slots.slice(1).every((s) => s === null)).toBe(true);
   });
 
@@ -148,6 +151,18 @@ describe("OBS desk views (demo OBS)", () => {
     fireEvent.change(await screen.findByLabelText("Voice preset"), { target: { value: "Radio DJ" } });
     await waitFor(async () => expect((await engine.readVoice("CAM 2 Mic")).comp).toMatchObject({ on: true, ratio: 6, threshold: -28 }));
     expect((await engine.readVoice("CAM 2 Mic")).denoise.on).toBe(true);
+  });
+
+  it("Channel: ducking picks another input as the source, never itself", async () => {
+    render(<VoicePanel name="Music Bed" sources={["Music Bed", "CAM 1 Mic", "Presenter Lav"]} />);
+    const pick = (await screen.findByLabelText("Duck under this input")) as HTMLSelectElement;
+    expect([...pick.options].map((o) => o.textContent)).toEqual(["Pick an input…", "CAM 1 Mic", "Presenter Lav"]);
+    fireEvent.change(pick, { target: { value: "Presenter Lav" } });
+    await waitFor(async () => expect((await engine.readVoice("Music Bed")).duck).toMatchObject({ on: true, source: "Presenter Lav" }));
+    // A voice preset must not wipe the duck the user set up.
+    fireEvent.change(screen.getByLabelText("Voice preset"), { target: { value: "Flat" } });
+    await waitFor(async () => expect((await engine.readVoice("Music Bed")).comp.on).toBe(false));
+    expect((await engine.readVoice("Music Bed")).duck).toMatchObject({ on: true, source: "Presenter Lav" });
   });
 
   it("Show: saves the mix, and recall puts back what was changed afterwards", async () => {

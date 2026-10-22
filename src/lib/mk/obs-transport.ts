@@ -494,7 +494,9 @@ export class ObsTransport implements Transport {
   async setInputVoice(name: string, voice: ObsVoice) {
     for (const key of Object.keys(VOICE_FILTERS) as VoiceKey[]) {
       const f = VOICE_FILTERS[key];
-      await this.upsertFilter(name, f.name, f.kind, toSettings(key, voice), voice[key].on);
+      // A duck with no source would compress the input against itself, so it stays off until a source is chosen.
+      const enabled = key === "duck" ? voice.duck.on && !!voice.duck.source : voice[key].on;
+      await this.upsertFilter(name, f.name, f.kind, toSettings(key, voice), enabled);
     }
     await this.orderFilters(name);
   }

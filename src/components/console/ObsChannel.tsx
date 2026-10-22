@@ -55,7 +55,7 @@ export function ObsChannel({ focus }: { focus: string | null }) {
           </Module>
         </div>
       </section>
-      <VoicePanel name={name} />
+      <VoicePanel name={name} sources={inputs.map((c) => c.name)} />
     </>
   );
 }

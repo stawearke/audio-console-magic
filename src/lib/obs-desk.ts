@@ -1,7 +1,7 @@
 // Pure logic for the OBS desk: groups (DCA-style) and mix snapshots. No UI, no OBS calls.
 import type { AudioChannel, EqValues } from "@/lib/mk/types";
 import { FLAT_EQ } from "@/lib/mk/types";
-import type { ObsVoice } from "@/lib/mk/obs-voice";
+import { normalizeVoice, type ObsVoice } from "@/lib/mk/obs-voice";
 
 export const GROUP_COUNT = 4;
 export const SNAPSHOT_SLOTS = 8;
@@ -89,7 +89,7 @@ function sanitizeInput(raw: unknown): SnapInput | null {
     stream: r["stream"] !== false,
     eq: { gain: num(eq["gain"], 0), hi: num(eq["hi"], 0), mid: num(eq["mid"], 0), lo: num(eq["lo"], 0) } as EqValues,
   };
-  if (r["voice"] && typeof r["voice"] === "object") out.voice = r["voice"] as ObsVoice;
+  if (r["voice"] && typeof r["voice"] === "object") out.voice = normalizeVoice(r["voice"]);
   return out;
 }
 
