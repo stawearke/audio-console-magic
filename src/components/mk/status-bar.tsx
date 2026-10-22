@@ -50,6 +50,12 @@ export function StatusBar({ status, statusMessage, demo, menus, listen }: Status
             {statusMessage && !demo ? ` · ${statusMessage}` : ""}
           </span>
         </div>
+        <a href="/onair" className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]" aria-label="OnAir Studio graphics">
+          OnAir
+        </a>
+        <a href="/audio" className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]" aria-label="VOXONE audio console">
+          Audio
+        </a>
         <Link to="/playout" className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]" aria-label="Video playout">
           Playout
         </Link>

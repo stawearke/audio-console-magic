@@ -10,8 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AudioRouteImport } from './routes/audio'
 import { Route as CamRouteImport } from './routes/cam'
 import { Route as GraphicsRouteImport } from './routes/graphics'
+import { Route as OnairRouteImport } from './routes/onair'
+import { Route as OutputRouteImport } from './routes/output'
 import { Route as PlayoutRouteImport } from './routes/playout'
 import { Route as PrompterRouteImport } from './routes/prompter'
 import { Route as RundownRouteImport } from './routes/rundown'
@@ -23,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AudioRoute = AudioRouteImport.update({
+  id: '/audio',
+  path: '/audio',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CamRoute = CamRouteImport.update({
   id: '/cam',
   path: '/cam',
@@ -31,6 +39,16 @@ const CamRoute = CamRouteImport.update({
 const GraphicsRoute = GraphicsRouteImport.update({
   id: '/graphics',
   path: '/graphics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnairRoute = OnairRouteImport.update({
+  id: '/onair',
+  path: '/onair',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OutputRoute = OutputRouteImport.update({
+  id: '/output',
+  path: '/output',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlayoutRoute = PlayoutRouteImport.update({
@@ -61,8 +79,11 @@ const SoundsRoute = SoundsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/audio': typeof AudioRoute
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
+  '/onair': typeof OnairRoute
+  '/output': typeof OutputRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
@@ -71,8 +92,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/audio': typeof AudioRoute
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
+  '/onair': typeof OnairRoute
+  '/output': typeof OutputRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
@@ -82,8 +106,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/audio': typeof AudioRoute
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
+  '/onair': typeof OnairRoute
+  '/output': typeof OutputRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
@@ -94,8 +121,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/audio'
     | '/cam'
     | '/graphics'
+    | '/onair'
+    | '/output'
     | '/playout'
     | '/prompter'
     | '/rundown'
@@ -104,8 +134,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/audio'
     | '/cam'
     | '/graphics'
+    | '/onair'
+    | '/output'
     | '/playout'
     | '/prompter'
     | '/rundown'
@@ -114,8 +147,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/audio'
     | '/cam'
     | '/graphics'
+    | '/onair'
+    | '/output'
     | '/playout'
     | '/prompter'
     | '/rundown'
@@ -125,8 +161,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AudioRoute: typeof AudioRoute
   CamRoute: typeof CamRoute
   GraphicsRoute: typeof GraphicsRoute
+  OnairRoute: typeof OnairRoute
+  OutputRoute: typeof OutputRoute
   PlayoutRoute: typeof PlayoutRoute
   PrompterRoute: typeof PrompterRoute
   RundownRoute: typeof RundownRoute
@@ -143,6 +182,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/audio': {
+      id: '/audio'
+      path: '/audio'
+      fullPath: '/audio'
+      preLoaderRoute: typeof AudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cam': {
       id: '/cam'
       path: '/cam'
@@ -155,6 +201,20 @@ declare module '@tanstack/react-router' {
       path: '/graphics'
       fullPath: '/graphics'
       preLoaderRoute: typeof GraphicsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onair': {
+      id: '/onair'
+      path: '/onair'
+      fullPath: '/onair'
+      preLoaderRoute: typeof OnairRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/output': {
+      id: '/output'
+      path: '/output'
+      fullPath: '/output'
+      preLoaderRoute: typeof OutputRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/playout': {
@@ -197,8 +257,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AudioRoute: AudioRoute,
   CamRoute: CamRoute,
   GraphicsRoute: GraphicsRoute,
+  OnairRoute: OnairRoute,
+  OutputRoute: OutputRoute,
   PlayoutRoute: PlayoutRoute,
   PrompterRoute: PrompterRoute,
   RundownRoute: RundownRoute,
