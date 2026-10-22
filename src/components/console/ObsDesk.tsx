@@ -4,9 +4,9 @@ import { ArrowLeft } from "lucide-react";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { EQ_RANGE, FLAT_EQ, LIMITER_MAX, LIMITER_MIN, type AudioChannel, type EqValues, type LimiterConfig } from "@/lib/mk/types";
 import { powerSum } from "@/lib/mk/audio-math";
-import { DEFAULT_VOICE, VOICE_RANGE as R, voiceFromDsp, type ObsVoice } from "@/lib/mk/obs-voice";
+import { DEFAULT_VOICE, VOICE_RANGE as R, type ObsVoice } from "@/lib/mk/obs-voice";
+import { OBS_VOICE_PRESET_NAMES, obsVoicePreset } from "@/lib/obs-voice-presets";
 import { Fader, Knob, Meter, Module, Toggle } from "./controls";
-import { useDesk } from "./desk-context";
 
 // In-app navigation keeps the OBS connection alive; without a router (tests, embedding) fall back to a plain link.
 function NavLink({ to, className, children }: { to: "/" | "/settings"; className: string; children: ReactNode }) {
@@ -88,7 +88,6 @@ export function MainOut({ inputs, levels, limiter, gr, muted }: { inputs: AudioC
 // The VOXONE voice rack, but running INSIDE OBS: native OBS filters on the chosen input
 // (denoise -> gate -> EQ -> compressor -> gain), so it works for stream, recording and every track.
 export function VoicePanel({ name }: { name: string }) {
-  const desk = useDesk();
   const [voice, setVoice] = useState<ObsVoice>(DEFAULT_VOICE);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -110,7 +109,10 @@ export function VoicePanel({ name }: { name: string }) {
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h3 className="module-title text-[11px] font-bold uppercase tracking-[0.2em]">Voice processing in OBS</h3>
         <span className="label-text text-[11px]">{name}</span>
-        <Toggle on={false} title={`Copy the gate, compressor and noise settings of VOXONE channel ${desk.primary.name} onto this OBS input`} onClick={() => commit(voiceFromDsp(desk.primary.dsp))}>Copy from {desk.primary.name}</Toggle>
+        <select aria-label="Voice preset" className="console-select rounded px-2 py-1.5 text-xs" value="" onChange={(e) => { const p = obsVoicePreset(e.target.value); if (p) commit(p); }}>
+          <option value="">Preset…</option>
+          {OBS_VOICE_PRESET_NAMES.map((n) => <option key={n}>{n}</option>)}
+        </select>
         <Toggle on={false} title="Switch all three stages off" onClick={() => commit(DEFAULT_VOICE)}>Reset</Toggle>
         <span className="label-text text-[10px]">{loaded ? "Native OBS filters: runs in OBS itself." : "Reading OBS…"}</span>
       </div>

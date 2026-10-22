@@ -7,6 +7,9 @@ import { GROUPS_KEY, SNAPSHOTS_KEY, SNAPSHOT_SLOTS, defaultGroups, groupMuted, r
 import { ObsPatch } from "@/components/console/ObsPatch";
 import { ObsGroups } from "@/components/console/ObsGroups";
 import { ObsShow } from "@/components/console/ObsShow";
+import { VoicePanel } from "@/components/console/ObsDesk";
+import { OBS_VOICE_PRESET_NAMES, obsVoicePreset } from "@/lib/obs-voice-presets";
+import { VOICE_RANGE as R } from "@/lib/mk/obs-voice";
 
 const ch = (name: string, o: Partial<AudioChannel> = {}): AudioChannel => ({ name, db: -6, muted: false, monitor: "none", stream: true, pre: false, ...o });
 
@@ -41,6 +44,33 @@ describe("groups and snapshots logic", () => {
   it("recall applies what exists in OBS and reports what does not", () => {
     const snap = snapshotOf("S", [ch("A"), ch("Old mic")]);
     expect(recallPlan(snap, [ch("A"), ch("New")])).toEqual({ apply: ["A"], missing: ["Old mic"] });
+  });
+});
+
+describe("OBS voice presets", () => {
+  const inRange = (v: number, [lo, hi]: readonly [number, number]) => v >= lo && v <= hi;
+  it("offers VOXONE's voice presets that OBS can do, without Cave Echo (needs reverb)", () => {
+    expect(OBS_VOICE_PRESET_NAMES).toEqual(["Broadcast Voice", "Noisy Room", "Radio DJ", "Flat"]);
+    expect(obsVoicePreset("Cave Echo")).toBeNull();
+  });
+  it("every preset stays inside what the OBS filters accept", () => {
+    for (const n of OBS_VOICE_PRESET_NAMES) {
+      const v = obsVoicePreset(n)!;
+      expect(inRange(v.gate.threshold, R.gateThreshold) && inRange(v.gate.attack, R.gateAttack) && inRange(v.gate.release, R.gateRelease), n).toBe(true);
+      expect(inRange(v.comp.threshold, R.compThreshold) && inRange(v.comp.ratio, R.compRatio) && inRange(v.comp.attack, R.compAttack), n).toBe(true);
+      expect(inRange(v.comp.release, R.compRelease) && inRange(v.comp.makeup, R.compMakeup), n).toBe(true);
+    }
+  });
+  it("each preset does what its name says", () => {
+    expect(obsVoicePreset("Flat")).toMatchObject({ denoise: { on: false }, gate: { on: false }, comp: { on: false } });
+    expect(obsVoicePreset("Noisy Room")).toMatchObject({ denoise: { on: true }, gate: { on: true, threshold: -42 } });
+    expect(obsVoicePreset("Radio DJ")!.comp).toMatchObject({ on: true, ratio: 6, threshold: -28, makeup: 8 });
+    expect(obsVoicePreset("Broadcast Voice")!.denoise.on).toBe(true);
+  });
+  it("hands out copies, so changing one never changes the preset", () => {
+    const a = obsVoicePreset("Radio DJ")!;
+    a.comp.ratio = 1;
+    expect(obsVoicePreset("Radio DJ")!.comp.ratio).toBe(6);
   });
 });
 
@@ -111,6 +141,13 @@ describe("OBS desk views (demo OBS)", () => {
     expect(mute.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(mute);
     await waitFor(() => expect(within(screen.getByLabelText("GROUP 1")).getByRole("button", { name: /^Mute$/ }).getAttribute("aria-pressed")).toBe("true"));
+  });
+
+  it("Channel: a preset is written to the OBS input as filters", async () => {
+    render(<VoicePanel name="CAM 2 Mic" />);
+    fireEvent.change(await screen.findByLabelText("Voice preset"), { target: { value: "Radio DJ" } });
+    await waitFor(async () => expect((await engine.readVoice("CAM 2 Mic")).comp).toMatchObject({ on: true, ratio: 6, threshold: -28 }));
+    expect((await engine.readVoice("CAM 2 Mic")).denoise.on).toBe(true);
   });
 
   it("Show: saves the mix, and recall puts back what was changed afterwards", async () => {
