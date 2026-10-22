@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AudioLines, Cable, ChevronLeft, ChevronRight, MonitorPlay, Power, Redo2, SlidersHorizontal, Sparkles, Undo2, Wrench, Waves } from "lucide-react";
+import { AudioLines, Cable, ChevronLeft, ChevronRight, MonitorPlay, Power, Redo2, SlidersHorizontal, Sparkles, Undo2, Wrench, Waves, Radio } from "lucide-react";
 import { AudioEngine } from "@/lib/audio-engine";
 import { useMidi } from "@/lib/midi";
 import { useScenes } from "@/lib/scenes";
@@ -19,6 +19,7 @@ import { Mixer2 } from "./Mixer2";
 import { Show } from "./Show";
 import { ObsPlugin } from "./ObsPlugin";
 import { SpeakerPlanner } from "./SpeakerPlanner";
+import { ObsDesk } from "./ObsDesk";
 
 // Presets change the selected channel (and the shared FX returns for the echo preset).
 const PRESETS: Record<string, (m: Mixer, id: string) => Mixer> = {
@@ -34,7 +35,7 @@ function withDsp(m: Mixer, id: string, dsp: Dsp): Mixer {
 
 const STORE = "stream-console-v2";
 const NAMES: Record<SourceKind, string> = { mic: "MIC", file: "MEDIA", desktop: "DESKTOP", gen: "TONE" };
-const TABS: [View, string, typeof Power][] = [["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench], ["speakers", "Speakers", Waves]];
+const TABS: [View, string, typeof Power][] = [["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench], ["speakers", "Speakers", Waves], ["obs", "OBS", Radio]];
 const midiToDb = (v: number) => Math.round((FADER_MIN + (v / 127) * (FADER_MAX - FADER_MIN)) * 2) / 2;
 
 function saveBlob(blob: Blob, name: string) {
@@ -49,6 +50,12 @@ export function Console() {
   const [selected, setSelected] = useState<string[]>(["voice"]);
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const [view, setView] = useState<View>("mixer");
+  // Opened from MK VISION's "Audio Studio" button: /audio?input=<name> lands on the OBS tab.
+  const [obsInput, setObsInput] = useState<string | null>(null);
+  useEffect(() => {
+    const name = new URLSearchParams(window.location.search).get("input");
+    if (name) { setObsInput(name); setView("obs"); }
+  }, []);
   const [skin, setSkin] = useState<"hardware" | "modern">("hardware");
   const [active, setActive] = useState<Record<string, boolean>>({});
   const activeRef = useRef(active); activeRef.current = active;
@@ -386,6 +393,7 @@ export function Console() {
           {view === "fx" && <FxView />}
           {view === "patch" && <PatchView />}
           {view === "setup" && <SetupView />}
+          {view === "obs" && <ObsDesk focus={obsInput} />}
           <div hidden={view !== "speakers"}><SpeakerPlanner /></div>
 
           <ObsPlugin />
