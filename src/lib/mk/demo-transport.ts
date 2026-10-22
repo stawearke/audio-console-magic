@@ -1,5 +1,5 @@
 // Demo Mode: full switcher behaviour with no OBS present.
-import { EventBus, type Transport } from "./transport";
+import { EventBus, type InputTiming, type Transport } from "./transport";
 import type { AudioChannel, EqValues, MonitorType, OutputCheckRow } from "./types";
 import { DEFAULT_VOICE, type ObsVoice } from "./obs-voice";
 
@@ -119,6 +119,31 @@ export class DemoTransport implements Transport {
     const c = this.channels.find((x) => x.name === name);
     if (c) c.pre = enabled;
     this.bus.emit({ type: "audioChannel", name, pre: enabled });
+  }
+
+  async setInputTrack(name: string, track: number, on: boolean) {
+    const c = this.channels.find((x) => x.name === name);
+    if (!c) return;
+    const tracks = c.tracks ?? [c.stream, c.pre, false, false, false, false];
+    tracks[track - 1] = on;
+    c.tracks = tracks;
+    if (track === 1) c.stream = on;
+    if (track === 2) c.pre = on;
+    this.bus.emit({ type: "audioChannel", name, tracks: [...tracks] });
+  }
+
+  private timing = new Map<string, InputTiming>();
+
+  async getInputTiming(name: string): Promise<InputTiming> {
+    return { ...(this.timing.get(name) ?? { syncOffset: 0, balance: 0.5 }) };
+  }
+
+  async setInputSyncOffset(name: string, ms: number) {
+    this.timing.set(name, { ...(await this.getInputTiming(name)), syncOffset: ms });
+  }
+
+  async setInputBalance(name: string, balance: number) {
+    this.timing.set(name, { ...(await this.getInputTiming(name)), balance });
   }
 
   async setInputEq(name: string, eq: EqValues) {

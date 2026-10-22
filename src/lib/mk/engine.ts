@@ -51,7 +51,7 @@ import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
 import { DEFAULT_VOICE, type ObsVoice } from "./obs-voice";
-import { PLAYOUT_SCENE, type PlayoutStatus, type Transport, type TransportEvent } from "./transport";
+import { PLAYOUT_SCENE, type InputTiming, type PlayoutStatus, type Transport, type TransportEvent } from "./transport";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -497,6 +497,7 @@ export class SwitcherEngine {
                   monitor: event.monitor ?? c.monitor,
                   stream: event.stream ?? c.stream,
                   pre: event.pre ?? c.pre,
+                  ...(event.tracks ? { tracks: event.tracks } : {}),
                   ...((event.eq ?? c.eq) ? { eq: event.eq ?? c.eq } : {}),
                 }
               : c,
@@ -784,6 +785,52 @@ export class SwitcherEngine {
         this.eqTimers.delete(name);
         void this.transport?.setInputEq(name, next).catch(() => {});
       }, 80),
+    );
+  }
+
+  /** Send an input to / take it off one of OBS's six audio tracks (track 2 is the pre-listen mix and is managed by the Monitor section). */
+  async toggleAudioTrack(name: string, track: number) {
+    if (track < 1 || track > 6) return;
+    const channel = this.state.audio.find((c) => c.name === name);
+    if (!channel) return;
+    const now = channel.tracks ?? [channel.stream, channel.pre, false, false, false, false];
+    const on = !now[track - 1];
+    const tracks = now.map((v, i) => (i === track - 1 ? on : v));
+    this.onTransportEvent({ type: "audioChannel", name, tracks, ...(track === 1 ? { stream: on } : {}), ...(track === 2 ? { pre: on } : {}) });
+    await this.transport?.setInputTrack?.(name, track, on).catch(() => {});
+    if (track === 1 && this.state.config.limiter.on) await this.transport?.setLimiter([name], on, this.state.config.limiter.threshold).catch(() => {});
+  }
+
+  /** Monitoring of an input on the OBS PC: off, monitor only, or monitor and output. */
+  async setAudioMonitor(name: string, monitor: MonitorType) {
+    this.onTransportEvent({ type: "audioChannel", name, monitor });
+    await this.transport?.setInputMonitor(name, monitor).catch(() => {});
+  }
+
+  /** Audio delay and balance of an input, as they are in OBS. */
+  async readTiming(name: string): Promise<InputTiming> {
+    return (await this.transport?.getInputTiming?.(name).catch(() => null)) ?? { syncOffset: 0, balance: 0.5 };
+  }
+
+  private timingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  setSyncOffset(name: string, ms: number) {
+    this.debounceTiming(`${name}\u0000sync`, () => this.transport?.setInputSyncOffset?.(name, ms));
+  }
+
+  setBalance(name: string, balance: number) {
+    this.debounceTiming(`${name}\u0000bal`, () => this.transport?.setInputBalance?.(name, balance));
+  }
+
+  private debounceTiming(key: string, run: () => Promise<void> | undefined) {
+    const old = this.timingTimers.get(key);
+    if (old) clearTimeout(old);
+    this.timingTimers.set(
+      key,
+      setTimeout(() => {
+        this.timingTimers.delete(key);
+        void run()?.catch(() => {});
+      }, 120),
     );
   }
 

@@ -1,0 +1,136 @@
+import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { ObsTransport } from "@/lib/mk/obs-transport";
+import { engine } from "@/lib/mk/use-switcher";
+import { FLAT_EQ, type AudioChannel } from "@/lib/mk/types";
+import { GROUPS_KEY, SNAPSHOTS_KEY, SNAPSHOT_SLOTS, defaultGroups, groupMuted, recallPlan, sanitizeGroups, sanitizeSnapshots, snapshotOf } from "@/lib/obs-desk";
+import { ObsPatch } from "@/components/console/ObsPatch";
+import { ObsGroups } from "@/components/console/ObsGroups";
+import { ObsShow } from "@/components/console/ObsShow";
+
+const ch = (name: string, o: Partial<AudioChannel> = {}): AudioChannel => ({ name, db: -6, muted: false, monitor: "none", stream: true, pre: false, ...o });
+
+describe("groups and snapshots logic", () => {
+  it("always gives four valid groups, whatever is in storage", () => {
+    expect(sanitizeGroups(null)).toEqual(defaultGroups());
+    const g = sanitizeGroups([{ name: "  Panel  ", members: ["A", "A", 3, "B"], offset: 99 }, "junk", { offset: "x" }]);
+    expect(g).toHaveLength(4);
+    expect(g[0]).toMatchObject({ name: "Panel", members: ["A", "B"], offset: 12 });
+    expect(g[1]).toEqual(defaultGroups()[1]);
+    expect(g[2]!.offset).toBe(0);
+  });
+
+  it("a group counts as muted only when it has live members and all are muted", () => {
+    const g = { id: "g1", name: "G", members: ["A", "B", "Gone"], offset: 0 };
+    expect(groupMuted(g, [ch("A", { muted: true }), ch("B", { muted: true })])).toBe(true);
+    expect(groupMuted(g, [ch("A", { muted: true }), ch("B")])).toBe(false);
+    expect(groupMuted({ ...g, members: ["Gone"] }, [ch("A")])).toBe(false);
+  });
+
+  it("snapshots round-trip and junk is dropped", () => {
+    const snap = snapshotOf("  Show open  ", [ch("A", { db: -3, muted: true, eq: { ...FLAT_EQ, hi: 2 } }), ch("B", { stream: false })]);
+    expect(snap.name).toBe("Show open");
+    const slots = sanitizeSnapshots(JSON.parse(JSON.stringify([snap, 5, { inputs: 7 }, null])));
+    expect(slots).toHaveLength(SNAPSHOT_SLOTS);
+    expect(slots[0]!.inputs["A"]).toMatchObject({ db: -3, muted: true });
+    expect(slots[0]!.inputs["A"]!.eq.hi).toBe(2);
+    expect(slots[0]!.inputs["B"]!.stream).toBe(false);
+    expect(slots.slice(1).every((s) => s === null)).toBe(true);
+  });
+
+  it("recall applies what exists in OBS and reports what does not", () => {
+    const snap = snapshotOf("S", [ch("A"), ch("Old mic")]);
+    expect(recallPlan(snap, [ch("A"), ch("New")])).toEqual({ apply: ["A"], missing: ["Old mic"] });
+  });
+});
+
+describe("OBS tracks, delay and balance", () => {
+  function fake(responses: Record<string, unknown> = {}) {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const t = new ObsTransport({} as never);
+    (t as unknown as { obs: unknown }).obs = {
+      async call(req: string, d: Record<string, unknown> = {}) {
+        calls.push([req, d]);
+        const r = responses[req];
+        if (r instanceof Error) throw r;
+        return r ?? {};
+      },
+    };
+    return { t, calls };
+  }
+
+  it("sends one track at a time and nothing else", async () => {
+    const { t, calls } = fake();
+    await t.setInputTrack!("Mic", 4, true);
+    expect(calls).toEqual([["SetInputAudioTracks", { inputName: "Mic", inputAudioTracks: { "4": true } }]]);
+  });
+
+  it("reads delay and balance, and survives an input that has neither", async () => {
+    const ok = fake({ GetInputAudioSyncOffset: { inputAudioSyncOffset: 120 }, GetInputAudioBalance: { inputAudioBalance: 0.25 } });
+    expect(await ok.t.getInputTiming!("Mic")).toEqual({ syncOffset: 120, balance: 0.25 });
+    const bad = fake({ GetInputAudioSyncOffset: new Error("nope"), GetInputAudioBalance: new Error("nope") });
+    expect(await bad.t.getInputTiming!("Cam")).toEqual({ syncOffset: 0, balance: 0.5 });
+  });
+
+  it("keeps balance inside 0..1 and rounds delay to whole milliseconds", async () => {
+    const { t, calls } = fake();
+    await t.setInputBalance!("Mic", 3);
+    await t.setInputSyncOffset!("Mic", 12.6);
+    expect(calls[0]![1]["inputAudioBalance"]).toBe(1);
+    expect(calls[1]![1]["inputAudioSyncOffset"]).toBe(13);
+  });
+});
+
+// The views, against the built-in demo OBS (no OBS needed).
+describe("OBS desk views (demo OBS)", () => {
+  beforeAll(() => { localStorage.setItem("mkvision.config.v1", JSON.stringify({ demoMode: true })); });
+  afterEach(() => { cleanup(); localStorage.removeItem(GROUPS_KEY); localStorage.removeItem(SNAPSHOTS_KEY); });
+
+  it("Patch: sends an input to track 3 and back", async () => {
+    render(<ObsPatch />);
+    const toggle = await screen.findByTitle("Send CAM 1 Mic to OBS track 3");
+    expect(toggle.textContent).toBe("Off");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.getByTitle("Send CAM 1 Mic to OBS track 3").textContent).toBe("On"));
+    fireEvent.click(screen.getByTitle("Send CAM 1 Mic to OBS track 3"));
+    await waitFor(() => expect(screen.getByTitle("Send CAM 1 Mic to OBS track 3").textContent).toBe("Off"));
+  });
+
+  it("Patch: Track 2 is shown but cannot be switched (the Monitor section owns it)", async () => {
+    render(<ObsPatch />);
+    await screen.findByTitle("Send CAM 1 Mic to OBS track 3");
+    expect(screen.queryByTitle("Send CAM 1 Mic to OBS track 2")).toBeNull();
+  });
+
+  it("Groups: a ticked input follows the group mute, which is saved", async () => {
+    render(<ObsGroups />);
+    const group = within(await screen.findByLabelText("GROUP 1"));
+    fireEvent.click(group.getByLabelText("CAM 1 Mic"));
+    expect(JSON.parse(localStorage.getItem(GROUPS_KEY)!)[0].members).toEqual(["CAM 1 Mic"]);
+    const mute = group.getByRole("button", { name: /^Mute$/ });
+    expect(mute.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(mute);
+    await waitFor(() => expect(within(screen.getByLabelText("GROUP 1")).getByRole("button", { name: /^Mute$/ }).getAttribute("aria-pressed")).toBe("true"));
+  });
+
+  it("Show: saves the mix, and recall puts back what was changed afterwards", async () => {
+    render(<ObsShow />);
+    const mic = () => engine.getSnapshot().audio.find((c) => c.name === "CAM 1 Mic")!;
+    await screen.findByRole("button", { name: /^Save$/ });
+    await waitFor(() => expect(mic()).toBeTruthy());
+    const savedMuted = mic().muted;
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/^Saved \d+ inputs? into slot 1\.$/));
+    const stored = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY)!);
+    expect(stored[0].inputs["CAM 1 Mic"]).toMatchObject({ db: -6, muted: savedMuted });
+    // Change the mix after saving...
+    await engine.toggleAudioMute("CAM 1 Mic");
+    await engine.setAudioVolume("CAM 1 Mic", -20);
+    await waitFor(() => expect(mic().muted).toBe(!savedMuted));
+    // ...then recall: it comes back.
+    fireEvent.click(screen.getByRole("button", { name: /^Recall$/ }));
+    expect(screen.getByRole("status").textContent).toMatch(/^Recalled "SNAPSHOT 1": \d+ inputs?\.$/);
+    await waitFor(() => expect(mic().muted).toBe(savedMuted));
+    await waitFor(() => expect(mic().db).toBe(-6));
+  });
+});

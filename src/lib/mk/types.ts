@@ -651,6 +651,8 @@ export interface AudioChannel {
   stream: boolean;
   /** Goes to the PRE-LISTEN mix (OBS audio track 2) — what the Listen button plays. */
   pre: boolean;
+  /** All six OBS audio tracks this input feeds (index 0 = track 1). Absent until read. */
+  tracks?: boolean[];
   /** Live gain + 3-band EQ (the MK Gain / MK EQ filters on the OBS input). Flat when absent. */
   eq?: EqValues;
 }

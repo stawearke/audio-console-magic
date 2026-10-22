@@ -16,7 +16,7 @@ function NavLink({ to, className, children }: { to: "/" | "/settings"; className
 
 // The real OBS inputs, controlled exactly like MK VISION's mixer: the same engine, the same
 // OBS connection (a shared singleton), so a fader here is the same fader there.
-function ObsStrip({ c, level, focused }: { c: AudioChannel; level: number; focused: boolean }) {
+export function ObsStrip({ c, level, focused, onEdit }: { c: AudioChannel; level: number; focused: boolean; onEdit?: ((name: string) => void) | undefined }) {
   const lv = useRef(-100);
   lv.current = c.muted ? -100 : level;
   const read = useCallback(() => lv.current, []);
@@ -26,7 +26,11 @@ function ObsStrip({ c, level, focused }: { c: AudioChannel; level: number; focus
   );
   return (
     <div className="channel-strip flex min-w-[150px] flex-col items-center gap-2 rounded-md p-2" data-selected={focused} style={focused ? { outline: "2px solid var(--c-voice)" } : undefined}>
-      <span className="selected-display max-w-full truncate text-center text-xs font-bold uppercase tracking-widest" title={c.name}>{c.name}</span>
+      {onEdit ? (
+        <button type="button" onClick={() => onEdit(c.name)} className="selected-display max-w-full truncate text-center text-xs font-bold uppercase tracking-widest hover:underline" title={`${c.name}: open in Channel`}>{c.name}</button>
+      ) : (
+        <span className="selected-display max-w-full truncate text-center text-xs font-bold uppercase tracking-widest" title={c.name}>{c.name}</span>
+      )}
       <div className="flex items-end gap-2">
         <Meter read={read} />
         <Fader value={c.db} label={`${c.name} volume`} hideLabel onChange={(db) => void engine.setAudioVolume(c.name, db)} />
@@ -83,12 +87,10 @@ export function MainOut({ inputs, levels, limiter, gr, muted }: { inputs: AudioC
 
 // The VOXONE voice rack, but running INSIDE OBS: native OBS filters on the chosen input
 // (denoise -> gate -> EQ -> compressor -> gain), so it works for stream, recording and every track.
-function VoicePanel({ names, initial }: { names: string[]; initial: string | null }) {
+export function VoicePanel({ name }: { name: string }) {
   const desk = useDesk();
-  const [name, setName] = useState<string>(initial && names.includes(initial) ? initial : (names[0] ?? ""));
   const [voice, setVoice] = useState<ObsVoice>(DEFAULT_VOICE);
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => { if (initial && names.includes(initial)) setName(initial); }, [initial, names]);
   useEffect(() => {
     if (!name) return;
     let alive = true;
@@ -107,9 +109,7 @@ function VoicePanel({ names, initial }: { names: string[]; initial: string | nul
     <section className="mixer-surface mt-3 p-3" aria-label="Voice processing in OBS">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h3 className="module-title text-[11px] font-bold uppercase tracking-[0.2em]">Voice processing in OBS</h3>
-        <select aria-label="OBS input to process" className="console-select rounded px-2 py-1.5 text-xs" value={name} onChange={(e) => setName(e.target.value)}>
-          {names.map((n) => <option key={n}>{n}</option>)}
-        </select>
+        <span className="label-text text-[11px]">{name}</span>
         <Toggle on={false} title={`Copy the gate, compressor and noise settings of VOXONE channel ${desk.primary.name} onto this OBS input`} onClick={() => commit(voiceFromDsp(desk.primary.dsp))}>Copy from {desk.primary.name}</Toggle>
         <Toggle on={false} title="Switch all three stages off" onClick={() => commit(DEFAULT_VOICE)}>Reset</Toggle>
         <span className="label-text text-[10px]">{loaded ? "Native OBS filters: runs in OBS itself." : "Reading OBS…"}</span>
@@ -139,7 +139,7 @@ function VoicePanel({ names, initial }: { names: string[]; initial: string | nul
   );
 }
 
-export function ObsDesk({ focus }: { focus: string | null }) {
+export function ObsDesk({ focus, onEdit }: { focus: string | null; onEdit?: ((name: string) => void) | undefined }) {
   const state = useSwitcher();
   const hidden = state.config.hiddenAudio;
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
@@ -159,11 +159,10 @@ export function ObsDesk({ focus }: { focus: string | null }) {
       <div className="mixer-bank" role="group" aria-label="OBS audio inputs">
         {strips.length === 0
           ? <p className="label-text p-6 text-xs">{connected ? "OBS reports no audio inputs." : "Waiting for OBS."}</p>
-          : strips.map((c) => <ObsStrip key={c.name} c={c} level={state.levels[c.name] ?? -100} focused={c.name === focus} />)}
+          : strips.map((c) => <ObsStrip key={c.name} c={c} level={state.levels[c.name] ?? -100} focused={c.name === focus} onEdit={onEdit} />)}
         {connected && <MainOut inputs={inputs} levels={state.levels} limiter={state.config.limiter} gr={state.gr} muted={state.masterMuted} />}
       </div>
     </section>
-    {connected && strips.length > 0 && <VoicePanel names={strips.map((c) => c.name)} initial={focus} />}
     </>
   );
 }

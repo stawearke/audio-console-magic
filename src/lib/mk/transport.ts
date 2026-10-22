@@ -28,6 +28,7 @@ export type TransportEvent =
       monitor?: MonitorType;
       stream?: boolean;
       pre?: boolean;
+      tracks?: boolean[];
       eq?: EqValues;
     }
   | { type: "levels"; levels: Record<string, number> }
@@ -36,6 +37,11 @@ export type TransportEvent =
   | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined };
 
 /** Video playout: one scene holding one media source, reused for every file. */
+export interface InputTiming {
+  syncOffset: number;
+  balance: number;
+}
+
 export const PLAYOUT_SCENE = "MK Playout";
 export const PLAYOUT_INPUT = "MK Playout Media";
 export interface PlayoutStatus {
@@ -84,6 +90,12 @@ export interface Transport {
   playoutStatus?(): Promise<PlayoutStatus | null>;
   /** Set an input's gain + 3-band EQ (the MK Gain / MK EQ filters). */
   setInputEq(name: string, eq: EqValues): Promise<void>;
+  /** Send an input to / take it off one of the six OBS audio tracks (1-6). */
+  setInputTrack?(name: string, track: number, on: boolean): Promise<void>;
+  /** Audio delay (ms, -950..20000) and left/right balance (0 = left, 0.5 = centre, 1 = right) of an input. */
+  getInputTiming?(name: string): Promise<InputTiming>;
+  setInputSyncOffset?(name: string, ms: number): Promise<void>;
+  setInputBalance?(name: string, balance: number): Promise<void>;
   /** Read / write an input's voice chain: OBS native denoise, gate and compressor filters (see obs-voice.ts). */
   getInputVoice?(name: string): Promise<ObsVoice>;
   setInputVoice?(name: string, voice: ObsVoice): Promise<void>;

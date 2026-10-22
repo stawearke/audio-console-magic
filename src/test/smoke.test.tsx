@@ -14,8 +14,10 @@ describe("OBS-only console", () => {
     window.requestAnimationFrame = () => 0;
     HTMLCanvasElement.prototype.getContext = (() => null) as never;
     render(<Console />);
-    expect(screen.getByRole("button", { name: /^OBS$/ }).getAttribute("aria-pressed")).toBe("true");
-    for (const t of [/^Mixer$/, /^Mixer 2$/, /^Channel$/, /^FX$/, /^Patch$/, /^Setup$/]) expect(screen.queryByRole("button", { name: t })).toBeNull();
+    // The OBS desk keeps the familiar tab names, but they work on OBS inputs. There is no FX rack in OBS.
+    expect(screen.getByRole("button", { name: /^Mixer$/ }).getAttribute("aria-pressed")).toBe("true");
+    for (const t of [/^Channel$/, /^Mixer 2$/, /^Patch$/, /^Show$/, /^Speakers$/]) expect(screen.getByRole("button", { name: t })).toBeTruthy();
+    for (const t of [/^FX$/, /^Setup$/, /^OBS$/]) expect(screen.queryByRole("button", { name: t })).toBeNull();
     for (const n of ["VOICE", "MUSIC", "DESKTOP", "SOUNDPAD"]) expect(screen.queryByText(n)).toBeNull();
     expect(screen.getByLabelText("OBS inputs")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Built-in channels$/i })).toBeNull();
@@ -45,7 +47,7 @@ describe("console smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "REVERB" }));
     fireEvent.click(screen.getByRole("button", { name: "1" }));
     expect(screen.getAllByText("VOICE").length).toBeGreaterThan(0);
-  });
+  }, 30000); // visits every built-in tab in jsdom: slow on a busy machine
 });
 
 describe("undo", () => {

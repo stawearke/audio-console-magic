@@ -1,7 +1,7 @@
 // OBS WebSocket 5.x transport. Browser-only: loaded lazily by the engine.
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
-import { EventBus, PLAYOUT_INPUT, PLAYOUT_SCENE, type PlayoutStatus, type Transport } from "./transport";
+import { EventBus, PLAYOUT_INPUT, PLAYOUT_SCENE, type InputTiming, type PlayoutStatus, type Transport } from "./transport";
 import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
@@ -26,6 +26,9 @@ function monitorFromObs(value: string | undefined): MonitorType {
   if (value === MONITOR_TO_OBS.monitorAndOutput) return "monitorAndOutput";
   return "none";
 }
+
+/** OBS reports tracks as {"1": bool .. "6": bool}; make it a 6-entry array. */
+const tracksOf = (t: Record<string, boolean>) => [1, 2, 3, 4, 5, 6].map((n) => Boolean(t[String(n)]));
 
 const LIMITER_FILTER = "MK Limiter";
 const GAIN_FILTER = "MK Gain";
@@ -120,6 +123,7 @@ export class ObsTransport implements Transport {
         name: inputName,
         stream: Boolean((inputAudioTracks as Record<string, boolean>)["1"]),
         pre: Boolean((inputAudioTracks as Record<string, boolean>)["2"]),
+        tracks: tracksOf(inputAudioTracks as Record<string, boolean>),
       }),
     );
     this.obs.on("InputCreated", () => void this.refreshAudio());
@@ -259,6 +263,7 @@ export class ObsTransport implements Transport {
           let monitor: MonitorType = "none";
           let stream = true;
           let pre = true;
+          let tracks: boolean[] | undefined;
           try {
             const m = await this.obs.call("GetInputAudioMonitorType", { inputName: name });
             monitor = monitorFromObs(m.monitorType);
@@ -269,6 +274,7 @@ export class ObsTransport implements Transport {
             const t = await this.obs.call("GetInputAudioTracks", { inputName: name });
             stream = Boolean((t.inputAudioTracks as Record<string, boolean>)["1"]);
             pre = Boolean((t.inputAudioTracks as Record<string, boolean>)["2"]);
+            tracks = tracksOf(t.inputAudioTracks as Record<string, boolean>);
           } catch {
             /* ignore */
           }
@@ -279,6 +285,7 @@ export class ObsTransport implements Transport {
             monitor,
             stream,
             pre,
+            ...(tracks ? { tracks } : {}),
             eq: await this.readEq(name),
           });
         } catch {
@@ -389,6 +396,34 @@ export class ObsTransport implements Transport {
         /* skip */
       }
     }
+  }
+
+  async setInputTrack(name: string, track: number, on: boolean) {
+    await this.obs.call("SetInputAudioTracks", { inputName: name, inputAudioTracks: { [String(track)]: on } });
+  }
+
+  async getInputTiming(name: string): Promise<InputTiming> {
+    const timing: InputTiming = { syncOffset: 0, balance: 0.5 };
+    try {
+      timing.syncOffset = Number((await this.obs.call("GetInputAudioSyncOffset", { inputName: name })).inputAudioSyncOffset) || 0;
+    } catch {
+      /* not supported on this input */
+    }
+    try {
+      const b = Number((await this.obs.call("GetInputAudioBalance", { inputName: name })).inputAudioBalance);
+      if (Number.isFinite(b)) timing.balance = b;
+    } catch {
+      /* not supported on this input */
+    }
+    return timing;
+  }
+
+  async setInputSyncOffset(name: string, ms: number) {
+    await this.obs.call("SetInputAudioSyncOffset", { inputName: name, inputAudioSyncOffset: Math.round(ms) });
+  }
+
+  async setInputBalance(name: string, balance: number) {
+    await this.obs.call("SetInputAudioBalance", { inputName: name, inputAudioBalance: Math.min(1, Math.max(0, balance)) });
   }
 
   async setInputPre(name: string, enabled: boolean) {

@@ -20,6 +20,10 @@ import { Show } from "./Show";
 import { ObsPlugin } from "./ObsPlugin";
 import { SpeakerPlanner } from "./SpeakerPlanner";
 import { ObsDesk } from "./ObsDesk";
+import { ObsChannel } from "./ObsChannel";
+import { ObsGroups } from "./ObsGroups";
+import { ObsPatch } from "./ObsPatch";
+import { ObsShow } from "./ObsShow";
 
 // Presets change the selected channel (and the shared FX returns for the echo preset).
 const PRESETS: Record<string, (m: Mixer, id: string) => Mixer> = {
@@ -37,7 +41,8 @@ const STORE = "stream-console-v2";
 const NAMES: Record<SourceKind, string> = { mic: "MIC", file: "MEDIA", desktop: "DESKTOP", gen: "TONE" };
 const TABS: [View, string, typeof Power][] = [["obs", "OBS", Radio], ["mixer", "Mixer", SlidersHorizontal], ["mixer2", "Mixer 2", SlidersHorizontal], ["channel", "Channel", AudioLines], ["fx", "FX", Sparkles], ["show", "Show", MonitorPlay], ["patch", "Patch", Cable], ["setup", "Setup", Wrench], ["speakers", "Speakers", Waves]];
 // The console is just your OBS audio plus MAIN OUT: no VOICE / MUSIC / DESKTOP / SOUNDPAD desk (a saved flag can still open it).
-const OBS_ONLY: View[] = ["obs", "speakers"];
+// The same tab names as the built-in desk, but they work on your OBS inputs (OBS has no FX rack, so no FX tab).
+const OBS_TABS: [View, string, typeof Power][] = [["obs", "Mixer", SlidersHorizontal], ["obsch", "Channel", AudioLines], ["obsgrp", "Mixer 2", SlidersHorizontal], ["obspatch", "Patch", Cable], ["obsshow", "Show", MonitorPlay], ["speakers", "Speakers", Waves]];
 const BUILTIN_KEY = "voxone-builtin-channels";
 const midiToDb = (v: number) => Math.round((FADER_MIN + (v / 127) * (FADER_MAX - FADER_MIN)) * 2) / 2;
 
@@ -318,7 +323,7 @@ export function Console() {
   const primary = mixer.channels.find((c) => c.id === selectedIds[0]) ?? (mixer.channels[0] as Channel);
   const firstMic = mixer.channels.find((c) => c.kind === "mic");
 
-  // Keyboard: M mute, S solo, P PFL, arrows change channel, 1-7 switch page.
+  // Keyboard: M mute, S solo, P PFL, arrows change channel, 1-7 switch page (OBS desk: 1-6 only).
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
     const t = e.target as HTMLElement | null;
@@ -330,12 +335,15 @@ export function Console() {
       return;
     }
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || t?.closest?.("input, select, textarea, [contenteditable], [role=slider]")) return;
+    // On the OBS desk only the page keys apply: M / S / P and the arrows would act on a hidden channel.
+    const tabs = builtin ? TABS : OBS_TABS;
+    if (!builtin && !/^[1-9]$/.test(k)) return;
     const i = mixer.channels.findIndex((c) => c.id === primary.id);
     if (k === "m") patch(primary.id, { mute: !primary.mute });
     else if (k === "s") patch(primary.id, { solo: !primary.solo });
     else if (k === "p") patch(primary.id, { pfl: !primary.pfl });
     else if (k === "arrowright" || k === "arrowleft") { const n = mixer.channels[clamp(i + (k === "arrowright" ? 1 : -1), 0, mixer.channels.length - 1)]; if (n) select(n.id); }
-    else if (/^[1-7]$/.test(k)) { const v = TABS[Number(k) - 1]; if (v) setView(v[0]); }
+    else if (/^[1-9]$/.test(k)) { const v = tabs[Number(k) - 1]; if (!v) return; setView(v[0]); }
     else return;
     e.preventDefault();
   };
@@ -387,7 +395,7 @@ export function Console() {
           {error && <p role="alert" className="error-box mb-4 rounded-md p-3 text-sm">{error}</p>}
 
           <nav aria-label="Console view" className="console-tabs mb-4 flex gap-1">
-            {TABS.filter(([key]) => builtin || OBS_ONLY.includes(key)).map(([key, label, Icon]) => (
+            {(builtin ? TABS : OBS_TABS).map(([key, label, Icon]) => (
               <Button key={key} variant="ghost" className="console-tab" aria-pressed={view === key} data-on={view === key} onClick={() => setView(key)}><Icon />{label}</Button>
             ))}
             <span className="desk-bus-label">MAIN LR <Waves className="size-3" /><span className="status-dot" data-on={Object.values(active).some(Boolean)} /></span>
@@ -400,7 +408,11 @@ export function Console() {
           {view === "fx" && <FxView />}
           {view === "patch" && <PatchView />}
           {view === "setup" && <SetupView />}
-          {view === "obs" && <ObsDesk focus={obsInput} />}
+          {view === "obs" && <ObsDesk focus={obsInput} onEdit={builtin ? undefined : (n) => { setObsInput(n); setView("obsch"); }} />}
+          {view === "obsch" && <ObsChannel focus={obsInput} />}
+          {view === "obsgrp" && <ObsGroups />}
+          {view === "obspatch" && <ObsPatch />}
+          {view === "obsshow" && <ObsShow />}
           <div hidden={view !== "speakers"}><SpeakerPlanner /></div>
 
           {builtin && <>
