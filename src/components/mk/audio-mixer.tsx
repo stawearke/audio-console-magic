@@ -1,4 +1,5 @@
-import { Eye, EyeOff, Volume2, VolumeX } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { AudioLines, Eye, EyeOff, Volume2, VolumeX } from "lucide-react";
 import { useState } from "react";
 
 import { Fader } from "@/components/mk/fader";
@@ -123,6 +124,15 @@ function Strip({
         >
           {c.name}
         </button>
+        <Link
+          to="/audio"
+          search={{ input: c.name }}
+          aria-label={`Open ${c.name} in Audio Studio`}
+          title="Open this input in the Audio Studio (VOXONE)"
+          className="shrink-0 text-engrave hover:text-foreground"
+        >
+          <AudioLines className="h-3 w-3" />
+        </Link>
         <button
           type="button"
           onClick={() => props.onHide(c.name)}
@@ -251,10 +261,14 @@ export function AudioMixer(props: AudioMixerProps & MixerViewProps) {
       <header className="mb-1 flex items-center gap-2">
         <span className="mk-label text-foreground">Audio</span>
         <span className="mk-label hidden truncate text-[8px] 2xl:block">MN = on air · SOLO = hear alone · PC = OBS PC headphones</span>
+        <Link to="/audio" className="mk-button ml-auto flex h-[18px] items-center gap-1 rounded-[3px] px-2 text-[9px]" title="Open the Audio Studio (VOXONE) on your OBS inputs">
+          <AudioLines className="h-3 w-3" />
+          AUDIO STUDIO
+        </Link>
         <button
           type="button"
           onClick={() => onAfv(!afv)}
-          className={cn("mk-button ml-auto h-[18px] rounded-[3px] px-2 text-[9px]", afv && "mk-lit-amber")}
+          className={cn("mk-button h-[18px] rounded-[3px] px-2 text-[9px]", afv && "mk-lit-amber")}
           title="Audio follows video: cam-named inputs unmute when their CAM is on air"
         >
           AFV {afv ? "ON" : "OFF"}
