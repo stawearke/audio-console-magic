@@ -7,6 +7,7 @@ import {
   cleanAdBox,
   cleanAdTrim,
   cleanMainBox,
+  AD_EFFECTS,
   AD_ENTERS,
   AD_ORDERS,
   DEFAULT_FX,
@@ -201,6 +202,7 @@ function mergeAd(raw: unknown): AdConfig {
     size: typeof r.size === "number" ? Math.min(0.6, Math.max(0.1, r.size)) : DEFAULT_AD.size,
     fit: r.fit === "fill" ? "fill" : "fit",
     enter: AD_ENTERS.some((x) => x.id === r.enter) ? (r.enter as AdConfig["enter"]) : DEFAULT_AD.enter,
+    effect: AD_EFFECTS.some((x) => x.id === r.effect) ? (r.effect as AdConfig["effect"]) : DEFAULT_AD.effect,
     order: AD_ORDERS.some((x) => x.id === r.order) ? (r.order as AdConfig["order"]) : DEFAULT_AD.order,
   };
 }
