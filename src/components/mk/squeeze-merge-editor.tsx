@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
+  AD_ENTERS,
   AD_LAYOUTS,
+  AD_ORDERS,
   AD_STYLES,
   ANCHORS,
   ANCHOR_GLYPH,
@@ -557,6 +559,14 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
 
               <Field label="Motion">
                 <Choices label="Motion" items={AD_STYLES.map((s) => ({ id: s.id, text: s.label, hint: s.hint }))} value={draft.style} onPick={(style) => edit({ style })} />
+              </Field>
+
+              <Field label="Enter from — where the ad comes in">
+                <Choices label="Enter from" items={AD_ENTERS.map((s) => ({ id: s.id, text: s.label, hint: s.hint }))} value={draft.enter} onPick={(enter) => edit({ enter })} />
+              </Field>
+
+              <Field label="Order — who moves first">
+                <Choices label="Order" items={AD_ORDERS.map((s) => ({ id: s.id, text: s.label, hint: s.hint }))} value={draft.order} onPick={(order) => edit({ order })} />
               </Field>
 
               <Field label="Fit or fill">
