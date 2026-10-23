@@ -79,7 +79,6 @@ import {
 } from "./types";
 
 const RECONNECT_DELAY = 2500;
-const TBAR_SEND_INTERVAL = 25;
 const MONITOR_W = 640;
 const MONITOR_H = 360;
 
@@ -136,11 +135,6 @@ export class SwitcherEngine {
   private tbarTimer: ReturnType<typeof setTimeout> | null = null;
   private tbarPending: number | null = null;
   private tbarHeld = false;
-  /** OBS's T-bar ignores the Cut (and stinger) transition, so for a pull we borrow a mixing one and hand it back after. */
-  private tbarPrep: Promise<void> | null = null;
-  private tbarRestore: string | null = null;
-  /** What OBS had on program / preview BEFORE the pull began (once the bar moves, OBS already reports the destination as program). */
-  private tbarOrigin: { program: string | null; preview: string | null } | null = null;
   /** True while a released T-bar is being confirmed with OBS (input is ignored for that short moment). */
   private tbarSettling = false;
   /** Set by Auto Take so finishTransition() leaves the handle on the opposite side. */
@@ -989,7 +983,6 @@ export class SwitcherEngine {
   private finishTransition() {
     this.stopAnim();
     this.tbarHeld = false;
-    void this.restoreTBarTransition();
     const flip = this.takeFlip;
     this.takeFlip = false;
     this.set(flip ? { tBar: 0, transitioning: false, tBarFlip: !this.state.tBarFlip } : { tBar: 0, transitioning: false });
@@ -1003,7 +996,6 @@ export class SwitcherEngine {
     this.tbarHeld = false;
     this.set({ tBar: 0, transitioning: false });
     this.swapLocal();
-    await this.restoreTBarTransition();
     await this.send("Cut", (t) => t.performCut());
     setTimeout(() => void this.transport?.resync().catch(() => {}), 200);
   }
@@ -1040,60 +1032,6 @@ export class SwitcherEngine {
     if (ms === 0) this.finishTransition();
   }
 
-  /** Start of a pull: remember the real scenes, and make sure OBS is on a transition its T-bar can drive (not Cut / Stinger). */
-  private prepareTBar(): Promise<void> {
-    if (this.tbarPrep) return this.tbarPrep;
-    this.tbarOrigin = null;
-    this.tbarPrep = this.beginTBar();
-    return this.tbarPrep;
-  }
-
-  private async beginTBar() {
-    const t = this.transport;
-    if (!t || this.state.demo) return;
-    const [program, preview] = await Promise.all([this.soon(t.getCurrentProgramScene(), 800), this.soon(t.getCurrentPreviewScene(), 800)]);
-    this.tbarOrigin = { program, preview };
-    const current = this.state.config.transition;
-    if (!t.setTBarTransition || !/cut|stinger/i.test(current)) return;
-    const list = this.state.transitions.filter((n) => !/cut|stinger/i.test(n));
-    const pick = list.find((n) => /^fade$/i.test(n)) ?? list.find((n) => /fade|slide|swipe|luma/i.test(n)) ?? list[0];
-    if (!pick) {
-      this.notice("T-bar needs a Fade (or similar) transition in OBS. Cut and Stinger do not work with it");
-      return;
-    }
-    if (!this.tbarRestore) this.tbarRestore = current;
-    await this.soon(t.setTBarTransition(pick), 2500);
-  }
-
-  /** True once OBS has really taken: the destination is on program and the old program went to preview (Studio Mode swap). */
-  private async waitCommit(t: Transport, before: string, target: string, ms: number) {
-    const end = Date.now() + ms;
-    while (Date.now() < end) {
-      const [p, v] = await Promise.all([this.soon(t.getCurrentProgramScene(), 500), this.soon(t.getCurrentPreviewScene(), 500)]);
-      if (p === target && v === before) return true;
-      await sleep(120);
-    }
-    return false;
-  }
-
-  /** Give OBS its Cut / Stinger back after the T-bar pull is over. */
-  private async restoreTBarTransition() {
-    const back = this.tbarRestore;
-    this.tbarRestore = null;
-    this.tbarPrep = null;
-    if (back) await this.soon(this.transport?.setTBarTransition?.(back) ?? Promise.resolve(), 2500);
-  }
-
-  private flushTBar = async () => {
-    this.tbarTimer = null;
-    if (this.tbarPending === null) return;
-    await this.tbarPrep;
-    if (this.tbarPending === null) return;
-    const position = this.tbarPending;
-    this.tbarPending = null;
-    void this.transport?.setTBarPosition(position, false).catch(() => {});
-  };
-
   /** True once OBS reports a program scene different from `before` (the pull completed). */
   private async waitProgramChange(t: Transport, before: string, ms: number) {
     const end = Date.now() + ms;
@@ -1111,7 +1049,9 @@ export class SwitcherEngine {
   }
 
   /**
-   * Manual T-bar. `position` is the progress of the pull (0 = start, 1 = end) and `release` is true on pointer-up.
+   * T-bar. `position` is the progress of the pull (0 = start, 1 = end) and `release` is true on pointer-up.
+   * OBS never commits a remotely driven T-bar (it snaps back to the old scene on release), so the bar is the operator's
+   * lever on screen only: pulling it to the end fires one clean studio transition, exactly like Auto Take.
    * After a completed pull the handle stays on the far side (tBarFlip) and the next pull runs back the other way.
    */
   setTBar(position: number, release = false) {
@@ -1119,83 +1059,44 @@ export class SwitcherEngine {
     if (this.tbarSettling) return;
     const p = Math.min(1, Math.max(0, position));
     if (!release) {
-      if (!this.tbarHeld) {
-        this.tbarPrep = null;
-        void this.prepareTBar();
-      }
-      this.tbarHeld = true;
       this.set({ tBar: p, transitioning: p > 0 && p < 1 });
-      this.tbarPending = p;
-      if (!this.tbarTimer) this.tbarTimer = setTimeout(this.flushTBar, TBAR_SEND_INTERVAL);
       return;
     }
-    // Release: flush anything pending, then snap to an end stop when close.
-    if (this.tbarTimer) clearTimeout(this.tbarTimer);
-    this.tbarTimer = null;
-    this.tbarPending = null;
     if (p >= 1) {
+      if (this.state.preview === null && !this.state.previewScene) {
+        this.set({ tBar: 0, transitioning: false });
+        return;
+      }
       const oldProgram = this.state.programScene;
       const oldPreview = this.state.previewScene;
-      // Show the finished take straight away: handle rests on the far side, PGM/PVW swapped, nothing "in transition".
       this.tbarSettling = true;
       this.tbarHeld = true;
       this.stopAnim();
+      // Show the finished take straight away: handle rests on the far side, PGM/PVW swapped.
       this.swapLocal();
       this.set({ tBar: 0, tBarFlip: !this.state.tBarFlip, transitioning: false });
       void (async () => {
         try {
           const t = this.transport;
           if (!t) return;
-          await this.tbarPrep;
           const real = !this.state.demo;
-          // What OBS itself has on program / preview right now (live buses and non-Studio setups included).
-          const origin = this.tbarOrigin;
-          const before = real ? (origin?.program ?? oldProgram) : null;
-          const target = real ? (origin?.preview ?? oldPreview) : null;
-          const check = !!before && !!target && before !== target;
-          console.info("[T-bar] release at end", { before, target, check, transition: this.state.config.transition, swappedFrom: this.tbarRestore });
-          // OBS eases its T-bar toward the commanded position. Releasing in the same instant makes it think the bar was
-          // let go mid-way. So: park at the end, let OBS catch up, then release.
-          await this.soon(t.setTBarPosition(1, false));
-          if (real) await sleep(250);
-          await this.soon(t.setTBarPosition(1, true));
-          if (check) {
-            let done = await this.waitCommit(t, before, target, 1500);
-            if (!done) {
-              // OBS's T-bar release did not commit (it snaps back to the old scene). Cancel the half-finished manual
-              // transition completely, then finish the take with a normal studio transition, the same as Auto.
-              console.info("[T-bar] release did not commit, cancelling manual transition and taking with a normal transition");
-              await this.soon(t.setTBarPosition(0, false));
-              await sleep(120);
-              await this.soon(t.setTBarPosition(0, true));
-              await sleep(180);
-              await this.soon(t.performAutoTake());
-              done = await this.waitCommit(t, before, target, 2000);
-            }
-            // OBS still did not complete the pull. Force the take while OBS still shows the destination (no flash back):
-            // first a studio Cut, then a direct program switch.
+          const before = real ? ((await this.soon(t.getCurrentProgramScene(), 800)) ?? oldProgram) : null;
+          const target = real ? ((await this.soon(t.getCurrentPreviewScene(), 800)) ?? oldPreview) : null;
+          await this.send("T-bar take", (x) => x.performAutoTake());
+          if (real && before && target && before !== target) {
+            let done = await this.waitProgramChange(t, before, 1500);
             if (!done) {
               await this.soon(t.performCut());
-              done = await this.waitProgramChange(t, before, 500);
+              done = await this.waitProgramChange(t, before, 600);
             }
             if (!done) {
               await this.soon(t.setProgramScene(target));
-              done = await this.waitProgramChange(t, before, 500);
+              done = await this.waitProgramChange(t, before, 600);
               if (done) await this.soon(t.setPreviewScene(before));
             }
-            if (!done) {
-              await this.soon(t.setTBarPosition(0, true));
-              await this.soon(t.setProgramScene(target));
-              await this.soon(t.setPreviewScene(before));
-              done = await this.waitProgramChange(t, before, 500);
-            }
-            console.info("[T-bar] program changed:", done);
             if (!done) this.notice("T-bar: OBS did not switch scenes. Check that Studio Mode is on in OBS");
-          } else if (real && !target) {
-            this.notice("T-bar: no preview scene. Turn on Studio Mode in OBS");
           }
         } finally {
-          await this.restoreTBarTransition();
           this.tbarSettling = false;
           this.tbarHeld = false;
           this.set({ tBar: 0, transitioning: false });
@@ -1203,30 +1104,10 @@ export class SwitcherEngine {
         }
       })();
     } else if (p <= 0) {
-      // Pulled back to the start: park at 0, let OBS catch up, then release so it cancels cleanly.
-      this.tbarSettling = true;
       this.set({ tBar: 0, transitioning: false });
-      void (async () => {
-        try {
-          const t = this.transport;
-          await this.tbarPrep;
-          await this.soon(t?.setTBarPosition(0, false) ?? Promise.resolve());
-          if (!this.state.demo) await sleep(150);
-          await this.soon(t?.setTBarPosition(0, true) ?? Promise.resolve());
-        } finally {
-          await this.restoreTBarTransition();
-          this.tbarSettling = false;
-          this.tbarHeld = false;
-          this.set({ tBar: 0, transitioning: false });
-        }
-      })();
     } else {
-      // Left mid-way (like a hardware lever): keep the position, keep holding.
+      // Left mid-way (like a hardware lever): keep the position on screen until it is pulled on or back.
       this.set({ tBar: p, transitioning: true });
-      void (async () => {
-        await this.tbarPrep;
-        await this.transport?.setTBarPosition(p, false).catch(() => {});
-      })();
     }
   }
 
