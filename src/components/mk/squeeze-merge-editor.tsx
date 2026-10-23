@@ -9,6 +9,7 @@ import {
   ANCHOR_GLYPH,
   DEFAULT_AD_BOX,
   DEFAULT_AD_TRIM,
+  DEFAULT_MAIN_BOX,
   computeAdTargets,
   type Anchor,
   type AdConfig,
@@ -17,6 +18,7 @@ import {
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { cn } from "@/lib/utils";
 
+const PROGRAM_SIZE_CHOICES = [1, 0.75, 0.6, 0.5, 0.35];
 const AD_SIZE_CHOICES = [0.15, 0.2, 0.25, 0.3, 0.35, 0.4];
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const fieldClass =
@@ -108,7 +110,7 @@ function CalRow({
 }
 
 /** Mini 16:9 screen showing where the picture and the advertisement sit. Drag it to move (X / Y). */
-function CalPreview({ draft, onDrag }: { draft: AdConfig; onDrag: (patch: Partial<AdConfig>) => void }) {
+function CalPreview({ draft, onDrag, target }: { draft: AdConfig; onDrag: (patch: Partial<AdConfig>) => void; target: "ad" | "program" }) {
   const ref = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number; cfg: AdConfig } | null>(null);
   const W = 1920;
@@ -135,7 +137,7 @@ function CalPreview({ draft, onDrag }: { draft: AdConfig; onDrag: (patch: Partia
       ref={ref}
       role="application"
       aria-label="Drag to move"
-      title="Drag to move the advertisement (overlay) or the squeezed picture (frame / strip)"
+      title="Drag to move the advertisement or the program picture (pick which below)"
       className="relative aspect-video w-full cursor-move touch-none overflow-hidden rounded-sm border border-white/15 bg-black/60"
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -147,7 +149,8 @@ function CalPreview({ draft, onDrag }: { draft: AdConfig; onDrag: (patch: Partia
         if (!s || !rect || !rect.width) return;
         const dx = (e.clientX - s.x) / rect.width;
         const dy = (e.clientY - s.y) / rect.height;
-        if (s.cfg.look === "overlay") onDrag({ box: { ...s.cfg.box, x: round3(s.cfg.box.x + dx), y: round3(s.cfg.box.y + dy) } });
+        if (target === "program" && s.cfg.main) onDrag({ main: { ...s.cfg.main, x: round3(s.cfg.main.x + dx), y: round3(s.cfg.main.y + dy) } });
+        else if (s.cfg.look === "overlay") onDrag({ box: { ...s.cfg.box, x: round3(s.cfg.box.x + dx), y: round3(s.cfg.box.y + dy) } });
         else onDrag({ trim: { dx: round3(s.cfg.trim.dx + dx), dy: round3(s.cfg.trim.dy + dy) } });
       }}
       onPointerUp={() => {
@@ -189,6 +192,8 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
   const saved = presets[sel];
   const [step, setStep] = useState(0.5);
   const [lockRatio, setLockRatio] = useState(true);
+  const [lockMain, setLockMain] = useState(true);
+  const [dragTarget, setDragTarget] = useState<"ad" | "program">("ad");
   const liveCalib = sqmOn && sel === adActive;
 
   // Load the chosen preset into the draft whenever the dialog opens or another preset is picked.
@@ -419,7 +424,7 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
 
               <Field label={liveCalib ? "Calibration — moves live on air, saved as you go" : "Calibration — saved as you go"}>
                 <div className="grid gap-1.5 rounded-sm border border-white/10 p-1.5">
-                  <CalPreview draft={draft} onDrag={calib} />
+                  <CalPreview draft={draft} onDrag={calib} target={dragTarget} />
                   {draft.look === "overlay" ? (
                     <>
                       <CalRow label="X" value={draft.box.x} min={-20} max={100} onChange={(x) => calib({ box: { ...draft.box, x } })} />
@@ -477,6 +482,76 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
                       RESET
                     </button>
                   </div>
+                </div>
+              </Field>
+
+              <Field label="Program size — the picture squeezes too">
+                <div className="grid gap-1.5 rounded-sm border border-white/10 p-1.5">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => calib({ main: null })}
+                      title={draft.look === "overlay" ? "Program stays full screen under the ad" : "Program takes what the ad leaves (1 − ad size)"}
+                      className={cn("mk-button h-7 rounded-[3px] px-2 font-mono text-[10px]", !draft.main && "mk-lit-amber")}
+                    >
+                      AUTO
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => calib({ main: draft.main ?? { ...DEFAULT_MAIN_BOX } })}
+                      title="Choose the program size and position yourself, in every look"
+                      className={cn("mk-button h-7 rounded-[3px] px-2 font-mono text-[10px]", !!draft.main && "mk-lit-amber")}
+                    >
+                      CUSTOM
+                    </button>
+                    {draft.main && (
+                      <Choices
+                        label="Program size"
+                        items={PROGRAM_SIZE_CHOICES.map((v) => ({ id: v, text: pct(v) }))}
+                        value={PROGRAM_SIZE_CHOICES.find((v) => Math.abs(v - (draft.main?.w ?? 0)) < 0.01) ?? -1}
+                        onPick={(v) => {
+                          const m = draft.main!;
+                          calib({ main: { x: Math.min(m.x, round3(1 - v)), y: Math.min(m.y, round3(1 - v)), w: v, h: v } });
+                        }}
+                      />
+                    )}
+                  </div>
+                  {draft.main && (
+                    <>
+                      <CalRow label="PGM X" value={draft.main.x} min={-20} max={100} onChange={(x) => calib({ main: { ...draft.main!, x } })} />
+                      <CalRow label="PGM Y" value={draft.main.y} min={-20} max={100} onChange={(y) => calib({ main: { ...draft.main!, y } })} />
+                      <CalRow
+                        label="PGM W"
+                        value={draft.main.w}
+                        min={5}
+                        max={100}
+                        onChange={(w) => calib({ main: lockMain ? { ...draft.main!, w, h: w } : { ...draft.main!, w } })}
+                      />
+                      <CalRow
+                        label="PGM H"
+                        value={draft.main.h}
+                        min={5}
+                        max={100}
+                        onChange={(h) => calib({ main: lockMain ? { ...draft.main!, w: h, h } : { ...draft.main!, h } })}
+                      />
+                      <label className="flex items-center gap-1.5 font-mono text-[10px]">
+                        <input type="checkbox" checked={lockMain} onChange={(e) => setLockMain(e.target.checked)} />
+                        Keep 16:9 (width and height move together)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="mk-label text-[9px]">Drag in preview moves</span>
+                        <Choices
+                          label="Drag target"
+                          items={[
+                            { id: "ad" as const, text: "AD" },
+                            { id: "program" as const, text: "PROGRAM" },
+                          ]}
+                          value={dragTarget}
+                          onPick={setDragTarget}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </Field>
 
