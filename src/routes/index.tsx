@@ -222,6 +222,7 @@ function Switcher() {
             dskActive={state.dskActive}
             dsks={state.config.dsks}
             tBar={state.tBar}
+            tBarFlip={state.tBarFlip}
             transitioning={state.transitioning}
             fx={state.fx}
             fxConfig={state.config.fx}

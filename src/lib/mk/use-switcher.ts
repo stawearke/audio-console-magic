@@ -14,6 +14,7 @@ const serverSnapshot: SwitcherState = {
   dskActive: Array.from({ length: DSK_COUNT }, () => false),
   gfxActive: IDLE_GFX,
   tBar: 0,
+  tBarFlip: false,
   transitioning: false,
   fx: { running: false, layout: null },
   live: IDLE_LIVE,

@@ -1,7 +1,10 @@
 import { useRef } from "react";
 
 interface TBarProps {
-  value: number; // 0 = Program (bottom), 1 = Preview (top)
+  /** Progress of the pull: 0 = start, 1 = end. */
+  value: number;
+  /** false: the pull starts at the bottom (PGM) and ends at the top (PVW). true: it starts at the top and ends at the bottom. */
+  flip?: boolean;
   onChange: (value: number) => void;
   onRelease: (value: number) => void;
 }
@@ -10,7 +13,7 @@ interface TBarProps {
 const PAD = 16;
 
 /** Broadcast-style vertical T-bar. Mouse, touch, trackpad and stylus. */
-export function TBar({ value, onChange, onRelease }: TBarProps) {
+export function TBar({ value, flip = false, onChange, onRelease }: TBarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const last = useRef(value);
@@ -19,8 +22,8 @@ export function TBar({ value, onChange, onRelease }: TBarProps) {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect || rect.height <= PAD * 2) return last.current;
     const travel = rect.height - PAD * 2;
-    const p = 1 - (clientY - rect.top - PAD) / travel;
-    return Math.min(1, Math.max(0, p));
+    const ui = Math.min(1, Math.max(0, 1 - (clientY - rect.top - PAD) / travel)); // 0 bottom .. 1 top
+    return flip ? 1 - ui : ui;
   };
 
   const update = (clientY: number) => {
@@ -37,6 +40,8 @@ export function TBar({ value, onChange, onRelease }: TBarProps) {
   };
 
   const percent = Math.round(value * 100);
+  /** Handle position on the track: 0 = bottom, 1 = top. */
+  const ui = flip ? 1 - value : value;
 
   return (
     <div className="flex min-h-0 flex-1 items-stretch gap-2">
@@ -64,8 +69,9 @@ export function TBar({ value, onChange, onRelease }: TBarProps) {
         onPointerCancel={end}
         onLostPointerCapture={end}
         onKeyDown={(event) => {
-          if (event.key === "ArrowUp") onChange(Math.min(1, value + 0.05));
-          else if (event.key === "ArrowDown") onChange(Math.max(0, value - 0.05));
+          const up = flip ? -0.05 : 0.05;
+          if (event.key === "ArrowUp") onChange(Math.min(1, Math.max(0, value + up)));
+          else if (event.key === "ArrowDown") onChange(Math.min(1, Math.max(0, value - up)));
           else if (event.key === "Enter") onRelease(1);
           else if (event.key === "Escape") onRelease(0);
         }}
@@ -76,10 +82,10 @@ export function TBar({ value, onChange, onRelease }: TBarProps) {
           className="absolute left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-bezel"
           style={{ top: PAD, bottom: PAD }}
         />
-        {/* travel fill (rises from the bottom) */}
+        {/* travel fill (grows from the side the pull started on) */}
         <div
           className="absolute left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-amber"
-          style={{ bottom: PAD, height: `calc((100% - ${PAD * 2}px) * ${value})` }}
+          style={{ [flip ? "top" : "bottom"]: PAD, height: `calc((100% - ${PAD * 2}px) * ${value})` }}
         />
         {/* tick marks */}
         {[0, 25, 50, 75, 100].map((tick) => (
@@ -92,7 +98,7 @@ export function TBar({ value, onChange, onRelease }: TBarProps) {
         {/* handle */}
         <div
           className="mk-cap absolute inset-x-1.5 flex h-8 -translate-y-1/2 items-center justify-center rounded-[3px]"
-          style={{ top: `calc(${PAD}px + (100% - ${PAD * 2}px) * ${1 - value})` }}
+          style={{ top: `calc(${PAD}px + (100% - ${PAD * 2}px) * ${1 - ui})` }}
         >
           <div className="flex flex-col gap-[3px]">
             <span className="block h-px w-8 bg-black/60 shadow-[0_1px_0_oklch(1_0_0/35%)]" />

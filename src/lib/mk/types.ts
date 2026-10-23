@@ -614,7 +614,9 @@ export interface SwitcherState {
   dskActive: boolean[];
   /** Built-in graphics on/off (independent of the DSKs). */
   gfxActive: Record<GfxId, boolean>;
-  tBar: number; // 0..1
+  tBar: number; // 0..1 progress of the current take (0 = start of the pull, 1 = end)
+  /** T-bar handle rests on the far (top) side after a take; the next pull runs back down. */
+  tBarFlip: boolean;
   transitioning: boolean;
   /** Picture effects: `running` while one animates, `layout` while PiP / Merge is held on air. */
   fx: { running: boolean; layout: FxLayoutKind | null };

@@ -98,6 +98,7 @@ function initialState(config: MkConfig): SwitcherState {
     dskActive: Array.from({ length: DSK_COUNT }, () => false),
     gfxActive: IDLE_GFX,
     tBar: 0,
+    tBarFlip: false,
     transitioning: false,
     fx: { running: false, layout: null },
     live: IDLE_LIVE,
@@ -136,6 +137,10 @@ export class SwitcherEngine {
   private tbarTimer: ReturnType<typeof setTimeout> | null = null;
   private tbarPending: number | null = null;
   private tbarHeld = false;
+  /** True while a released T-bar is being confirmed with OBS (input is ignored for that short moment). */
+  private tbarSettling = false;
+  /** Set by Auto Take so finishTransition() leaves the handle on the opposite side. */
+  private takeFlip = false;
   private booted = false;
   /** While PiP / Merge is held on air: the two scenes involved and the canvas size. */
   /** The merge helper scenes (pane scenes + border colour) exist in OBS, so the buses may hold their items. */
@@ -980,7 +985,9 @@ export class SwitcherEngine {
   private finishTransition() {
     this.stopAnim();
     this.tbarHeld = false;
-    this.set({ tBar: 0, transitioning: false });
+    const flip = this.takeFlip;
+    this.takeFlip = false;
+    this.set(flip ? { tBar: 0, transitioning: false, tBarFlip: !this.state.tBarFlip } : { tBar: 0, transitioning: false });
     void this.transport?.resync().catch(() => {});
   }
 
@@ -1001,6 +1008,7 @@ export class SwitcherEngine {
     if (this.state.transitioning) return;
     const isCut = this.state.config.transition === "Cut";
     const ms = isCut ? 0 : this.state.config.transitionDuration;
+    this.takeFlip = true;
     this.set({ transitioning: true, tBar: 0 });
     if (ms > 0) {
       // Animate the T-bar over the transition so the UI mirrors what OBS does.
@@ -1019,7 +1027,10 @@ export class SwitcherEngine {
       }, 33);
     }
     const sent = await this.send("Auto take", (t) => t.performAutoTake());
-    if (!sent) this.finishTransition();
+    if (!sent) {
+      this.takeFlip = false;
+      this.finishTransition();
+    }
     if (ms === 0) this.finishTransition();
   }
 
@@ -1031,9 +1042,18 @@ export class SwitcherEngine {
     void this.transport?.setTBarPosition(position, false).catch(() => {});
   };
 
-  /** Manual T-bar. `release` is true on pointer-up. */
+  /** Wait for an OBS call but never hang the console on it. */
+  private async soon<T>(p: Promise<T>, ms = 1500): Promise<T | null> {
+    return Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+  }
+
+  /**
+   * Manual T-bar. `position` is the progress of the pull (0 = start, 1 = end) and `release` is true on pointer-up.
+   * After a completed pull the handle stays on the far side (tBarFlip) and the next pull runs back the other way.
+   */
   setTBar(position: number, release = false) {
     if (this.fxGuard()) return;
+    if (this.tbarSettling) return;
     const p = Math.min(1, Math.max(0, position));
     if (!release) {
       this.tbarHeld = true;
@@ -1049,22 +1069,32 @@ export class SwitcherEngine {
     if (p >= 1) {
       const oldProgram = this.state.programScene;
       const oldPreview = this.state.previewScene;
-      this.set({ tBar: 1, transitioning: true });
+      // Show the finished take straight away: handle rests on the far side, PGM/PVW swapped, nothing "in transition".
+      this.tbarSettling = true;
+      this.tbarHeld = true;
+      this.stopAnim();
+      this.swapLocal();
+      this.set({ tBar: 0, tBarFlip: !this.state.tBarFlip, transitioning: false });
       void (async () => {
-        const t = this.transport;
-        await t?.setTBarPosition(1, true).catch(() => {});
-        if (t && !this.state.demo) {
-          await new Promise((r) => setTimeout(r, 500));
-          const now = await t.getCurrentProgramScene().catch(() => null);
-          // OBS ignored the T-bar completion → perform the take ourselves.
-          if (now && oldProgram && oldPreview && now === oldProgram && oldPreview !== oldProgram) {
-            await t.setTBarPosition(0, true).catch(() => {});
-            await t.setProgramScene(oldPreview).catch(() => {});
-            await t.setPreviewScene(oldProgram).catch(() => {});
+        try {
+          const t = this.transport;
+          await this.soon(t?.setTBarPosition(1, true) ?? Promise.resolve());
+          if (t && !this.state.demo) {
+            await new Promise((r) => setTimeout(r, 350));
+            const now = await this.soon(t.getCurrentProgramScene());
+            // OBS ignored the T-bar completion → perform the take ourselves.
+            if (now && oldProgram && oldPreview && now === oldProgram && oldPreview !== oldProgram) {
+              await this.soon(t.setTBarPosition(0, true));
+              await this.soon(t.setProgramScene(oldPreview));
+              await this.soon(t.setPreviewScene(oldProgram));
+            }
           }
+        } finally {
+          this.tbarSettling = false;
+          this.tbarHeld = false;
+          this.set({ tBar: 0, transitioning: false });
+          void this.transport?.resync().catch(() => {});
         }
-        this.tbarHeld = false;
-        this.finishTransition();
       })();
     } else if (p <= 0) {
       void this.transport?.setTBarPosition(0, true).catch(() => {});
@@ -1187,6 +1217,7 @@ export class SwitcherEngine {
         await t.fxStage(this.fxCams(), pair.a, pair.a, free);
         await this.liveDrawMain(free, pair.a);
         this.swapLocal();
+        this.set({ tBarFlip: !this.state.tBarFlip });
       } else {
         const { width: W, height: H } = await t.fxStage(this.fxCams(), pair.a, pair.b);
         await this.fxDraw(pair, at(0, W, H));
@@ -1202,6 +1233,7 @@ export class SwitcherEngine {
         onAir = false;
         await t.setPreviewScene(pair.a).catch(() => {});
         this.swapLocal();
+        this.set({ tBarFlip: !this.state.tBarFlip });
       }
     } catch (error) {
       const why = error instanceof Error && error.message ? ` (${error.message})` : "";

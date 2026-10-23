@@ -10,6 +10,7 @@ interface TransitionPanelProps {
   dskActive: boolean[];
   dsks: DskTarget[];
   tBar: number;
+  tBarFlip: boolean;
   transitioning: boolean;
   transitionName: string;
   duration: number;
@@ -46,6 +47,7 @@ export function TransitionPanel({
   dskActive,
   dsks,
   tBar,
+  tBarFlip,
   transitioning,
   transitionName,
   duration,
@@ -253,7 +255,7 @@ export function TransitionPanel({
 
       <div className="flex min-h-[7rem] flex-1 flex-col gap-1 fit:min-h-0">
         <span className="mk-label text-center text-[9px]">T-Bar</span>
-        <TBar value={tBar} onChange={onTBarChange} onRelease={onTBarRelease} />
+        <TBar value={tBar} flip={tBarFlip} onChange={onTBarChange} onRelease={onTBarRelease} />
       </div>
 
       <button
