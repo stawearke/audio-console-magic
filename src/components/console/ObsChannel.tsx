@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { engine } from "@/lib/mk/use-switcher";
-import type { MonitorType } from "@/lib/mk/types";
+import { FLAT_EQ, type MonitorType } from "@/lib/mk/types";
 import type { InputTiming } from "@/lib/mk/transport";
 import { Knob, Module } from "./controls";
 import { ObsStrip, VoicePanel } from "./ObsDesk";
+import { ObsEqGraph } from "./ObsEqGraph";
 import { useObsInputs } from "./obs-inputs";
 
 const MONITORS: Array<[MonitorType, string]> = [["none", "Off"], ["monitorOnly", "Monitor only"], ["monitorAndOutput", "Monitor and output"]];
@@ -39,6 +40,11 @@ export function ObsChannel({ focus }: { focus: string | null }) {
         </div>
         <div className="flex flex-wrap items-start gap-3">
           <ObsStrip c={channel} level={state.levels[name] ?? -100} focused={false} />
+          <div className="min-w-[260px] max-w-md flex-1">
+            <span className="label-text mb-1 block text-[10px] uppercase tracking-widest">EQ: OBS 3-band, curve is approximate</span>
+            <ObsEqGraph eq={channel.eq ?? FLAT_EQ} onChange={(p) => engine.setEq(name, p)} />
+            <span className="label-text mt-1 block text-[10px] leading-relaxed">Drag L, M or H up or down, or use the knobs on the strip. OBS has no adjustable frequencies.</span>
+          </div>
           <Module title="Delay" on onToggle={() => delay(0)}>
             <Knob label="Delay" size="sm" min={-950} max={2000} step={5} unit=" ms" def={0} value={timing.syncOffset} onChange={delay} />
             <span className="label-text max-w-[12rem] text-center text-[10px] leading-relaxed">Lines this input up with the picture (OBS "Audio sync offset"). The switch resets it to 0.</span>
