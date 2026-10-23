@@ -249,6 +249,17 @@ export function cleanAdBox(raw: unknown): AdBox {
     h: num(r.h, 0.03, 1.5, DEFAULT_AD_BOX.h),
   };
 }
+export const DEFAULT_MAIN_BOX: AdBox = { x: 0, y: 0, w: 0.65, h: 0.65 };
+export function cleanMainBox(raw: unknown): AdBox | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Partial<AdBox>;
+  return {
+    x: num(r.x, -0.5, 1.5, DEFAULT_MAIN_BOX.x),
+    y: num(r.y, -0.5, 1.5, DEFAULT_MAIN_BOX.y),
+    w: num(r.w, 0.05, 1, DEFAULT_MAIN_BOX.w),
+    h: num(r.h, 0.05, 1, DEFAULT_MAIN_BOX.h),
+  };
+}
 export function cleanAdTrim(raw: unknown): AdTrim {
   const r = (raw ?? {}) as Partial<AdTrim>;
   return { dx: num(r.dx, -0.5, 0.5, 0), dy: num(r.dy, -0.5, 0.5, 0) };
@@ -266,6 +277,11 @@ export interface AdConfig {
   box: AdBox;
   /** Frame / strip look: calibration, fine X / Y shift of the squeezed program picture (fractions of the canvas). */
   trim: AdTrim;
+  /**
+   * Program picture box (fractions of the canvas). null = automatic: full screen in the overlay look, 1 - size in frame / strip.
+   * When set it wins in EVERY look, so the program size is chosen on its own, not only the ad's. PIPs / DSKs / merge / tags squeeze with it.
+   */
+  main: AdBox | null;
   /** Frame look: where the program picture sits. */
   anchor: Anchor;
   /** Strip look: which side the bar is on. */
@@ -287,6 +303,7 @@ export const DEFAULT_AD: AdConfig = {
   look: "frame",
   box: DEFAULT_AD_BOX,
   trim: DEFAULT_AD_TRIM,
+  main: null,
   anchor: "tr",
   layout: "r",
   size: 0.25,
@@ -510,6 +527,11 @@ export function computeAdTargets(cfg: AdConfig, W: number, H: number) {
     end = cfg.look === "frame" ? frameTargets(cfg.anchor, cfg.size, W, H) : sqmTargets(cfg.layout, cfg.size, W, H);
     rest = cfg.look === "frame" ? frameRest(W, H) : sqmRest(cfg.layout, cfg.size, W, H);
     end = { ...end, main: { ...end.main, x: end.main.x + cfg.trim.dx * W, y: end.main.y + cfg.trim.dy * H } };
+  }
+  // A program box chosen by hand wins in every look (overlay included): the program squeezes into it.
+  if (cfg.main) {
+    const m = cfg.main;
+    end = { ...end, main: { x: m.x * W, y: m.y * H, sx: m.w, sy: m.h, cl: 0, cr: 0, ct: 0, cb: 0 } };
   }
   return { end: { main: end.main, ad: { ...end.ad, fill } }, rest: { main: rest.main, ad: { ...rest.ad, fill } } };
 }
