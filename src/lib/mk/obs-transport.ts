@@ -692,6 +692,11 @@ export class ObsTransport implements Transport {
     await this.obs.call("SetCurrentSceneTransition", { transitionName: name });
   }
 
+  async setTBarTransition(name: string) {
+    this.quiet();
+    await this.obs.call("SetCurrentSceneTransition", { transitionName: name });
+  }
+
   async setTransitionDuration(ms: number) {
     await this.obs.call("SetCurrentSceneTransitionDuration", { transitionDuration: ms });
   }

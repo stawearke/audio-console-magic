@@ -136,6 +136,9 @@ export class SwitcherEngine {
   private tbarTimer: ReturnType<typeof setTimeout> | null = null;
   private tbarPending: number | null = null;
   private tbarHeld = false;
+  /** OBS's T-bar ignores the Cut (and stinger) transition, so for a pull we borrow a mixing one and hand it back after. */
+  private tbarPrep: Promise<void> | null = null;
+  private tbarRestore: string | null = null;
   /** True while a released T-bar is being confirmed with OBS (input is ignored for that short moment). */
   private tbarSettling = false;
   /** Set by Auto Take so finishTransition() leaves the handle on the opposite side. */
@@ -984,6 +987,7 @@ export class SwitcherEngine {
   private finishTransition() {
     this.stopAnim();
     this.tbarHeld = false;
+    void this.restoreTBarTransition();
     const flip = this.takeFlip;
     this.takeFlip = false;
     this.set(flip ? { tBar: 0, transitioning: false, tBarFlip: !this.state.tBarFlip } : { tBar: 0, transitioning: false });
@@ -997,6 +1001,7 @@ export class SwitcherEngine {
     this.tbarHeld = false;
     this.set({ tBar: 0, transitioning: false });
     this.swapLocal();
+    await this.restoreTBarTransition();
     await this.send("Cut", (t) => t.performCut());
     setTimeout(() => void this.transport?.resync().catch(() => {}), 200);
   }
@@ -1033,8 +1038,35 @@ export class SwitcherEngine {
     if (ms === 0) this.finishTransition();
   }
 
-  private flushTBar = () => {
+  /** Make sure OBS is on a transition its T-bar can drive (not Cut / Stinger). Safe to call repeatedly. */
+  private prepareTBar(): Promise<void> {
+    if (this.tbarPrep) return this.tbarPrep;
+    const t = this.transport;
+    const current = this.state.config.transition;
+    if (!t?.setTBarTransition || this.state.demo || !/cut|stinger/i.test(current)) return Promise.resolve();
+    const list = this.state.transitions.filter((n) => !/cut|stinger/i.test(n));
+    const pick = list.find((n) => /^fade$/i.test(n)) ?? list.find((n) => /fade|slide|swipe|luma/i.test(n)) ?? list[0];
+    if (!pick) {
+      this.notice("T-bar needs a Fade (or similar) transition in OBS. Cut and Stinger do not work with it");
+      return Promise.resolve();
+    }
+    this.tbarRestore = current;
+    this.tbarPrep = this.soon(t.setTBarTransition(pick), 2500).then(() => undefined);
+    return this.tbarPrep;
+  }
+
+  /** Give OBS its Cut / Stinger back after the T-bar pull is over. */
+  private async restoreTBarTransition() {
+    const back = this.tbarRestore;
+    this.tbarRestore = null;
+    this.tbarPrep = null;
+    if (back) await this.soon(this.transport?.setTBarTransition?.(back) ?? Promise.resolve(), 2500);
+  }
+
+  private flushTBar = async () => {
     this.tbarTimer = null;
+    if (this.tbarPending === null) return;
+    await this.tbarPrep;
     if (this.tbarPending === null) return;
     const position = this.tbarPending;
     this.tbarPending = null;
@@ -1066,6 +1098,7 @@ export class SwitcherEngine {
     if (this.tbarSettling) return;
     const p = Math.min(1, Math.max(0, position));
     if (!release) {
+      if (!this.tbarHeld) void this.prepareTBar();
       this.tbarHeld = true;
       this.set({ tBar: p, transitioning: p > 0 && p < 1 });
       this.tbarPending = p;
@@ -1089,6 +1122,7 @@ export class SwitcherEngine {
         try {
           const t = this.transport;
           if (!t) return;
+          await this.tbarPrep;
           const real = !this.state.demo;
           // What OBS itself has on program / preview right now (live buses and non-Studio setups included).
           const before = real ? ((await this.soon(t.getCurrentProgramScene(), 800)) ?? oldProgram) : null;
@@ -1129,6 +1163,7 @@ export class SwitcherEngine {
             this.notice("T-bar: no preview scene. Turn on Studio Mode in OBS");
           }
         } finally {
+          await this.restoreTBarTransition();
           this.tbarSettling = false;
           this.tbarHeld = false;
           this.set({ tBar: 0, transitioning: false });
@@ -1142,10 +1177,12 @@ export class SwitcherEngine {
       void (async () => {
         try {
           const t = this.transport;
+          await this.tbarPrep;
           await this.soon(t?.setTBarPosition(0, false) ?? Promise.resolve());
           if (!this.state.demo) await sleep(150);
           await this.soon(t?.setTBarPosition(0, true) ?? Promise.resolve());
         } finally {
+          await this.restoreTBarTransition();
           this.tbarSettling = false;
           this.tbarHeld = false;
           this.set({ tBar: 0, transitioning: false });
@@ -1154,7 +1191,10 @@ export class SwitcherEngine {
     } else {
       // Left mid-way (like a hardware lever): keep the position, keep holding.
       this.set({ tBar: p, transitioning: true });
-      void this.transport?.setTBarPosition(p, false).catch(() => {});
+      void (async () => {
+        await this.tbarPrep;
+        await this.transport?.setTBarPosition(p, false).catch(() => {});
+      })();
     }
   }
 

@@ -62,6 +62,8 @@ export interface Transport {
   performCut(): Promise<void>;
   performAutoTake(): Promise<void>;
   setTransition(name: string): Promise<void>;
+  /** Switch OBS's transition for the T-bar without reporting it back as the operator's own change. */
+  setTBarTransition?(name: string): Promise<void>;
   setTransitionDuration(ms: number): Promise<void>;
   setTBarPosition(position: number, release: boolean): Promise<void>;
   toggleDSK(index: number, on: boolean, scene: string, source: string): Promise<void>;
