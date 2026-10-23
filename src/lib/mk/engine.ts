@@ -1161,15 +1161,15 @@ export class SwitcherEngine {
           if (real) await sleep(250);
           await this.soon(t.setTBarPosition(1, true));
           if (check) {
-            let done = await this.waitCommit(t, before, target, 1500);
+            let done = await this.waitCommit(t, before, target, 500);
             if (!done) {
               // OBS's T-bar release did not commit (it snaps back to the old scene). Cancel the half-finished manual
               // transition completely, then finish the take with a normal studio transition, the same as Auto.
               console.info("[T-bar] release did not commit, cancelling manual transition and taking with a normal transition");
               await this.soon(t.setTBarPosition(0, false));
-              await sleep(120);
+              await sleep(50);
               await this.soon(t.setTBarPosition(0, true));
-              await sleep(180);
+              await sleep(80);
               await this.soon(t.performAutoTake());
               done = await this.waitCommit(t, before, target, 2000);
             }
