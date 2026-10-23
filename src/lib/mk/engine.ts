@@ -1373,7 +1373,7 @@ export class SwitcherEngine {
     return this.state.live.sqm && this.live ? this.adTargets().end.main : FULL_RECT;
   }
 
-  /** Item names that live above the cams in every bus: advertisement first (lowest), then PIP 1, PIP 2. */
+  /** Item names that live above the cams in every bus, lowest first. The advertisement is lowest, or topmost in the overlay look. */
   private overlaySources(): string[] {
     const { ad, dsks } = this.state.config;
     const dskSources = dsks.map((d) => d.source).filter((n): n is string => !!n && n !== ad.scene && !this.fxCams().includes(n));
@@ -1381,7 +1381,9 @@ export class SwitcherEngine {
     const merge = this.mergeReady ? [MERGE_BG, ...MERGE_PANES.slice(0, mergeLayoutById(this.activeMerge().layout).panes)] : [];
     const tags = this.tagsReady ? TAG_SCENES.filter((_, i) => this.tagMade.has(i)) : [];
     const pips = PIP_SCENES.filter((_, i) => !!this.state.config.pips[i]?.scene);
-    return [...new Set([...(ad.scene ? [ad.scene] : []), ...merge, ...tags, ...pips, ...dskSources])];
+    // Overlay look: the advertisement is the LAST (topmost) item, above the video, merge, tags, PIPs and DSKs.
+    const adTop = !!ad.scene && ad.look === "overlay";
+    return [...new Set([...(ad.scene && !adTop ? [ad.scene] : []), ...merge, ...tags, ...pips, ...dskSources, ...(adTop && ad.scene ? [ad.scene] : [])])];
   }
 
   /** Where a DSK that rides in the bus sits, inside `region` (the squeezed picture area, or the whole screen). */
