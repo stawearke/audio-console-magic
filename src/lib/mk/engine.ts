@@ -2195,7 +2195,7 @@ export class SwitcherEngine {
         this.notice("Advertisement: OBS did not apply the look");
       }
     }
-    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit || patch.look || patch.anchor || patch.box || patch.trim)) {
+    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit || patch.look || patch.anchor || patch.box || patch.trim || patch.main !== undefined)) {
       const bus = this.progBus();
       const cam = live.mains[bus];
       const a = this.adTargets(prev).end;
