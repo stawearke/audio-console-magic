@@ -32,7 +32,9 @@ import {
   type FxRect,
   type PipSlot,
   type SqueezeDir,
+  adMain,
   adProgress,
+  lerpRectXY,
   computeAdTargets,
 } from "./fx";
 import {
@@ -2119,7 +2121,8 @@ export class SwitcherEngine {
         ad.style,
         (e) => {
           const p = adProgress(ad.order, turningOn, e);
-          const region = lerpRect(from.main, to.main, p.m);
+          const mv = adMain(ad.effect, turningOn, p.m);
+          const region = lerpRectXY(from.main, to.main, mv.x, mv.y);
           return t.fxFrame({ [cam]: this.state.live.merge ? null : region, [ad.scene as string]: lerpRect(from.ad, to.ad, p.a), ...this.overlayFrame(region) }, bus);
         },
         (raw) => this.set({ tBar: raw }),
