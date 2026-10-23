@@ -48,7 +48,7 @@ export function LivePanel({
 
   const active = presets[adActive] ?? presets[0];
   const lookText =
-    ad.look === "frame" ? `FRAME ${ad.anchor.toUpperCase()}` : `STRIP ${ad.layout.toUpperCase()}`;
+    ad.look === "frame" ? `FRAME ${ad.anchor.toUpperCase()}` : ad.look === "overlay" ? "OVERLAY" : `STRIP ${ad.layout.toUpperCase()}`;
 
   return (
     <section

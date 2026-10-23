@@ -4,6 +4,8 @@ import {
   AD_STYLES,
   ANCHORS,
   DEFAULT_AD,
+  cleanAdBox,
+  cleanAdTrim,
   DEFAULT_FX,
   DEFAULT_PIPS,
   PIP_CORNERS,
@@ -180,7 +182,9 @@ function mergeAd(raw: unknown): AdConfig {
   const r = (raw ?? {}) as Partial<AdConfig>;
   return {
     scene: typeof r.scene === "string" && r.scene ? r.scene : null,
-    look: r.look === "strip" ? "strip" : r.look === "frame" ? "frame" : DEFAULT_AD.look,
+    look: r.look === "strip" ? "strip" : r.look === "frame" ? "frame" : r.look === "overlay" ? "overlay" : DEFAULT_AD.look,
+    box: cleanAdBox(r.box),
+    trim: cleanAdTrim(r.trim),
     anchor: ANCHORS.includes(r.anchor as never)
       ? (r.anchor as AdConfig["anchor"])
       : DEFAULT_AD.anchor,
@@ -190,7 +194,7 @@ function mergeAd(raw: unknown): AdConfig {
     layout: AD_LAYOUTS.some((l) => l.id === r.layout)
       ? (r.layout as AdConfig["layout"])
       : DEFAULT_AD.layout,
-    size: typeof r.size === "number" ? Math.min(0.4, Math.max(0.15, r.size)) : DEFAULT_AD.size,
+    size: typeof r.size === "number" ? Math.min(0.6, Math.max(0.1, r.size)) : DEFAULT_AD.size,
     fit: r.fit === "fill" ? "fill" : "fit",
   };
 }

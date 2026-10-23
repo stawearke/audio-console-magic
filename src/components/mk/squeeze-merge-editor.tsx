@@ -1,5 +1,5 @@
 import { Settings2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -7,6 +7,10 @@ import {
   AD_STYLES,
   ANCHORS,
   ANCHOR_GLYPH,
+  DEFAULT_AD_BOX,
+  DEFAULT_AD_TRIM,
+  computeAdTargets,
+  type Anchor,
   type AdConfig,
   type AdPreset,
 } from "@/lib/mk/fx";
@@ -57,6 +61,115 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+const NUDGE_STEPS = [0.1, 0.5, 1, 5];
+
+/** One calibration row: slider + exact number box (in %). */
+function CalRow({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number; // fraction
+  min: number; // percent
+  max: number; // percent
+  onChange: (fraction: number) => void;
+}) {
+  const percent = Math.round(value * 1000) / 10;
+  return (
+    <div className="grid grid-cols-[3.4rem_1fr_4.2rem] items-center gap-2">
+      <span className="mk-label text-[9px]">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={0.1}
+        value={Math.min(max, Math.max(min, percent))}
+        onChange={(e) => onChange(round3(Number(e.target.value) / 100))}
+        aria-label={label}
+        className="h-4 w-full"
+      />
+      <input
+        type="number"
+        step={0.1}
+        value={percent}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v)) onChange(round3(v / 100));
+        }}
+        aria-label={`${label} percent`}
+        className={cn(fieldClass, "h-7 px-1 text-right")}
+      />
+    </div>
+  );
+}
+
+/** Mini 16:9 screen showing where the picture and the advertisement sit. Drag it to move (X / Y). */
+function CalPreview({ draft, onDrag }: { draft: AdConfig; onDrag: (patch: Partial<AdConfig>) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const start = useRef<{ x: number; y: number; cfg: AdConfig } | null>(null);
+  const W = 1920;
+  const H = 1080;
+  const { end } = computeAdTargets(draft, W, H);
+  const place = (r: { x: number; y: number; sx: number; sy: number; bw?: number | undefined; bh?: number | undefined }) => ({
+    left: `${(r.x / W) * 100}%`,
+    top: `${(r.y / H) * 100}%`,
+    width: `${((r.bw ?? W * r.sx) / W) * 100}%`,
+    height: `${((r.bh ?? H * r.sy) / H) * 100}%`,
+  });
+  const pgm = (
+    <div key="pgm" className="absolute flex items-center justify-center border border-sky-300/70 bg-sky-500/30 font-mono text-[8px] text-sky-100" style={place(end.main)}>
+      PGM
+    </div>
+  );
+  const ad = (
+    <div key="ad" className="absolute flex items-center justify-center border border-amber bg-amber/30 font-mono text-[8px] text-amber" style={place(end.ad)}>
+      AD
+    </div>
+  );
+  return (
+    <div
+      ref={ref}
+      role="application"
+      aria-label="Drag to move"
+      title="Drag to move the advertisement (overlay) or the squeezed picture (frame / strip)"
+      className="relative aspect-video w-full cursor-move touch-none overflow-hidden rounded-sm border border-white/15 bg-black/60"
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start.current = { x: e.clientX, y: e.clientY, cfg: draft };
+      }}
+      onPointerMove={(e) => {
+        const s = start.current;
+        const rect = ref.current?.getBoundingClientRect();
+        if (!s || !rect || !rect.width) return;
+        const dx = (e.clientX - s.x) / rect.width;
+        const dy = (e.clientY - s.y) / rect.height;
+        if (s.cfg.look === "overlay") onDrag({ box: { ...s.cfg.box, x: round3(s.cfg.box.x + dx), y: round3(s.cfg.box.y + dy) } });
+        else onDrag({ trim: { dx: round3(s.cfg.trim.dx + dx), dy: round3(s.cfg.trim.dy + dy) } });
+      }}
+      onPointerUp={() => {
+        start.current = null;
+      }}
+      onPointerCancel={() => {
+        start.current = null;
+      }}
+    >
+      {draft.look === "frame" ? [ad, pgm] : [pgm, ad]}
+    </div>
+  );
+}
+
+/** Corner / edge spots for the overlay advertisement (2 % margin). */
+function boxAt(anchor: Anchor, box: AdConfig["box"]): AdConfig["box"] {
+  const m = 0.02;
+  const x = anchor.endsWith("l") ? m : anchor.endsWith("r") ? 1 - box.w - m : (1 - box.w) / 2;
+  const y = anchor.startsWith("t") ? m : anchor.startsWith("b") ? 1 - box.h - m : (1 - box.h) / 2;
+  return { ...box, x: round3(x), y: round3(y) };
+}
+
 /**
  * Squeeze Merge editor for the Transitions panel. Changes are a DRAFT until SAVE is pressed, so nothing
  * moves on air by accident. SAVE writes the preset (name + every setting) to the saved config; it is
@@ -74,6 +187,9 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
   const [sources, setSources] = useState<{ name: string; kind: "scene" | "input" }[]>([]);
 
   const saved = presets[sel];
+  const [step, setStep] = useState(0.5);
+  const [lockRatio, setLockRatio] = useState(true);
+  const liveCalib = sqmOn && sel === adActive;
 
   // Load the chosen preset into the draft whenever the dialog opens or another preset is picked.
   useEffect(() => {
@@ -104,6 +220,26 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
   const dirty = !!draft && !!saved && (!sameAd(draft, saved.ad) || name.trim() !== saved.name);
 
   const edit = (patch: Partial<AdConfig>) => setDraft((d) => (d ? { ...d, ...patch } : d));
+
+  /** Calibration: updates the draft AND the saved preset at once; when it is the one in use and on air, OBS follows live. */
+  const calib = (patch: Partial<AdConfig>) => {
+    edit(patch);
+    if (sel === adActive) void engine.calibrateAd(patch);
+    else void engine.editAdPreset(sel, patch);
+  };
+
+  const nudge = (sx: number, sy: number) => {
+    if (!draft) return;
+    const d = step / 100;
+    if (draft.look === "overlay") calib({ box: { ...draft.box, x: round3(draft.box.x + sx * d), y: round3(draft.box.y + sy * d) } });
+    else calib({ trim: { dx: round3(draft.trim.dx + sx * d), dy: round3(draft.trim.dy + sy * d) } });
+  };
+
+  const resetCalib = () => {
+    if (!draft) return;
+    if (draft.look === "overlay") calib({ box: { ...DEFAULT_AD_BOX } });
+    else calib({ trim: { ...DEFAULT_AD_TRIM } });
+  };
 
   const pickPreset = (i: number) => {
     if (dirty && !window.confirm("You have unsaved changes on this Squeeze Merge. Switch anyway?")) return;
@@ -227,6 +363,7 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
                   items={[
                     { id: "frame" as const, text: "FRAME", hint: "Ad fills the screen behind; the picture shrinks into a spot" },
                     { id: "strip" as const, text: "STRIP", hint: "Ad is a bar beside the picture" },
+                    { id: "overlay" as const, text: "OVERLAY", hint: "Ad sits IN FRONT of the picture like a PIP / DSK; the picture is not squeezed" },
                   ]}
                   value={draft.look}
                   onPick={(look) => edit({ look })}
@@ -248,19 +385,99 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
                     ))}
                   </div>
                 </Field>
-              ) : (
+              ) : draft.look === "strip" ? (
                 <Field label="Ad side">
                   <Choices label="Ad side" items={AD_LAYOUTS.map((l) => ({ id: l.id, text: l.label }))} value={draft.layout} onPick={(layout) => edit({ layout })} />
                 </Field>
+              ) : (
+                <Field label="Ad sits">
+                  <div className="grid w-fit grid-cols-3 gap-0.5" role="group" aria-label="Where the advertisement sits">
+                    {ANCHORS.map((a) => (
+                      <button
+                        key={a}
+                        type="button"
+                        onClick={() => calib({ box: boxAt(a, draft.box) })}
+                        className="mk-button h-7 w-9 rounded-[2px] px-0 font-mono text-[10px]"
+                      >
+                        {ANCHOR_GLYPH[a]}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
               )}
 
-              <Field label="Ad size">
-                <Choices
-                  label="Ad size"
-                  items={AD_SIZE_CHOICES.map((v) => ({ id: v, text: pct(v) }))}
-                  value={AD_SIZE_CHOICES.find((v) => Math.abs(v - draft.size) < 0.01) ?? -1}
-                  onPick={(size) => edit({ size })}
-                />
+              {draft.look !== "overlay" && (
+                <Field label="Ad size">
+                  <Choices
+                    label="Ad size"
+                    items={AD_SIZE_CHOICES.map((v) => ({ id: v, text: pct(v) }))}
+                    value={AD_SIZE_CHOICES.find((v) => Math.abs(v - draft.size) < 0.01) ?? -1}
+                    onPick={(size) => calib({ size })}
+                  />
+                </Field>
+              )}
+
+              <Field label={liveCalib ? "Calibration — moves live on air, saved as you go" : "Calibration — saved as you go"}>
+                <div className="grid gap-1.5 rounded-sm border border-white/10 p-1.5">
+                  <CalPreview draft={draft} onDrag={calib} />
+                  {draft.look === "overlay" ? (
+                    <>
+                      <CalRow label="X" value={draft.box.x} min={-20} max={100} onChange={(x) => calib({ box: { ...draft.box, x } })} />
+                      <CalRow label="Y" value={draft.box.y} min={-20} max={100} onChange={(y) => calib({ box: { ...draft.box, y } })} />
+                      <CalRow
+                        label="WIDTH"
+                        value={draft.box.w}
+                        min={3}
+                        max={150}
+                        onChange={(w) => calib({ box: lockRatio ? { ...draft.box, w, h: w } : { ...draft.box, w } })}
+                      />
+                      <CalRow
+                        label="HEIGHT"
+                        value={draft.box.h}
+                        min={3}
+                        max={150}
+                        onChange={(h) => calib({ box: lockRatio ? { ...draft.box, w: h, h } : { ...draft.box, h } })}
+                      />
+                      <label className="flex items-center gap-1.5 font-mono text-[10px]">
+                        <input type="checkbox" checked={lockRatio} onChange={(e) => setLockRatio(e.target.checked)} />
+                        Keep 16:9 (width and height move together)
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <CalRow label="PIC X" value={draft.trim.dx} min={-50} max={50} onChange={(dx) => calib({ trim: { ...draft.trim, dx } })} />
+                      <CalRow label="PIC Y" value={draft.trim.dy} min={-50} max={50} onChange={(dy) => calib({ trim: { ...draft.trim, dy } })} />
+                      <CalRow label="AD SIZE" value={draft.size} min={10} max={60} onChange={(size) => calib({ size: Math.min(0.6, Math.max(0.1, size)) })} />
+                    </>
+                  )}
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="mk-label text-[9px]">Nudge</span>
+                    <Choices label="Nudge step" items={NUDGE_STEPS.map((v) => ({ id: v, text: `${v}%` }))} value={step} onPick={setStep} />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {(
+                      [
+                        ["◀", -1, 0],
+                        ["▲", 0, -1],
+                        ["▼", 0, 1],
+                        ["▶", 1, 0],
+                      ] as const
+                    ).map(([glyph, dx, dy]) => (
+                      <button
+                        key={glyph}
+                        type="button"
+                        onClick={() => nudge(dx, dy)}
+                        aria-label={`Nudge ${glyph}`}
+                        className="mk-button h-8 w-10 rounded-[3px] px-0 font-mono text-xs"
+                      >
+                        {glyph}
+                      </button>
+                    ))}
+                    <button type="button" onClick={resetCalib} className="mk-button ml-auto h-8 rounded-[3px] px-2 font-mono text-[9px]" title="Back to the default position">
+                      RESET
+                    </button>
+                  </div>
+                </div>
               </Field>
 
               <Field label="Motion">

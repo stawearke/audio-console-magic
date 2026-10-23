@@ -334,6 +334,7 @@ function PresetCard({
             hint: "Ad fills the screen behind; the picture shrinks into a spot",
           },
           { id: "strip" as const, text: "STRIP", hint: "Ad is a bar beside the picture" },
+          { id: "overlay" as const, text: "OVERLAY", hint: "Ad sits in front of the picture like a PIP / DSK (position it in SQZ MERGE SETUP)" },
         ]}
         value={ad.look}
         onPick={(look) => edit({ look })}
@@ -362,21 +363,25 @@ function PresetCard({
             ))}
           </div>
         </div>
-      ) : (
+      ) : ad.look === "strip" ? (
         <Choices
           label="Ad side"
           items={AD_LAYOUTS.map((l) => ({ id: l.id, text: l.label }))}
           value={ad.layout}
           onPick={(layout) => edit({ layout })}
         />
+      ) : (
+        <span className="font-mono text-[9px] opacity-70">Overlay: position and size in SQZ MERGE SETUP → Calibration</span>
       )}
 
-      <Choices
-        label="Ad size"
-        items={AD_SIZE_CHOICES.map((v) => ({ id: v, text: pct(v) }))}
-        value={AD_SIZE_CHOICES.find((v) => Math.abs(v - ad.size) < 0.01) ?? -1}
-        onPick={(size) => edit({ size })}
-      />
+      {ad.look !== "overlay" && (
+        <Choices
+          label="Ad size"
+          items={AD_SIZE_CHOICES.map((v) => ({ id: v, text: pct(v) }))}
+          value={AD_SIZE_CHOICES.find((v) => Math.abs(v - ad.size) < 0.01) ?? -1}
+          onPick={(size) => edit({ size })}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Choices
           label="Motion"

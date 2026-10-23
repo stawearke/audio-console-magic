@@ -14,8 +14,6 @@ import {
   ease,
   isLiveBus,
   isStage,
-  frameRest,
-  frameTargets,
   lerpRect,
   mergeFrame,
   moveFrame,
@@ -23,8 +21,6 @@ import {
   pipFrame,
   pipRect,
   placeIn,
-  sqmRest,
-  sqmTargets,
   squeezeFrame,
   type AdConfig,
   type AdPreset,
@@ -36,6 +32,7 @@ import {
   type FxRect,
   type PipSlot,
   type SqueezeDir,
+  computeAdTargets,
 } from "./fx";
 import {
   MERGE_BG,
@@ -1345,10 +1342,7 @@ export class SwitcherEngine {
 
   private adTargets(cfg: AdConfig = this.state.config.ad) {
     const { w, h } = this.live ?? { w: 1920, h: 1080 };
-    const fill = cfg.fit === "fill";
-    const end = cfg.look === "frame" ? frameTargets(cfg.anchor, cfg.size, w, h) : sqmTargets(cfg.layout, cfg.size, w, h);
-    const rest = cfg.look === "frame" ? frameRest(w, h) : sqmRest(cfg.layout, cfg.size, w, h);
-    return { end: { main: end.main, ad: { ...end.ad, fill } }, rest: { main: rest.main, ad: { ...rest.ad, fill } } };
+    return computeAdTargets(cfg, w, h);
   }
 
   /** Items that must sit UNDER the cams: the full-screen advertisement of the frame look. */
@@ -2192,7 +2186,7 @@ export class SwitcherEngine {
         this.notice("Advertisement: OBS did not apply the look");
       }
     }
-    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit || patch.look || patch.anchor)) {
+    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit || patch.look || patch.anchor || patch.box || patch.trim)) {
       const bus = this.progBus();
       const cam = live.mains[bus];
       const a = this.adTargets(prev).end;
@@ -2212,6 +2206,40 @@ export class SwitcherEngine {
       } finally {
         this.set({ fx: { running: false, layout: null } });
       }
+    }
+  }
+
+  private calibBusy = false;
+  private calibDirty = false;
+
+  /**
+   * Calibration of the Squeeze Merge in use (X / Y / size): saved at once and, while it is on air, drawn straight away
+   * with no glide, so the operator sees it move while adjusting. Rapid changes are coalesced.
+   */
+  async calibrateAd(patch: Partial<AdConfig>) {
+    const next = { ...this.state.config.ad, ...patch };
+    this.updateConfig({ ad: next, adPresets: this.withActivePreset(next) });
+    const t = this.transport;
+    const live = this.live;
+    if (!t || !live || !this.state.live.sqm || !next.scene || this.state.status !== "connected") return;
+    this.calibDirty = true;
+    if (this.calibBusy) return;
+    this.calibBusy = true;
+    try {
+      while (this.calibDirty) {
+        this.calibDirty = false;
+        const cfg = this.state.config.ad;
+        const bus = this.progBus();
+        const cam = live.mains[bus];
+        if (this.state.fx.running || !this.state.live.sqm || !cfg.scene || !cam) break;
+        const { end } = this.adTargets(cfg);
+        await t.fxFrame({ [cam]: this.state.live.merge ? null : end.main, [cfg.scene]: end.ad, ...this.overlayFrame(end.main) }, bus);
+        await this.liveSyncFree();
+      }
+    } catch {
+      this.notice("Squeeze Merge: OBS did not apply the change");
+    } finally {
+      this.calibBusy = false;
     }
   }
 

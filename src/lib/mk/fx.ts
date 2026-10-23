@@ -225,6 +225,35 @@ const easeOutBack = (t: number) => {
 export const adEase = (style: AdStyle): ((t: number) => number) =>
   style === "pop" ? easeOutBack : style === "linear" ? (t) => t : ease;
 
+/** Overlay ad rectangle, fractions of the canvas: x / y = top-left corner, w / h = size. */
+export interface AdBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+/** Fine shift of the squeezed program picture, fractions of the canvas (0.01 = 1 %). */
+export interface AdTrim {
+  dx: number;
+  dy: number;
+}
+export const DEFAULT_AD_BOX: AdBox = { x: 0.62, y: 0.62, w: 0.35, h: 0.35 };
+export const DEFAULT_AD_TRIM: AdTrim = { dx: 0, dy: 0 };
+const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+export function cleanAdBox(raw: unknown): AdBox {
+  const r = (raw ?? {}) as Partial<AdBox>;
+  return {
+    x: num(r.x, -0.5, 1.5, DEFAULT_AD_BOX.x),
+    y: num(r.y, -0.5, 1.5, DEFAULT_AD_BOX.y),
+    w: num(r.w, 0.03, 1.5, DEFAULT_AD_BOX.w),
+    h: num(r.h, 0.03, 1.5, DEFAULT_AD_BOX.h),
+  };
+}
+export function cleanAdTrim(raw: unknown): AdTrim {
+  const r = (raw ?? {}) as Partial<AdTrim>;
+  return { dx: num(r.dx, -0.5, 0.5, 0), dy: num(r.dy, -0.5, 0.5, 0) };
+}
+
 export interface AdConfig {
   /** Any OBS source: a scene, image, video, browser source (animated graphic)… */
   scene: string | null;
@@ -232,12 +261,16 @@ export interface AdConfig {
    * frame = the advertisement is a full-screen graphic BEHIND the program picture; the picture shrinks into
    * `anchor` and the graphic shows around it (vMix look). strip = the ad is a bar beside the picture (`layout`).
    */
-  look: "frame" | "strip";
+  look: "frame" | "strip" | "overlay";
+  /** Overlay look: the ad is placed IN FRONT of the program picture (like a PIP / DSK); the picture is not squeezed. */
+  box: AdBox;
+  /** Frame / strip look: calibration, fine X / Y shift of the squeezed program picture (fractions of the canvas). */
+  trim: AdTrim;
   /** Frame look: where the program picture sits. */
   anchor: Anchor;
   /** Strip look: which side the bar is on. */
   layout: AdLayout;
-  /** Share of the picture the advertisement takes (0.15 .. 0.4); the program picture becomes 1 - size. */
+  /** Share of the picture the advertisement takes (0.1 .. 0.6); the program picture becomes 1 - size. */
   size: number;
   /** fit = whole ad visible; fill = ad covers its area (cropped). */
   fit: "fit" | "fill";
@@ -252,6 +285,8 @@ export const DEFAULT_PIPS: PipSlot[] = [
 export const DEFAULT_AD: AdConfig = {
   scene: null,
   look: "frame",
+  box: DEFAULT_AD_BOX,
+  trim: DEFAULT_AD_TRIM,
   anchor: "tr",
   layout: "r",
   size: 0.25,
@@ -427,4 +462,54 @@ export function frameRest(W: number, H: number): { main: FxRect; ad: FxRect } {
     main: { ...FULL_RECT },
     ad: { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0, bw: W, bh: H },
   };
+}
+
+/** Overlay look, fully in: the program stays full screen, the advertisement sits in front of it in `box`. */
+export function overlayTargets(box: AdBox, W: number, H: number): { main: FxRect; ad: FxRect } {
+  return {
+    main: { ...FULL_RECT },
+    ad: { x: box.x * W, y: box.y * H, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0, bw: box.w * W, bh: box.h * H },
+  };
+}
+
+/** Overlay look at rest: the advertisement is parked just outside the nearest edge of the canvas. */
+export function overlayRest(box: AdBox, W: number, H: number): { main: FxRect; ad: FxRect } {
+  const end = overlayTargets(box, W, H);
+  const ad = { ...end.ad };
+  const gaps = [
+    { side: "l", d: box.x },
+    { side: "r", d: 1 - (box.x + box.w) },
+    { side: "t", d: box.y },
+    { side: "b", d: 1 - (box.y + box.h) },
+  ].sort((a, b) => a.d - b.d);
+  switch (gaps[0]!.side) {
+    case "l":
+      ad.x = -(ad.bw ?? 0);
+      break;
+    case "r":
+      ad.x = W;
+      break;
+    case "t":
+      ad.y = -(ad.bh ?? 0);
+      break;
+    default:
+      ad.y = H;
+  }
+  return { main: { ...FULL_RECT }, ad };
+}
+
+/** Where the program picture and the advertisement sit fully in (`end`) and parked (`rest`), for any look, trim included. */
+export function computeAdTargets(cfg: AdConfig, W: number, H: number) {
+  const fill = cfg.fit === "fill";
+  let end: { main: FxRect; ad: FxRect };
+  let rest: { main: FxRect; ad: FxRect };
+  if (cfg.look === "overlay") {
+    end = overlayTargets(cfg.box, W, H);
+    rest = overlayRest(cfg.box, W, H);
+  } else {
+    end = cfg.look === "frame" ? frameTargets(cfg.anchor, cfg.size, W, H) : sqmTargets(cfg.layout, cfg.size, W, H);
+    rest = cfg.look === "frame" ? frameRest(W, H) : sqmRest(cfg.layout, cfg.size, W, H);
+    end = { ...end, main: { ...end.main, x: end.main.x + cfg.trim.dx * W, y: end.main.y + cfg.trim.dy * H } };
+  }
+  return { end: { main: end.main, ad: { ...end.ad, fill } }, rest: { main: rest.main, ad: { ...rest.ad, fill } } };
 }
