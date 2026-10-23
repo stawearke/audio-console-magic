@@ -6,6 +6,7 @@ import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
+import { EVENT_TAG, SHARED_REALM, slotName } from "./shared";
 import { DEFAULT_VOICE, FILTER_CHAIN, VOICE_FILTERS, applySettings, toSettings, type ObsVoice, type VoiceKey } from "./obs-voice";
 import { DSK_COUNT, FLAT_EQ, type AudioChannel, type EqValues, type MonitorType, type OutputCheckRow } from "./types";
 
@@ -156,6 +157,12 @@ export class ObsTransport implements Transport {
         this.bus.emit({ type: "record", active: false });
       else if (!outputActive) this.bus.emit({ type: "record", active: false });
     });
+    // Another desk changed shared setup (camera map, graphics design ...): tell the engine to re-read it.
+    this.obs.on("CustomEvent", (data) => {
+      const d = data as { tag?: unknown; from?: unknown; keys?: unknown };
+      if (d?.tag !== EVENT_TAG || typeof d.from !== "string" || !Array.isArray(d.keys)) return;
+      this.bus.emit({ type: "shared", from: d.from, keys: d.keys.filter((k): k is string => typeof k === "string") });
+    });
     this.obs.on("SceneItemEnableStateChanged", (data) => {
       if (data.sceneName === GFX_SCENE) {
         for (const [name, id] of this.gfxIds) {
@@ -226,6 +233,23 @@ export class ObsTransport implements Transport {
     if (program) this.bus.emit({ type: "programScene", scene: program });
     const preview = await this.getCurrentPreviewScene();
     if (preview) this.bus.emit({ type: "previewScene", scene: preview });
+  }
+
+  async sharedGet(key: string): Promise<unknown | null> {
+    const r = await this.obs.call("GetPersistentData", { realm: SHARED_REALM, slotName: slotName(key) });
+    return (r as { slotValue?: unknown }).slotValue ?? null;
+  }
+
+  async sharedSet(key: string, value: unknown): Promise<void> {
+    await this.obs.call("SetPersistentData", {
+      realm: SHARED_REALM,
+      slotName: slotName(key),
+      slotValue: value as never,
+    });
+  }
+
+  async sharedNotify(from: string, keys: string[]): Promise<void> {
+    await this.obs.call("BroadcastCustomEvent", { eventData: { tag: EVENT_TAG, from, keys } });
   }
 
   /** MAIN audio = OBS "Desktop Audio" (global device), with fallbacks by kind / name. */

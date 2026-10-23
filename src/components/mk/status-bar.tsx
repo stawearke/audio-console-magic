@@ -20,15 +20,18 @@ interface StatusBarProps {
   menus?: ReactNode;
   /** Pre-listen control. */
   listen?: ReactNode;
+  /** Desk (role) switch + sync lamp. */
+  role?: ReactNode;
 }
 
-export function StatusBar({ status, statusMessage, demo, menus, listen }: StatusBarProps) {
+export function StatusBar({ status, statusMessage, demo, menus, listen, role }: StatusBarProps) {
   return (
     <header className="mk-chassis flex h-10 shrink-0 items-center gap-2 border-b border-white/10 px-2">
       <h1 className="shrink-0 text-base leading-none font-bold tracking-[0.22em] text-foreground">MK VISION</h1>
       <div className="flex min-w-0 items-center gap-1 overflow-x-auto">{menus}</div>
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        {role}
         {listen}
         {demo && (
           <span className="mk-lit-amber rounded-[3px] px-2 py-1 text-[9px] leading-none font-bold tracking-[0.16em] uppercase">

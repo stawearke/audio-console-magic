@@ -50,6 +50,21 @@ import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, ta
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
+import { canWrite, getRole } from "./roles";
+import {
+  SHARED_KEYS,
+  changedKeys,
+  cleanEntry,
+  deskId,
+  isSharedKey,
+  loadKnown,
+  nextRev,
+  planPull,
+  saveKnown,
+  setSync,
+  type SharedEntry,
+  type SharedKey,
+} from "./shared";
 import { DEFAULT_VOICE, type ObsVoice } from "./obs-voice";
 import { PLAYOUT_SCENE, type InputTiming, type PlayoutStatus, type Transport, type TransportEvent } from "./transport";
 import {
@@ -200,10 +215,120 @@ export class SwitcherEngine {
   }
 
   private updateConfig(patch: Partial<MkConfig>) {
-    const config = { ...this.state.config, ...patch };
+    const prev = this.state.config;
+    const config = { ...prev, ...patch };
     this.set({ config });
     saveConfig(config);
+    if (!this.applyingShared) this.markShared(prev, config);
     return config;
+  }
+
+  // ------------------------------------------------------ shared setup (Director / Graphics / Sound desks)
+  // Live state comes from OBS for every desk. The setup (camera map, graphics design, limiter ...) is kept
+  // in OBS too (persistent data) and mirrored here, so all desks on one WebSocket always agree.
+
+  private sharedKnown = loadKnown();
+  private sharedDirty = new Set<SharedKey>();
+  private sharedTimer: ReturnType<typeof setTimeout> | null = null;
+  private sharedChain: Promise<unknown> = Promise.resolve();
+  private applyingShared = false;
+
+  private queueShared(run: () => Promise<unknown>) {
+    this.sharedChain = this.sharedChain.then(run).catch(() => {});
+  }
+
+  private markShared(prev: MkConfig, next: MkConfig) {
+    const keys = changedKeys(prev, next);
+    if (!keys.length) return;
+    for (const k of keys) this.sharedDirty.add(k);
+    if (this.sharedTimer) clearTimeout(this.sharedTimer);
+    this.sharedTimer = setTimeout(() => this.queueShared(() => this.pushShared()), 350);
+  }
+
+  private get sharedReady(): boolean {
+    const t = this.transport;
+    return !!t?.sharedGet && !!t.sharedSet && !this.state.demo && this.state.status === "connected";
+  }
+
+  /** Read the named keys from OBS and apply the ones that are newer than what this desk has. */
+  private async pullShared(wanted: readonly string[]): Promise<Partial<Record<SharedKey, SharedEntry | null>>> {
+    const t = this.transport;
+    const remote: Partial<Record<SharedKey, SharedEntry | null>> = {};
+    if (!t?.sharedGet || !this.sharedReady) return remote;
+    await Promise.all(
+      wanted.filter(isSharedKey).map(async (k) => {
+        try {
+          remote[k] = cleanEntry(await t.sharedGet!(k));
+        } catch {
+          /* unreadable: leave it out, never treat as empty */
+        }
+      }),
+    );
+    const plan = planPull(remote, this.sharedKnown, this.sharedDirty, deskId());
+    Object.assign(this.sharedKnown, plan.revs);
+    saveKnown(this.sharedKnown);
+    if (plan.keys.length) {
+      this.applyingShared = true;
+      try {
+        // Round-trip through the loader so remote data is validated exactly like stored data.
+        saveConfig({ ...this.state.config, ...plan.patch } as MkConfig);
+        this.set({ config: loadConfig() });
+        this.set({
+          program: this.camForScene(this.state.programScene),
+          preview: this.camForScene(this.state.previewScene),
+        });
+      } finally {
+        this.applyingShared = false;
+      }
+      if (plan.keys.includes("dsks")) void this.syncDsks();
+      setSync({ lastKeys: plan.keys, at: Date.now() });
+    }
+    return remote;
+  }
+
+  /** Write this desk's unsent shared edits to OBS and tell the other desks. */
+  private async pushShared() {
+    const t = this.transport;
+    if (!t?.sharedGet || !t.sharedSet || !this.sharedReady) return;
+    const role = getRole();
+    const keys = [...this.sharedDirty].filter((k) => canWrite(role, k));
+    this.sharedDirty.clear();
+    if (!keys.length) return;
+    const sent: SharedKey[] = [];
+    try {
+      for (const k of keys) {
+        const remote = cleanEntry(await t.sharedGet(k).catch(() => null));
+        const rev = nextRev(remote, this.sharedKnown[k] ?? 0);
+        await t.sharedSet(k, { rev, by: deskId(), value: this.state.config[k] });
+        this.sharedKnown[k] = rev;
+        sent.push(k);
+      }
+      saveKnown(this.sharedKnown);
+      await t.sharedNotify?.(deskId(), sent).catch(() => {});
+      setSync({ state: "ok", at: Date.now() });
+    } catch {
+      for (const k of keys) if (!sent.includes(k)) this.sharedDirty.add(k);
+      saveKnown(this.sharedKnown);
+      setSync({ state: "error" });
+      this.notice("Shared setup not saved to OBS — will retry");
+    }
+  }
+
+  /** On connect: take what OBS holds, then send this desk's pending edits. The Director also fills in anything OBS lacks. */
+  private async syncShared() {
+    if (!this.sharedReady) {
+      setSync({ state: "off" });
+      return;
+    }
+    setSync({ state: "busy" });
+    try {
+      const remote = await this.pullShared(SHARED_KEYS);
+      if (getRole() === "director") for (const k of SHARED_KEYS) if (remote[k] === null) this.sharedDirty.add(k);
+      await this.pushShared();
+      setSync({ state: "ok", at: Date.now() });
+    } catch {
+      setSync({ state: "error" });
+    }
   }
 
   /**
@@ -313,6 +438,9 @@ export class SwitcherEngine {
       }
       await this.syncDsks();
       await this.syncGfx();
+      await new Promise<void>((resolve) => {
+        this.queueShared(() => this.syncShared().finally(resolve));
+      });
     } catch {
       this.scheduleReconnect();
     }
@@ -352,6 +480,9 @@ export class SwitcherEngine {
 
   private async teardown() {
     this.stopAnim();
+    if (this.sharedTimer) clearTimeout(this.sharedTimer);
+    this.sharedTimer = null;
+    setSync({ state: "off" });
     this.unsubscribeTransport?.();
     this.unsubscribeTransport = null;
     if (this.transport) {
@@ -374,6 +505,12 @@ export class SwitcherEngine {
       case "status": {
         this.set({ status: event.status, statusMessage: event.message ?? "" });
         if (event.status === "error") this.scheduleReconnect();
+        break;
+      }
+      case "shared": {
+        if (event.from === deskId()) break;
+        const keys = event.keys.filter(isSharedKey);
+        if (keys.length) this.queueShared(() => this.pullShared(keys));
         break;
       }
       case "scenes":

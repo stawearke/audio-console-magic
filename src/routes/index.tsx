@@ -9,6 +9,7 @@ import { usePanels, type Panel } from "@/lib/mk/use-panels";
 import { Multiview } from "@/components/mk/multiview";
 import { OutputControls } from "@/components/mk/output-controls";
 import { ReconnectOverlay } from "@/components/mk/reconnect-overlay";
+import { RoleSwitch } from "@/components/mk/role-switch";
 import { SoundPad } from "@/components/mk/sound-pad";
 import { SourceBus } from "@/components/mk/source-bus";
 import { ToolsHub } from "@/components/mk/tools-hub";
@@ -19,9 +20,13 @@ import { FX_SCENE } from "@/lib/mk/fx";
 import { comms, tallyOf } from "@/lib/mk/intercom";
 import { startPrompterHost } from "@/lib/mk/prompter";
 import { useShortcuts } from "@/lib/mk/use-shortcuts";
+import { ROLE_CAN, ROLE_PANELS, isRole, setRole, useRole, type Role } from "@/lib/mk/roles";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
+  // /?role=graphics or /?role=sound opens straight into that desk (all desks share one OBS WebSocket).
+  validateSearch: (s: Record<string, unknown>): { role?: Role } =>
+    isRole(s["role"]) ? { role: s["role"] } : {},
   head: () => ({
     meta: [
       { title: "MK VISION — Professional Live Production Control" },
@@ -43,32 +48,54 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Tools", graphics: "Graphics", sounds: "Sounds" };
+const PANEL_LABEL: Record<Panel, string> = {
+  multiview: "Monitors",
+  wall: "Cam Wall",
+  audio: "Audio",
+  status: "Tools",
+  graphics: "Graphics",
+  sounds: "Sounds",
+};
 
 function Switcher() {
   const state = useSwitcher();
-  useShortcuts(state.config.shortcuts);
+  const role = useRole();
+  const wanted = Route.useSearch().role;
+  useEffect(() => {
+    if (wanted) setRole(wanted);
+  }, [wanted]);
+  const host = ROLE_CAN.host(role);
+  const canSwitch = ROLE_CAN.switch(role);
+  useShortcuts(state.config.shortcuts, host);
   // Teleprompter host: keeps the /prompter output window in sync even when the Tools panel is hidden.
-  useEffect(() => startPrompterHost(), []);
+  useEffect(() => (host ? startPrompterHost() : undefined), [host]);
   // Camera tally for the operators' phones (red = on air, green = next). Runs even when the Tools panel is hidden.
   useEffect(() => {
+    if (!host) return;
     const t = tallyOf(state);
     comms.setTally(t.pgm, t.pvw, state.config.camScenes);
-  }, [state]);
-  const [show, toggle] = usePanels();
+  }, [state, host]);
+  const [shown, toggle] = usePanels();
+  // Each desk only gets its own panels; the Director gets all of them.
+  const show = Object.fromEntries(
+    (Object.keys(shown) as Panel[]).map((p) => [p, shown[p] && ROLE_PANELS[role].includes(p)]),
+  ) as Record<Panel, boolean>;
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
   const mixInputs = state.audio.filter((c) => !/^MK /i.test(c.name));
   const hiddenAudio = state.config.hiddenAudio;
   const stripInputs = mixInputs.filter((c) => !hiddenAudio.includes(c.name));
   const bottom = show.audio || show.status || show.graphics || show.sounds;
 
-  const menus = (["multiview", "wall", "audio", "status", "graphics", "sounds"] as Panel[]).map((p) => (
+  const menus = ROLE_PANELS[role].map((p) => (
     <button
       key={p}
       type="button"
       onClick={() => toggle(p)}
       aria-pressed={show[p]}
-      className={cn("mk-button h-7 shrink-0 rounded-[3px] px-2 text-[9px] tracking-[0.12em]", show[p] && "text-foreground")}
+      className={cn(
+        "mk-button h-7 shrink-0 rounded-[3px] px-2 text-[9px] tracking-[0.12em]",
+        show[p] && "text-foreground",
+      )}
     >
       {PANEL_LABEL[p]} {show[p] ? "▾" : "▸"}
     </button>
@@ -82,6 +109,7 @@ function Switcher() {
         demo={state.demo}
         menus={menus}
         listen={<ListenControl config={state.config} />}
+        role={<RoleSwitch />}
       />
       <ReconnectOverlay
         status={state.status}
@@ -99,7 +127,13 @@ function Switcher() {
                 program={state.program}
                 preview={state.preview}
                 programScene={state.programScene}
-                programFeed={state.live.on && state.live.progBus ? state.live.progBus : state.fx.running || state.fx.layout ? FX_SCENE : null}
+                programFeed={
+                  state.live.on && state.live.progBus
+                    ? state.live.progBus
+                    : state.fx.running || state.fx.layout
+                      ? FX_SCENE
+                      : null
+                }
                 previewFeed={state.live.on ? state.live.previewBus : null}
                 previewScene={state.previewScene}
                 tBar={state.tBar}
@@ -117,28 +151,38 @@ function Switcher() {
                 wall={show.wall}
                 camScenes={state.config.camScenes}
                 getThumb={engine.getThumb}
-                onPreviewCam={(cam) => void engine.selectPreview(cam)}
-                onProgramCam={(cam) => void engine.selectProgram(cam)}
+                onPreviewCam={(cam) => {
+                  if (canSwitch) void engine.selectPreview(cam);
+                }}
+                onProgramCam={(cam) => {
+                  if (canSwitch) void engine.selectProgram(cam);
+                }}
               />
             </div>
           )}
-          <SourceBus
-            kind="program"
-            active={state.program}
-            camScenes={state.config.camScenes}
-            onSelect={(cam) => void engine.selectProgram(cam)}
-          />
-          <SourceBus
-            kind="preview"
-            active={state.preview}
-            camScenes={state.config.camScenes}
-            onSelect={(cam) => void engine.selectPreview(cam)}
-          />
+          {canSwitch && (
+            <>
+              <SourceBus
+                kind="program"
+                active={state.program}
+                camScenes={state.config.camScenes}
+                onSelect={(cam) => void engine.selectProgram(cam)}
+              />
+              <SourceBus
+                kind="preview"
+                active={state.preview}
+                camScenes={state.config.camScenes}
+                onSelect={(cam) => void engine.selectPreview(cam)}
+              />
+            </>
+          )}
           {bottom && (
             <div
               className={cn(
                 "flex min-h-0 shrink-0 flex-col gap-1.5 fit:flex-row fit:overflow-x-auto",
-                show.multiview ? "fit:h-[clamp(190px,29vh,270px)] fit:min-h-[11.5rem]" : "fit:min-h-[11.5rem] fit:flex-1",
+                show.multiview
+                  ? "fit:h-[clamp(190px,29vh,270px)] fit:min-h-[11.5rem]"
+                  : "fit:min-h-[11.5rem] fit:flex-1",
               )}
             >
               {show.audio && (
@@ -197,7 +241,14 @@ function Switcher() {
                 </div>
               )}
               {show.graphics && (
-                <div className="min-w-0 fit:w-[14rem] fit:shrink-0 xl:fit:w-[16rem]">
+                <div
+                  className={cn(
+                    "min-w-0 fit:shrink-0",
+                    role === "graphics"
+                      ? "fit:w-[26rem] xl:fit:w-[32rem]"
+                      : "fit:w-[14rem] xl:fit:w-[16rem]",
+                  )}
+                >
                   <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />
                 </div>
               )}
@@ -210,71 +261,88 @@ function Switcher() {
           )}
         </div>
 
-        <div className="flex w-full shrink-0 flex-col gap-1.5 fit:min-h-0 fit:w-[14rem] fit:overflow-y-auto xl:fit:w-[15rem]">
-          <OutputControls
-            stream={state.stream}
-            record={state.record}
-            onStream={() => void engine.toggleStream()}
-            onRecord={() => void engine.toggleRecord()}
-            onPause={() => void engine.toggleRecordPause()}
-          />
-          <TransitionPanel
-            dskActive={state.dskActive}
-            dsks={state.config.dsks}
-            tBar={state.tBar}
-            tBarFlip={state.tBarFlip}
-            transitioning={state.transitioning}
-            fx={state.fx}
-            fxConfig={state.config.fx}
-            live={state.live}
-            pipScenes={state.config.pips.map((p) => p.scene)}
-            adScene={state.config.ad.scene}
-            adName={state.config.adPresets[state.config.adActive]?.name}
-            mergePresets={state.config.mergePresets}
-            mergeActive={state.config.mergeActive}
-            adPresets={state.config.adPresets}
-            adActive={state.config.adActive}
-            onPip={(slot) => void engine.togglePip(slot)}
-            onSqueezeMerge={() => void engine.squeezeMerge()}
-            onMove={(dir) => void engine.moveTake(dir)}
-            onLayout={(kind) => void engine.toggleLayout(kind)}
-            onSqueeze={() => void engine.squeeze()}
-            onFxOption={(patch) => engine.setFx(patch)}
-            transitionName={state.config.transition}
-            duration={state.config.transitionDuration}
-            transitions={state.transitions}
-            onTransition={(name) => void engine.setTransition(name)}
-            onDuration={(ms) => void engine.setTransitionDuration(ms)}
-            onDsk={(index) => void engine.toggleDSK(index)}
-            onAutoTake={() => void engine.autoTake()}
-            onCut={() => void engine.cut()}
-            onTBarChange={(value) => engine.setTBar(value)}
-            onTBarRelease={(value) => engine.setTBar(value, true)}
-          />
-          {/* The Master stays on screen even when the Audio mixer panel is hidden. */}
-          <div className={cn("h-56 shrink-0 fit:h-[clamp(190px,29vh,270px)]", !show.multiview && "fit:h-[clamp(190px,42vh,380px)]")}>
-            <Master
-              channels={mixInputs}
-              levels={state.levels}
-              afv={state.config.audioFollowVideo}
-              limiter={state.config.limiter}
-              gr={state.gr}
-              masterMuted={state.masterMuted}
-              camOf={(name) => engine.audioCam(name)}
-              onVolume={(name, db) => void engine.setAudioVolume(name, db)}
-              onMute={(name) => void engine.toggleAudioMute(name)}
-              onMonitor={(name) => void engine.cycleAudioMonitor(name)}
-              onStream={(name) => void engine.toggleAudioStream(name)}
-              onAfv={(on) => engine.setAudioFollowVideo(on)}
-              onLimiter={(patch) => engine.setLimiter(patch)}
-              onMuteOut={() => void engine.toggleMasterMute()}
-            />
+        {(canSwitch || ROLE_CAN.master(role)) && (
+          <div className="flex w-full shrink-0 flex-col gap-1.5 fit:min-h-0 fit:w-[14rem] fit:overflow-y-auto xl:fit:w-[15rem]">
+            {ROLE_CAN.output(role) && (
+              <OutputControls
+                stream={state.stream}
+                record={state.record}
+                onStream={() => void engine.toggleStream()}
+                onRecord={() => void engine.toggleRecord()}
+                onPause={() => void engine.toggleRecordPause()}
+              />
+            )}
+            {canSwitch && (
+              <TransitionPanel
+                dskActive={state.dskActive}
+                dsks={state.config.dsks}
+                tBar={state.tBar}
+                tBarFlip={state.tBarFlip}
+                transitioning={state.transitioning}
+                fx={state.fx}
+                fxConfig={state.config.fx}
+                live={state.live}
+                pipScenes={state.config.pips.map((p) => p.scene)}
+                adScene={state.config.ad.scene}
+                adName={state.config.adPresets[state.config.adActive]?.name}
+                mergePresets={state.config.mergePresets}
+                mergeActive={state.config.mergeActive}
+                adPresets={state.config.adPresets}
+                adActive={state.config.adActive}
+                onPip={(slot) => void engine.togglePip(slot)}
+                onSqueezeMerge={() => void engine.squeezeMerge()}
+                onMove={(dir) => void engine.moveTake(dir)}
+                onLayout={(kind) => void engine.toggleLayout(kind)}
+                onSqueeze={() => void engine.squeeze()}
+                onFxOption={(patch) => engine.setFx(patch)}
+                transitionName={state.config.transition}
+                duration={state.config.transitionDuration}
+                transitions={state.transitions}
+                onTransition={(name) => void engine.setTransition(name)}
+                onDuration={(ms) => void engine.setTransitionDuration(ms)}
+                onDsk={(index) => void engine.toggleDSK(index)}
+                onAutoTake={() => void engine.autoTake()}
+                onCut={() => void engine.cut()}
+                onTBarChange={(value) => engine.setTBar(value)}
+                onTBarRelease={(value) => engine.setTBar(value, true)}
+              />
+            )}
+            {ROLE_CAN.master(role) && (
+              <>
+                {/* The Master stays on screen even when the Audio mixer panel is hidden. */}
+                <div
+                  className={cn(
+                    "h-56 shrink-0 fit:h-[clamp(190px,29vh,270px)]",
+                    !show.multiview && "fit:h-[clamp(190px,42vh,380px)]",
+                  )}
+                >
+                  <Master
+                    channels={mixInputs}
+                    levels={state.levels}
+                    afv={state.config.audioFollowVideo}
+                    limiter={state.config.limiter}
+                    gr={state.gr}
+                    masterMuted={state.masterMuted}
+                    camOf={(name) => engine.audioCam(name)}
+                    onVolume={(name, db) => void engine.setAudioVolume(name, db)}
+                    onMute={(name) => void engine.toggleAudioMute(name)}
+                    onMonitor={(name) => void engine.cycleAudioMonitor(name)}
+                    onStream={(name) => void engine.toggleAudioStream(name)}
+                    onAfv={(on) => engine.setAudioFollowVideo(on)}
+                    onLimiter={(patch) => engine.setLimiter(patch)}
+                    onMuteOut={() => void engine.toggleMasterMute()}
+                  />
+                </div>
+              </>
+            )}
           </div>
-        </div>
+        )}
       </main>
       {state.notice && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
-          <div className="mk-panel rounded-md border-amber px-3 py-2 font-mono text-xs text-amber">{state.notice}</div>
+          <div className="mk-panel rounded-md border-amber px-3 py-2 font-mono text-xs text-amber">
+            {state.notice}
+          </div>
         </div>
       )}
     </div>
