@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
+  AD_EFFECTS,
   AD_ENTERS,
   AD_LAYOUTS,
   AD_ORDERS,
@@ -563,6 +564,10 @@ export function SqueezeMergeEditor({ presets, adActive, sqmOn, busy }: { presets
 
               <Field label="Enter from — where the ad comes in">
                 <Choices label="Enter from" items={AD_ENTERS.map((s) => ({ id: s.id, text: s.label, hint: s.hint }))} value={draft.enter} onPick={(enter) => edit({ enter })} />
+              </Field>
+
+              <Field label="Effect — how the picture squeezes">
+                <Choices label="Effect" items={AD_EFFECTS.map((s) => ({ id: s.id, text: s.label, hint: s.hint }))} value={draft.effect} onPick={(effect) => edit({ effect })} />
               </Field>
 
               <Field label="Order — who moves first">
