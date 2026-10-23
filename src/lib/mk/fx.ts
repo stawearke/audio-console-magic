@@ -225,6 +225,24 @@ const easeOutBack = (t: number) => {
 export const adEase = (style: AdStyle): ((t: number) => number) =>
   style === "pop" ? easeOutBack : style === "linear" ? (t) => t : ease;
 
+/** Where the advertisement comes in from (and leaves to). auto = the nearest edge / the look's own side. */
+export type AdEnter = "auto" | "l" | "r" | "t" | "b" | "grow";
+export const AD_ENTERS: { id: AdEnter; label: string; hint: string }[] = [
+  { id: "auto", label: "AUTO", hint: "The look's own side" },
+  { id: "l", label: "◀ LEFT", hint: "Slides in from the left edge" },
+  { id: "r", label: "RIGHT ▶", hint: "Slides in from the right edge" },
+  { id: "t", label: "▲ TOP", hint: "Drops in from the top edge" },
+  { id: "b", label: "BOTTOM ▼", hint: "Rises in from the bottom edge" },
+  { id: "grow", label: "GROW", hint: "Grows out of its own centre" },
+];
+/** Who moves first. together = both at once; program = the picture squeezes first, then the ad arrives; ad = the ad arrives first. */
+export type AdOrder = "together" | "program" | "ad";
+export const AD_ORDERS: { id: AdOrder; label: string; hint: string }[] = [
+  { id: "together", label: "TOGETHER", hint: "Picture and ad move at the same time" },
+  { id: "program", label: "PICTURE FIRST", hint: "Picture squeezes, then the ad arrives (ad leaves first on the way out)" },
+  { id: "ad", label: "AD FIRST", hint: "Ad arrives, then the picture squeezes (picture grows back first on the way out)" },
+];
+
 /** Overlay ad rectangle, fractions of the canvas: x / y = top-left corner, w / h = size. */
 export interface AdBox {
   x: number;
@@ -292,6 +310,10 @@ export interface AdConfig {
   fit: "fit" | "fill";
   /** How the picture moves in and out. */
   style: AdStyle;
+  /** Where the advertisement comes in from. */
+  enter: AdEnter;
+  /** Who moves first: the picture, the ad, or both together. */
+  order: AdOrder;
 }
 
 export const DEFAULT_PIPS: PipSlot[] = [
@@ -309,6 +331,8 @@ export const DEFAULT_AD: AdConfig = {
   size: 0.25,
   fit: "fit",
   style: "smooth",
+  enter: "auto",
+  order: "together",
 };
 
 export const FULL_RECT: FxRect = { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0 };
@@ -515,6 +539,37 @@ export function overlayRest(box: AdBox, W: number, H: number): { main: FxRect; a
   return { main: { ...FULL_RECT }, ad };
 }
 
+/** The advertisement parked outside / inside its final spot, for the chosen entrance. */
+export function adParked(end: FxRect, enter: AdEnter, W: number, H: number): FxRect {
+  const bw = end.bw ?? W;
+  const bh = end.bh ?? H;
+  switch (enter) {
+    case "l":
+      return { ...end, x: -bw };
+    case "r":
+      return { ...end, x: W };
+    case "t":
+      return { ...end, y: -bh };
+    case "b":
+      return { ...end, y: H };
+    case "grow":
+      return { ...end, x: end.x + bw / 2 - 1, y: end.y + bh / 2 - 1, bw: 2, bh: 2 };
+    default:
+      return end;
+  }
+}
+
+/**
+ * Progress of the program picture (m) and the advertisement (a) for one animation step e (0..1).
+ * Turning on, "program" = picture leads; turning off the roles swap so the move simply plays backwards.
+ */
+export function adProgress(order: AdOrder, turningOn: boolean, e: number): { m: number; a: number } {
+  const part = (from: number) => Math.min(1, Math.max(0, (e - from) / 0.65));
+  if (order === "together") return { m: e, a: e };
+  const pictureLeads = (order === "program") === turningOn;
+  return pictureLeads ? { m: part(0), a: part(0.35) } : { m: part(0.35), a: part(0) };
+}
+
 /** Where the program picture and the advertisement sit fully in (`end`) and parked (`rest`), for any look, trim included. */
 export function computeAdTargets(cfg: AdConfig, W: number, H: number) {
   const fill = cfg.fit === "fill";
@@ -533,5 +588,6 @@ export function computeAdTargets(cfg: AdConfig, W: number, H: number) {
     const m = cfg.main;
     end = { ...end, main: { x: m.x * W, y: m.y * H, sx: m.w, sy: m.h, cl: 0, cr: 0, ct: 0, cb: 0 } };
   }
+  if (cfg.enter !== "auto") rest = { main: rest.main, ad: adParked(end.ad, cfg.enter, W, H) };
   return { end: { main: end.main, ad: { ...end.ad, fill } }, rest: { main: rest.main, ad: { ...rest.ad, fill } } };
 }
