@@ -1192,7 +1192,14 @@ export class ObsTransport implements Transport {
     const order = this.overlayOrder.get(scene);
     const table = this.tables.get(scene);
     if (!order || !table) return;
-    const total = table.ids.size;
+    // Use what OBS really holds: the cached table can be smaller (duplicate names), which left the overlay below the video.
+    let total = table.ids.size;
+    try {
+      const list = await this.obs.call("GetSceneItemList", { sceneName: scene });
+      total = Math.max(total, list.sceneItems.length);
+    } catch {
+      /* keep the cached count */
+    }
     for (const name of order.over) {
       const id = table.ids.get(name);
       if (id === undefined) continue;
