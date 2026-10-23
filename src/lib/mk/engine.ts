@@ -1128,18 +1128,24 @@ export class SwitcherEngine {
           const before = real ? ((await this.soon(t.getCurrentProgramScene(), 800)) ?? oldProgram) : null;
           const target = real ? ((await this.soon(t.getCurrentPreviewScene(), 800)) ?? oldPreview) : null;
           const check = !!before && !!target && before !== target;
+          console.info("[T-bar] release at end", { before, target, check, transition: this.state.config.transition, swappedFrom: this.tbarRestore });
           // OBS eases its T-bar toward the commanded position. Releasing in the same instant makes it think the bar was
           // let go mid-way. So: park at the end, let OBS catch up, then release.
           await this.soon(t.setTBarPosition(1, false));
           if (real) await sleep(250);
           await this.soon(t.setTBarPosition(1, true));
           if (check) {
-            let done = await this.waitProgramChange(t, before, 700);
+            let done = await this.waitProgramChange(t, before, 600);
             if (!done) {
-              await this.soon(t.setTBarPosition(1, false));
-              await sleep(150);
-              await this.soon(t.setTBarPosition(1, true));
-              done = await this.waitProgramChange(t, before, 500);
+              // OBS's T-bar release did not commit (it snaps back to the old scene). Cancel the half-finished manual
+              // transition completely, then finish the take with a normal studio transition, the same as Auto.
+              console.info("[T-bar] release did not commit, cancelling manual transition and taking with a normal transition");
+              await this.soon(t.setTBarPosition(0, false));
+              await sleep(120);
+              await this.soon(t.setTBarPosition(0, true));
+              await sleep(180);
+              await this.soon(t.performAutoTake());
+              done = await this.waitProgramChange(t, before, 1800);
             }
             // OBS still did not complete the pull. Force the take while OBS still shows the destination (no flash back):
             // first a studio Cut, then a direct program switch.
@@ -1158,6 +1164,7 @@ export class SwitcherEngine {
               await this.soon(t.setPreviewScene(before));
               done = await this.waitProgramChange(t, before, 500);
             }
+            console.info("[T-bar] program changed:", done);
             if (!done) this.notice("T-bar: OBS did not switch scenes. Check that Studio Mode is on in OBS");
           } else if (real && !target) {
             this.notice("T-bar: no preview scene. Turn on Studio Mode in OBS");

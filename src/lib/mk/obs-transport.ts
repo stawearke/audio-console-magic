@@ -704,8 +704,9 @@ export class ObsTransport implements Transport {
   async setTBarPosition(position: number, release: boolean) {
     try {
       await this.obs.call("SetTBarPosition", { position, release });
-    } catch {
-      /* T-bar unsupported for the current transition */
+      if (release || position <= 0 || position >= 1) console.info("[T-bar] SetTBarPosition ok", { position, release });
+    } catch (error) {
+      console.warn("[T-bar] SetTBarPosition REFUSED by OBS", { position, release }, error);
     }
   }
 
