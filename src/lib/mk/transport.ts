@@ -34,7 +34,9 @@ export type TransportEvent =
   | { type: "levels"; levels: Record<string, number> }
   | { type: "limiter"; gr: number | null }
   | { type: "stream"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
-  | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined };
+  | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
+  /** Another desk (Director / Graphics / Sound) changed shared setup stored in OBS. */
+  | { type: "shared"; from: string; keys: string[] };
 
 /** Video playout: one scene holding one media source, reused for every file. */
 export interface InputTiming {
@@ -166,6 +168,11 @@ export interface Transport {
   fxCutTo(scene: string): Promise<void>;
   /** Re-emit authoritative program / preview scenes. */
   resync(): Promise<void>;
+  /** Shared setup between desks, kept in OBS itself (one slot per key). Absent on Demo Mode. */
+  sharedGet?(key: string): Promise<unknown | null>;
+  sharedSet?(key: string, value: unknown): Promise<void>;
+  /** Tell the other desks connected to this OBS that shared setup changed. */
+  sharedNotify?(from: string, keys: string[]): Promise<void>;
   subscribe(listener: (event: TransportEvent) => void): () => void;
 }
 

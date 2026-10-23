@@ -1,4 +1,3 @@
-
 // MK VISION CONTROL ENGINE
 // All switching logic lives here — never inside buttons. The UI only calls
 // engine actions and renders engine state, so a hardware panel can drive the
@@ -33,6 +32,9 @@ import {
   type FxRect,
   type PipSlot,
   type SqueezeDir,
+  adMain,
+  adProgress,
+  lerpRectXY,
   computeAdTargets,
 } from "./fx";
 import {
@@ -48,6 +50,21 @@ import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, ta
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
+import { canWrite, getRole } from "./roles";
+import {
+  SHARED_KEYS,
+  changedKeys,
+  cleanEntry,
+  deskId,
+  isSharedKey,
+  loadKnown,
+  nextRev,
+  planPull,
+  saveKnown,
+  setSync,
+  type SharedEntry,
+  type SharedKey,
+} from "./shared";
 import { DEFAULT_VOICE, type ObsVoice } from "./obs-voice";
 import { PLAYOUT_SCENE, type InputTiming, type PlayoutStatus, type Transport, type TransportEvent } from "./transport";
 import {
@@ -80,7 +97,6 @@ import {
 } from "./types";
 
 const RECONNECT_DELAY = 2500;
-const TBAR_SEND_INTERVAL = 25;
 const MONITOR_W = 640;
 const MONITOR_H = 360;
 
@@ -137,11 +153,6 @@ export class SwitcherEngine {
   private tbarTimer: ReturnType<typeof setTimeout> | null = null;
   private tbarPending: number | null = null;
   private tbarHeld = false;
-  /** OBS's T-bar ignores the Cut (and stinger) transition, so for a pull we borrow a mixing one and hand it back after. */
-  private tbarPrep: Promise<void> | null = null;
-  private tbarRestore: string | null = null;
-  /** What OBS had on program / preview BEFORE the pull began (once the bar moves, OBS already reports the destination as program). */
-  private tbarOrigin: { program: string | null; preview: string | null } | null = null;
   /** True while a released T-bar is being confirmed with OBS (input is ignored for that short moment). */
   private tbarSettling = false;
   /** Set by Auto Take so finishTransition() leaves the handle on the opposite side. */
@@ -204,10 +215,120 @@ export class SwitcherEngine {
   }
 
   private updateConfig(patch: Partial<MkConfig>) {
-    const config = { ...this.state.config, ...patch };
+    const prev = this.state.config;
+    const config = { ...prev, ...patch };
     this.set({ config });
     saveConfig(config);
+    if (!this.applyingShared) this.markShared(prev, config);
     return config;
+  }
+
+  // ------------------------------------------------------ shared setup (Director / Graphics / Sound desks)
+  // Live state comes from OBS for every desk. The setup (camera map, graphics design, limiter ...) is kept
+  // in OBS too (persistent data) and mirrored here, so all desks on one WebSocket always agree.
+
+  private sharedKnown = loadKnown();
+  private sharedDirty = new Set<SharedKey>();
+  private sharedTimer: ReturnType<typeof setTimeout> | null = null;
+  private sharedChain: Promise<unknown> = Promise.resolve();
+  private applyingShared = false;
+
+  private queueShared(run: () => Promise<unknown>) {
+    this.sharedChain = this.sharedChain.then(run).catch(() => {});
+  }
+
+  private markShared(prev: MkConfig, next: MkConfig) {
+    const keys = changedKeys(prev, next);
+    if (!keys.length) return;
+    for (const k of keys) this.sharedDirty.add(k);
+    if (this.sharedTimer) clearTimeout(this.sharedTimer);
+    this.sharedTimer = setTimeout(() => this.queueShared(() => this.pushShared()), 350);
+  }
+
+  private get sharedReady(): boolean {
+    const t = this.transport;
+    return !!t?.sharedGet && !!t.sharedSet && !this.state.demo && this.state.status === "connected";
+  }
+
+  /** Read the named keys from OBS and apply the ones that are newer than what this desk has. */
+  private async pullShared(wanted: readonly string[]): Promise<Partial<Record<SharedKey, SharedEntry | null>>> {
+    const t = this.transport;
+    const remote: Partial<Record<SharedKey, SharedEntry | null>> = {};
+    if (!t?.sharedGet || !this.sharedReady) return remote;
+    await Promise.all(
+      wanted.filter(isSharedKey).map(async (k) => {
+        try {
+          remote[k] = cleanEntry(await t.sharedGet!(k));
+        } catch {
+          /* unreadable: leave it out, never treat as empty */
+        }
+      }),
+    );
+    const plan = planPull(remote, this.sharedKnown, this.sharedDirty, deskId());
+    Object.assign(this.sharedKnown, plan.revs);
+    saveKnown(this.sharedKnown);
+    if (plan.keys.length) {
+      this.applyingShared = true;
+      try {
+        // Round-trip through the loader so remote data is validated exactly like stored data.
+        saveConfig({ ...this.state.config, ...plan.patch } as MkConfig);
+        this.set({ config: loadConfig() });
+        this.set({
+          program: this.camForScene(this.state.programScene),
+          preview: this.camForScene(this.state.previewScene),
+        });
+      } finally {
+        this.applyingShared = false;
+      }
+      if (plan.keys.includes("dsks")) void this.syncDsks();
+      setSync({ lastKeys: plan.keys, at: Date.now() });
+    }
+    return remote;
+  }
+
+  /** Write this desk's unsent shared edits to OBS and tell the other desks. */
+  private async pushShared() {
+    const t = this.transport;
+    if (!t?.sharedGet || !t.sharedSet || !this.sharedReady) return;
+    const role = getRole();
+    const keys = [...this.sharedDirty].filter((k) => canWrite(role, k));
+    this.sharedDirty.clear();
+    if (!keys.length) return;
+    const sent: SharedKey[] = [];
+    try {
+      for (const k of keys) {
+        const remote = cleanEntry(await t.sharedGet(k).catch(() => null));
+        const rev = nextRev(remote, this.sharedKnown[k] ?? 0);
+        await t.sharedSet(k, { rev, by: deskId(), value: this.state.config[k] });
+        this.sharedKnown[k] = rev;
+        sent.push(k);
+      }
+      saveKnown(this.sharedKnown);
+      await t.sharedNotify?.(deskId(), sent).catch(() => {});
+      setSync({ state: "ok", at: Date.now() });
+    } catch {
+      for (const k of keys) if (!sent.includes(k)) this.sharedDirty.add(k);
+      saveKnown(this.sharedKnown);
+      setSync({ state: "error" });
+      this.notice("Shared setup not saved to OBS — will retry");
+    }
+  }
+
+  /** On connect: take what OBS holds, then send this desk's pending edits. The Director also fills in anything OBS lacks. */
+  private async syncShared() {
+    if (!this.sharedReady) {
+      setSync({ state: "off" });
+      return;
+    }
+    setSync({ state: "busy" });
+    try {
+      const remote = await this.pullShared(SHARED_KEYS);
+      if (getRole() === "director") for (const k of SHARED_KEYS) if (remote[k] === null) this.sharedDirty.add(k);
+      await this.pushShared();
+      setSync({ state: "ok", at: Date.now() });
+    } catch {
+      setSync({ state: "error" });
+    }
   }
 
   /**
@@ -317,6 +438,9 @@ export class SwitcherEngine {
       }
       await this.syncDsks();
       await this.syncGfx();
+      await new Promise<void>((resolve) => {
+        this.queueShared(() => this.syncShared().finally(resolve));
+      });
     } catch {
       this.scheduleReconnect();
     }
@@ -356,6 +480,9 @@ export class SwitcherEngine {
 
   private async teardown() {
     this.stopAnim();
+    if (this.sharedTimer) clearTimeout(this.sharedTimer);
+    this.sharedTimer = null;
+    setSync({ state: "off" });
     this.unsubscribeTransport?.();
     this.unsubscribeTransport = null;
     if (this.transport) {
@@ -378,6 +505,12 @@ export class SwitcherEngine {
       case "status": {
         this.set({ status: event.status, statusMessage: event.message ?? "" });
         if (event.status === "error") this.scheduleReconnect();
+        break;
+      }
+      case "shared": {
+        if (event.from === deskId()) break;
+        const keys = event.keys.filter(isSharedKey);
+        if (keys.length) this.queueShared(() => this.pullShared(keys));
         break;
       }
       case "scenes":
@@ -990,7 +1123,6 @@ export class SwitcherEngine {
   private finishTransition() {
     this.stopAnim();
     this.tbarHeld = false;
-    void this.restoreTBarTransition();
     const flip = this.takeFlip;
     this.takeFlip = false;
     this.set(flip ? { tBar: 0, transitioning: false, tBarFlip: !this.state.tBarFlip } : { tBar: 0, transitioning: false });
@@ -1004,7 +1136,6 @@ export class SwitcherEngine {
     this.tbarHeld = false;
     this.set({ tBar: 0, transitioning: false });
     this.swapLocal();
-    await this.restoreTBarTransition();
     await this.send("Cut", (t) => t.performCut());
     setTimeout(() => void this.transport?.resync().catch(() => {}), 200);
   }
@@ -1041,60 +1172,6 @@ export class SwitcherEngine {
     if (ms === 0) this.finishTransition();
   }
 
-  /** Start of a pull: remember the real scenes, and make sure OBS is on a transition its T-bar can drive (not Cut / Stinger). */
-  private prepareTBar(): Promise<void> {
-    if (this.tbarPrep) return this.tbarPrep;
-    this.tbarOrigin = null;
-    this.tbarPrep = this.beginTBar();
-    return this.tbarPrep;
-  }
-
-  private async beginTBar() {
-    const t = this.transport;
-    if (!t || this.state.demo) return;
-    const [program, preview] = await Promise.all([this.soon(t.getCurrentProgramScene(), 800), this.soon(t.getCurrentPreviewScene(), 800)]);
-    this.tbarOrigin = { program, preview };
-    const current = this.state.config.transition;
-    if (!t.setTBarTransition || !/cut|stinger/i.test(current)) return;
-    const list = this.state.transitions.filter((n) => !/cut|stinger/i.test(n));
-    const pick = list.find((n) => /^fade$/i.test(n)) ?? list.find((n) => /fade|slide|swipe|luma/i.test(n)) ?? list[0];
-    if (!pick) {
-      this.notice("T-bar needs a Fade (or similar) transition in OBS. Cut and Stinger do not work with it");
-      return;
-    }
-    if (!this.tbarRestore) this.tbarRestore = current;
-    await this.soon(t.setTBarTransition(pick), 2500);
-  }
-
-  /** True once OBS has really taken: the destination is on program and the old program went to preview (Studio Mode swap). */
-  private async waitCommit(t: Transport, before: string, target: string, ms: number) {
-    const end = Date.now() + ms;
-    while (Date.now() < end) {
-      const [p, v] = await Promise.all([this.soon(t.getCurrentProgramScene(), 500), this.soon(t.getCurrentPreviewScene(), 500)]);
-      if (p === target && v === before) return true;
-      await sleep(120);
-    }
-    return false;
-  }
-
-  /** Give OBS its Cut / Stinger back after the T-bar pull is over. */
-  private async restoreTBarTransition() {
-    const back = this.tbarRestore;
-    this.tbarRestore = null;
-    this.tbarPrep = null;
-    if (back) await this.soon(this.transport?.setTBarTransition?.(back) ?? Promise.resolve(), 2500);
-  }
-
-  private flushTBar = async () => {
-    this.tbarTimer = null;
-    if (this.tbarPending === null) return;
-    await this.tbarPrep;
-    if (this.tbarPending === null) return;
-    const position = this.tbarPending;
-    this.tbarPending = null;
-    void this.transport?.setTBarPosition(position, false).catch(() => {});
-  };
-
   /** True once OBS reports a program scene different from `before` (the pull completed). */
   private async waitProgramChange(t: Transport, before: string, ms: number) {
     const end = Date.now() + ms;
@@ -1112,7 +1189,9 @@ export class SwitcherEngine {
   }
 
   /**
-   * Manual T-bar. `position` is the progress of the pull (0 = start, 1 = end) and `release` is true on pointer-up.
+   * T-bar. `position` is the progress of the pull (0 = start, 1 = end) and `release` is true on pointer-up.
+   * OBS never commits a remotely driven T-bar (it snaps back to the old scene on release), so the bar is the operator's
+   * lever on screen only: pulling it to the end fires one clean studio transition, exactly like Auto Take.
    * After a completed pull the handle stays on the far side (tBarFlip) and the next pull runs back the other way.
    */
   setTBar(position: number, release = false) {
@@ -1120,83 +1199,44 @@ export class SwitcherEngine {
     if (this.tbarSettling) return;
     const p = Math.min(1, Math.max(0, position));
     if (!release) {
-      if (!this.tbarHeld) {
-        this.tbarPrep = null;
-        void this.prepareTBar();
-      }
-      this.tbarHeld = true;
       this.set({ tBar: p, transitioning: p > 0 && p < 1 });
-      this.tbarPending = p;
-      if (!this.tbarTimer) this.tbarTimer = setTimeout(this.flushTBar, TBAR_SEND_INTERVAL);
       return;
     }
-    // Release: flush anything pending, then snap to an end stop when close.
-    if (this.tbarTimer) clearTimeout(this.tbarTimer);
-    this.tbarTimer = null;
-    this.tbarPending = null;
     if (p >= 1) {
+      if (this.state.preview === null && !this.state.previewScene) {
+        this.set({ tBar: 0, transitioning: false });
+        return;
+      }
       const oldProgram = this.state.programScene;
       const oldPreview = this.state.previewScene;
-      // Show the finished take straight away: handle rests on the far side, PGM/PVW swapped, nothing "in transition".
       this.tbarSettling = true;
       this.tbarHeld = true;
       this.stopAnim();
+      // Show the finished take straight away: handle rests on the far side, PGM/PVW swapped.
       this.swapLocal();
       this.set({ tBar: 0, tBarFlip: !this.state.tBarFlip, transitioning: false });
       void (async () => {
         try {
           const t = this.transport;
           if (!t) return;
-          await this.tbarPrep;
           const real = !this.state.demo;
-          // What OBS itself has on program / preview right now (live buses and non-Studio setups included).
-          const origin = this.tbarOrigin;
-          const before = real ? (origin?.program ?? oldProgram) : null;
-          const target = real ? (origin?.preview ?? oldPreview) : null;
-          const check = !!before && !!target && before !== target;
-          console.info("[T-bar] release at end", { before, target, check, transition: this.state.config.transition, swappedFrom: this.tbarRestore });
-          // OBS eases its T-bar toward the commanded position. Releasing in the same instant makes it think the bar was
-          // let go mid-way. So: park at the end, let OBS catch up, then release.
-          await this.soon(t.setTBarPosition(1, false));
-          if (real) await sleep(250);
-          await this.soon(t.setTBarPosition(1, true));
-          if (check) {
-            let done = await this.waitCommit(t, before, target, 500);
-            if (!done) {
-              // OBS's T-bar release did not commit (it snaps back to the old scene). Cancel the half-finished manual
-              // transition completely, then finish the take with a normal studio transition, the same as Auto.
-              console.info("[T-bar] release did not commit, cancelling manual transition and taking with a normal transition");
-              await this.soon(t.setTBarPosition(0, false));
-              await sleep(50);
-              await this.soon(t.setTBarPosition(0, true));
-              await sleep(80);
-              await this.soon(t.performAutoTake());
-              done = await this.waitCommit(t, before, target, 2000);
-            }
-            // OBS still did not complete the pull. Force the take while OBS still shows the destination (no flash back):
-            // first a studio Cut, then a direct program switch.
+          const before = real ? ((await this.soon(t.getCurrentProgramScene(), 800)) ?? oldProgram) : null;
+          const target = real ? ((await this.soon(t.getCurrentPreviewScene(), 800)) ?? oldPreview) : null;
+          await this.send("T-bar take", (x) => x.performAutoTake());
+          if (real && before && target && before !== target) {
+            let done = await this.waitProgramChange(t, before, 1500);
             if (!done) {
               await this.soon(t.performCut());
-              done = await this.waitProgramChange(t, before, 500);
+              done = await this.waitProgramChange(t, before, 600);
             }
             if (!done) {
               await this.soon(t.setProgramScene(target));
-              done = await this.waitProgramChange(t, before, 500);
+              done = await this.waitProgramChange(t, before, 600);
               if (done) await this.soon(t.setPreviewScene(before));
             }
-            if (!done) {
-              await this.soon(t.setTBarPosition(0, true));
-              await this.soon(t.setProgramScene(target));
-              await this.soon(t.setPreviewScene(before));
-              done = await this.waitProgramChange(t, before, 500);
-            }
-            console.info("[T-bar] program changed:", done);
             if (!done) this.notice("T-bar: OBS did not switch scenes. Check that Studio Mode is on in OBS");
-          } else if (real && !target) {
-            this.notice("T-bar: no preview scene. Turn on Studio Mode in OBS");
           }
         } finally {
-          await this.restoreTBarTransition();
           this.tbarSettling = false;
           this.tbarHeld = false;
           this.set({ tBar: 0, transitioning: false });
@@ -1204,30 +1244,10 @@ export class SwitcherEngine {
         }
       })();
     } else if (p <= 0) {
-      // Pulled back to the start: park at 0, let OBS catch up, then release so it cancels cleanly.
-      this.tbarSettling = true;
       this.set({ tBar: 0, transitioning: false });
-      void (async () => {
-        try {
-          const t = this.transport;
-          await this.tbarPrep;
-          await this.soon(t?.setTBarPosition(0, false) ?? Promise.resolve());
-          if (!this.state.demo) await sleep(150);
-          await this.soon(t?.setTBarPosition(0, true) ?? Promise.resolve());
-        } finally {
-          await this.restoreTBarTransition();
-          this.tbarSettling = false;
-          this.tbarHeld = false;
-          this.set({ tBar: 0, transitioning: false });
-        }
-      })();
     } else {
-      // Left mid-way (like a hardware lever): keep the position, keep holding.
+      // Left mid-way (like a hardware lever): keep the position on screen until it is pulled on or back.
       this.set({ tBar: p, transitioning: true });
-      void (async () => {
-        await this.tbarPrep;
-        await this.transport?.setTBarPosition(p, false).catch(() => {});
-      })();
     }
   }
 
@@ -1493,7 +1513,7 @@ export class SwitcherEngine {
     return this.state.live.sqm && this.live ? this.adTargets().end.main : FULL_RECT;
   }
 
-  /** Item names that live above the cams in every bus: advertisement first (lowest), then PIP 1, PIP 2. */
+  /** Item names that live above the cams in every bus, lowest first. The advertisement is lowest, or topmost in the overlay look. */
   private overlaySources(): string[] {
     const { ad, dsks } = this.state.config;
     const dskSources = dsks.map((d) => d.source).filter((n): n is string => !!n && n !== ad.scene && !this.fxCams().includes(n));
@@ -1501,7 +1521,9 @@ export class SwitcherEngine {
     const merge = this.mergeReady ? [MERGE_BG, ...MERGE_PANES.slice(0, mergeLayoutById(this.activeMerge().layout).panes)] : [];
     const tags = this.tagsReady ? TAG_SCENES.filter((_, i) => this.tagMade.has(i)) : [];
     const pips = PIP_SCENES.filter((_, i) => !!this.state.config.pips[i]?.scene);
-    return [...new Set([...(ad.scene ? [ad.scene] : []), ...merge, ...tags, ...pips, ...dskSources])];
+    // Overlay look: the advertisement is the LAST (topmost) item, above the video, merge, tags, PIPs and DSKs.
+    const adTop = !!ad.scene && ad.look === "overlay";
+    return [...new Set([...(ad.scene && !adTop ? [ad.scene] : []), ...merge, ...tags, ...pips, ...dskSources, ...(adTop && ad.scene ? [ad.scene] : [])])];
   }
 
   /** Where a DSK that rides in the bus sits, inside `region` (the squeezed picture area, or the whole screen). */
@@ -2235,8 +2257,10 @@ export class SwitcherEngine {
         ms,
         ad.style,
         (e) => {
-          const region = lerpRect(from.main, to.main, e);
-          return t.fxFrame({ [cam]: this.state.live.merge ? null : region, [ad.scene as string]: lerpRect(from.ad, to.ad, e), ...this.overlayFrame(region) }, bus);
+          const p = adProgress(ad.order, turningOn, e);
+          const mv = adMain(ad.effect, turningOn, p.m);
+          const region = lerpRectXY(from.main, to.main, mv.x, mv.y);
+          return t.fxFrame({ [cam]: this.state.live.merge ? null : region, [ad.scene as string]: lerpRect(from.ad, to.ad, p.a), ...this.overlayFrame(region) }, bus);
         },
         (raw) => this.set({ tBar: raw }),
       );
@@ -2313,7 +2337,7 @@ export class SwitcherEngine {
         this.notice("Advertisement: OBS did not apply the look");
       }
     }
-    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit || patch.look || patch.anchor || patch.box || patch.trim)) {
+    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit || patch.look || patch.anchor || patch.box || patch.trim || patch.main !== undefined)) {
       const bus = this.progBus();
       const cam = live.mains[bus];
       const a = this.adTargets(prev).end;
