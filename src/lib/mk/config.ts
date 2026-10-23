@@ -6,6 +6,7 @@ import {
   DEFAULT_AD,
   cleanAdBox,
   cleanAdTrim,
+  cleanMainBox,
   DEFAULT_FX,
   DEFAULT_PIPS,
   PIP_CORNERS,
@@ -185,6 +186,7 @@ function mergeAd(raw: unknown): AdConfig {
     look: r.look === "strip" ? "strip" : r.look === "frame" ? "frame" : r.look === "overlay" ? "overlay" : DEFAULT_AD.look,
     box: cleanAdBox(r.box),
     trim: cleanAdTrim(r.trim),
+    main: cleanMainBox(r.main),
     anchor: ANCHORS.includes(r.anchor as never)
       ? (r.anchor as AdConfig["anchor"])
       : DEFAULT_AD.anchor,
