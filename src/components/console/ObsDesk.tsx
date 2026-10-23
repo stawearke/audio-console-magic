@@ -7,6 +7,7 @@ import { powerSum } from "@/lib/mk/audio-math";
 import { DEFAULT_VOICE, VOICE_RANGE as R, type ObsVoice } from "@/lib/mk/obs-voice";
 import { OBS_VOICE_PRESET_NAMES, obsVoicePreset } from "@/lib/obs-voice-presets";
 import { Fader, Knob, Meter, Module, Toggle } from "./controls";
+import { useClipLatch } from "./use-clip";
 
 // In-app navigation keeps the OBS connection alive; without a router (tests, embedding) fall back to a plain link.
 function NavLink({ to, className, children }: { to: "/" | "/settings"; className: string; children: ReactNode }) {
@@ -20,6 +21,7 @@ export function ObsStrip({ c, level, focused, onEdit }: { c: AudioChannel; level
   const lv = useRef(-100);
   lv.current = c.muted ? -100 : level;
   const read = useCallback(() => lv.current, []);
+  const clip = useClipLatch(lv.current);
   const eq = c.eq ?? FLAT_EQ;
   const knob = (key: keyof EqValues, label: string) => (
     <Knob label={label} size="sm" bipolar def={0} step={0.5} unit=" dB" min={EQ_RANGE[key][0]} max={EQ_RANGE[key][1]} value={eq[key]} onChange={(v) => engine.setEq(c.name, { [key]: v })} />
@@ -31,6 +33,7 @@ export function ObsStrip({ c, level, focused, onEdit }: { c: AudioChannel; level
       ) : (
         <span className="selected-display max-w-full truncate text-center text-xs font-bold uppercase tracking-widest" title={c.name}>{c.name}</span>
       )}
+      <ClipLamp lit={clip.lit} onClear={clip.clear} label={c.name} />
       <div className="flex items-end gap-2">
         <Meter read={read} />
         <Fader value={c.db} label={`${c.name} volume`} hideLabel onChange={(db) => void engine.setAudioVolume(c.name, db)} />
@@ -48,6 +51,16 @@ export function ObsStrip({ c, level, focused, onEdit }: { c: AudioChannel; level
 }
 
 
+/** Red when the signal peaked within 1 dB of full scale; stays lit a few seconds. Click to clear. */
+export function ClipLamp({ lit, onClear, label }: { lit: boolean; onClear: () => void; label: string }) {
+  return (
+    <button type="button" aria-label={`${label} clip`} aria-pressed={lit} onClick={onClear} title="Lit when the level peaked within 1 dB of full scale. Turn the gain or fader down. Click to clear."
+      className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest" style={lit ? { background: "#c0262d", color: "#fff" } : { background: "transparent", color: "inherit", opacity: 0.45, outline: "1px solid currentColor" }}>
+      Clip
+    </button>
+  );
+}
+
 /** A stable `read()` for the meters that always returns the latest value. */
 function useReader(v: number) {
   const ref = useRef(v);
@@ -64,6 +77,7 @@ export function MainOut({ inputs, levels, limiter, gr, muted }: { inputs: AudioC
   // OBS cannot report gain reduction, so estimate it from how close the mix is to the ceiling.
   const engaged = limiter.on && !muted && mix >= limiter.threshold - 0.6;
   const reduction = !limiter.on ? 0 : (gr ?? (engaged ? 2.5 : 0));
+  const clip = useClipLatch(out);
   const readL = useReader(out);
   const readR = useReader(out - 0.7);
   const readGr = useReader(reduction);
@@ -71,6 +85,7 @@ export function MainOut({ inputs, levels, limiter, gr, muted }: { inputs: AudioC
     <div className="channel-strip master-strip flex min-w-[170px] flex-col items-center gap-2 rounded-md p-2" aria-label="Main out">
       <span className="selected-display text-xs font-bold uppercase tracking-[0.2em]">Main out</span>
       <span className="label-text text-[10px]">{live.length} on air</span>
+      <ClipLamp lit={clip.lit} onClear={clip.clear} label="Main out" />
       <div className="flex items-end gap-2">
         <Meter read={readL} label="L" />
         <Meter read={readR} label="R" />
