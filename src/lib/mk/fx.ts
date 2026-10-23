@@ -243,6 +243,16 @@ export const AD_ORDERS: { id: AdOrder; label: string; hint: string }[] = [
   { id: "ad", label: "AD FIRST", hint: "Ad arrives, then the picture squeezes (picture grows back first on the way out)" },
 ];
 
+/** How the program picture itself moves into / out of its squeezed spot. */
+export type AdEffect = "glide" | "squash" | "stretch" | "elastic" | "snap";
+export const AD_EFFECTS: { id: AdEffect; label: string; hint: string }[] = [
+  { id: "glide", label: "GLIDE", hint: "Width and height ease together" },
+  { id: "squash", label: "SQUASH", hint: "Width shrinks first, then height" },
+  { id: "stretch", label: "STRETCH", hint: "Height shrinks first, then width" },
+  { id: "elastic", label: "ELASTIC", hint: "Picture springs a little past its spot, then settles (going in)" },
+  { id: "snap", label: "SNAP", hint: "Picture jumps to its spot at once; only the ad moves" },
+];
+
 /** Overlay ad rectangle, fractions of the canvas: x / y = top-left corner, w / h = size. */
 export interface AdBox {
   x: number;
@@ -314,6 +324,8 @@ export interface AdConfig {
   enter: AdEnter;
   /** Who moves first: the picture, the ad, or both together. */
   order: AdOrder;
+  /** How the program picture moves into its spot. */
+  effect: AdEffect;
 }
 
 export const DEFAULT_PIPS: PipSlot[] = [
@@ -333,6 +345,7 @@ export const DEFAULT_AD: AdConfig = {
   style: "smooth",
   enter: "auto",
   order: "together",
+  effect: "glide",
 };
 
 export const FULL_RECT: FxRect = { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0 };
@@ -568,6 +581,38 @@ export function adProgress(order: AdOrder, turningOn: boolean, e: number): { m: 
   if (order === "together") return { m: e, a: e };
   const pictureLeads = (order === "program") === turningOn;
   return pictureLeads ? { m: part(0), a: part(0.35) } : { m: part(0.35), a: part(0) };
+}
+
+/** Like lerpRect, but the horizontal parts (x, width, left / right crop) and the vertical parts follow their own progress. */
+export function lerpRectXY(a: FxRect, b: FxRect, tx: number, ty: number): FxRect {
+  const h = lerpRect(a, b, tx);
+  const v = lerpRect(a, b, ty);
+  return { ...h, y: v.y, sy: v.sy, ct: v.ct, cb: v.cb };
+}
+
+/**
+ * Turns the program's progress `m` (0..1) into horizontal (x) and vertical (y) progress for the chosen effect.
+ * Going out (turningOn false) every effect plays backwards, so the picture returns the way it went in.
+ */
+export function adMain(effect: AdEffect, turningOn: boolean, m: number): { x: number; y: number } {
+  const part = (from: number) => Math.min(1, Math.max(0, (m - from) / 0.6));
+  switch (effect) {
+    case "squash":
+    case "stretch": {
+      const widthLeads = (effect === "squash") === turningOn;
+      return widthLeads ? { x: part(0), y: part(0.4) } : { x: part(0.4), y: part(0) };
+    }
+    case "elastic": {
+      const v = turningOn && m > 0 && m < 1 ? easeOutBack(m) : m;
+      return { x: v, y: v };
+    }
+    case "snap": {
+      const v = turningOn ? 1 : m >= 1 ? 1 : 0;
+      return { x: v, y: v };
+    }
+    default:
+      return { x: m, y: m };
+  }
 }
 
 /** Where the program picture and the advertisement sit fully in (`end`) and parked (`rest`), for any look, trim included. */
