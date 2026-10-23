@@ -24,6 +24,7 @@ import { ObsChannel } from "./ObsChannel";
 import { ObsGroups } from "./ObsGroups";
 import { ObsPatch } from "./ObsPatch";
 import { ObsShow } from "./ObsShow";
+import { SceneMixRunner } from "./ObsSceneMix";
 
 // Presets change the selected channel (and the shared FX returns for the echo preset).
 const PRESETS: Record<string, (m: Mixer, id: string) => Mixer> = {
@@ -408,6 +409,7 @@ export function Console() {
           {view === "fx" && <FxView />}
           {view === "patch" && <PatchView />}
           {view === "setup" && <SetupView />}
+          {!builtin && <SceneMixRunner />}
           {view === "obs" && <ObsDesk focus={obsInput} onEdit={builtin ? undefined : (n) => { setObsInput(n); setView("obsch"); }} />}
           {view === "obsch" && <ObsChannel focus={obsInput} />}
           {view === "obsgrp" && <ObsGroups />}

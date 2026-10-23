@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { engine } from "@/lib/mk/use-switcher";
 import type { ObsVoice } from "@/lib/mk/obs-voice";
-import { SNAPSHOTS_KEY, SNAPSHOT_SLOTS, recallPlan, sanitizeSnapshots, snapshotOf, type Snapshot } from "@/lib/obs-desk";
+import { SCENE_LINKS_KEY, SNAPSHOTS_KEY, SNAPSHOT_SLOTS, defaultLinks, loadLinks, sanitizeSnapshots, snapshotOf, type SceneLinks, type Snapshot } from "@/lib/obs-desk";
+import { onAutoRecall, recallSnapshot } from "@/lib/obs-recall";
 import { Toggle } from "./controls";
 import { useObsInputs } from "./obs-inputs";
 
 /** Show: save the whole OBS mix (levels, mutes, MN, EQ, voice chain) into a slot and bring it back later. */
 export function ObsShow() {
-  const { inputs, connected } = useObsInputs();
+  const { state, inputs, connected } = useObsInputs();
+  const [links, setLinks] = useState<SceneLinks>(defaultLinks);
   const [slots, setSlots] = useState<(Snapshot | null)[]>(() => sanitizeSnapshots(null));
   const [sel, setSel] = useState(0);
   const [name, setName] = useState("");
@@ -15,7 +17,16 @@ export function ObsShow() {
   const file = useRef<HTMLInputElement>(null);
   useEffect(() => {
     try { setSlots(sanitizeSnapshots(JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) ?? "null"))); } catch { /* keep empty */ }
+    setLinks(loadLinks());
+    return onAutoRecall((e) => setMsg(`Scene "${e.scene}" came on: recalled "${e.name}" (${e.applied} input${e.applied === 1 ? "" : "s"})${e.missing.length ? `. Not in OBS right now: ${e.missing.join(", ")}.` : "."}`));
   }, []);
+  const saveLinks = (next: SceneLinks) => {
+    setLinks(next);
+    try { localStorage.setItem(SCENE_LINKS_KEY, JSON.stringify(next)); } catch { /* storage blocked */ }
+  };
+  const scenes = state.scenes.filter((n) => !/^MK /i.test(n));
+  const linked = links.scenes[sel] ?? "";
+  const sceneOptions = linked && !scenes.includes(linked) ? [...scenes, linked] : scenes;
   const persist = (next: (Snapshot | null)[]) => {
     setSlots(next);
     try { localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(next)); } catch { /* storage blocked */ }
@@ -31,16 +42,7 @@ export function ObsShow() {
   const recall = () => {
     const snap = slots[sel];
     if (!snap) return;
-    const plan = recallPlan(snap, inputs);
-    for (const n of plan.apply) {
-      const want = snap.inputs[n]!;
-      const now = inputs.find((c) => c.name === n)!;
-      void engine.setAudioVolume(n, want.db);
-      if (now.muted !== want.muted) void engine.toggleAudioMute(n);
-      if (now.stream !== want.stream) void engine.toggleAudioStream(n);
-      engine.setEq(n, want.eq);
-      if (want.voice) engine.setVoice(n, want.voice);
-    }
+    const plan = recallSnapshot(snap, inputs);
     setMsg(`Recalled "${snap.name}": ${plan.apply.length} input${plan.apply.length === 1 ? "" : "s"}${plan.missing.length ? `. Not in OBS right now: ${plan.missing.join(", ")}.` : "."}`);
   };
   const clear = () => { persist(slots.map((s, i) => (i === sel ? null : s))); setMsg(`Slot ${sel + 1} cleared.`); };
@@ -70,7 +72,7 @@ export function ObsShow() {
           <button key={i} type="button" aria-pressed={sel === i} onClick={() => { setSel(i); setName(slots[i]?.name ?? ""); }} className="console-btn rounded px-2 py-2 text-left text-xs" style={sel === i ? { outline: "2px solid var(--c-voice)" } : undefined}>
             <span className="label-text block text-[10px]">Slot {i + 1}</span>
             <span className="block truncate font-bold uppercase tracking-widest">{slots[i]?.name ?? "Empty"}</span>
-            <span className="label-text block text-[10px]">{slots[i] ? `${Object.keys(slots[i]!.inputs).length} inputs` : ""}</span>
+            <span className="label-text block truncate text-[10px]">{slots[i] ? `${Object.keys(slots[i]!.inputs).length} inputs` : ""}{links.scenes[i] ? ` · ${links.scenes[i]}` : ""}</span>
           </button>
         ))}
       </div>
@@ -82,6 +84,15 @@ export function ObsShow() {
         <Toggle on={false} onClick={exportJson} title="Download all slots as a file">Export</Toggle>
         <Toggle on={false} onClick={() => file.current?.click()} title="Load slots from a file">Import</Toggle>
         <input ref={file} type="file" accept="application/json,.json" className="hidden" aria-label="Import snapshots" onChange={(e) => { void importJson(e.target.files?.[0]); e.target.value = ""; }} />
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label className="label-text text-[11px]" htmlFor="obs-scene-link">Scene for slot {sel + 1}</label>
+        <select id="obs-scene-link" aria-label="Scene for this slot" className="console-select rounded px-2 py-1.5 text-xs" value={linked} onChange={(e) => saveLinks({ ...links, scenes: links.scenes.map((s, i) => (i === sel ? e.target.value || null : s)) })}>
+          <option value="">No scene</option>
+          {sceneOptions.map((n) => <option key={n} value={n}>{scenes.includes(n) ? n : `${n} (not in OBS)`}</option>)}
+        </select>
+        <Toggle on={links.auto} onClick={() => saveLinks({ ...links, auto: !links.auto })} title="When OBS goes to a linked scene, bring back its mix by itself">Auto-recall</Toggle>
+        <span className="label-text text-[10px]">{links.auto ? "ON: going to a linked scene recalls its mix." : "Off: scenes change nothing in the mix."}</span>
       </div>
       <p className="label-text mt-2 min-h-4 text-[11px]" role="status">{!connected ? "Connect to OBS to save or recall." : msg}</p>
     </section>

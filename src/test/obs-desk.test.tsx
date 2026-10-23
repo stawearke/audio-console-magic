@@ -1,9 +1,10 @@
-import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ObsTransport } from "@/lib/mk/obs-transport";
 import { engine } from "@/lib/mk/use-switcher";
 import { FLAT_EQ, type AudioChannel } from "@/lib/mk/types";
-import { GROUPS_KEY, SNAPSHOTS_KEY, SNAPSHOT_SLOTS, defaultGroups, groupMuted, recallPlan, sanitizeGroups, sanitizeSnapshots, snapshotOf } from "@/lib/obs-desk";
+import { GROUPS_KEY, SCENE_LINKS_KEY, SNAPSHOTS_KEY, SNAPSHOT_SLOTS, defaultGroups, defaultLinks, groupMuted, recallPlan, sanitizeGroups, sanitizeLinks, sanitizeSnapshots, slotForScene, snapshotOf } from "@/lib/obs-desk";
+import { SceneMixRunner } from "@/components/console/ObsSceneMix";
 import { ObsPatch } from "@/components/console/ObsPatch";
 import { ObsGroups } from "@/components/console/ObsGroups";
 import { ObsShow } from "@/components/console/ObsShow";
@@ -47,6 +48,25 @@ describe("groups and snapshots logic", () => {
   it("recall applies what exists in OBS and reports what does not", () => {
     const snap = snapshotOf("S", [ch("A"), ch("Old mic")]);
     expect(recallPlan(snap, [ch("A"), ch("New")])).toEqual({ apply: ["A"], missing: ["Old mic"] });
+  });
+});
+
+describe("scene links", () => {
+  it("always gives one scene per slot and a safe Auto-recall switch", () => {
+    expect(sanitizeLinks(null)).toEqual(defaultLinks());
+    const l = sanitizeLinks({ auto: "yes", scenes: ["Interview", 4, "", "Wide", ...Array(20).fill("x")] });
+    expect(l.auto).toBe(false);
+    expect(l.scenes).toHaveLength(SNAPSHOT_SLOTS);
+    expect(l.scenes.slice(0, 4)).toEqual(["Interview", null, null, "Wide"]);
+    expect(sanitizeLinks({ auto: true }).auto).toBe(true);
+  });
+  it("finds the first filled slot linked to a scene", () => {
+    const snap = snapshotOf("S", [ch("A")]);
+    const slots = [null, snap, snap, ...Array(SNAPSHOT_SLOTS - 3).fill(null)];
+    const links = { auto: true, scenes: ["Wide", "Wide", "Close", ...Array(SNAPSHOT_SLOTS - 3).fill(null)] };
+    expect(slotForScene(links, slots, "Wide")).toBe(1); // slot 0 is linked but empty
+    expect(slotForScene(links, slots, "Close")).toBe(2);
+    expect(slotForScene(links, slots, "Nowhere")).toBe(-1);
   });
 });
 
@@ -117,7 +137,7 @@ describe("OBS tracks, delay and balance", () => {
 // The views, against the built-in demo OBS (no OBS needed).
 describe("OBS desk views (demo OBS)", () => {
   beforeAll(() => { localStorage.setItem("mkvision.config.v1", JSON.stringify({ demoMode: true })); });
-  afterEach(() => { cleanup(); localStorage.removeItem(GROUPS_KEY); localStorage.removeItem(SNAPSHOTS_KEY); });
+  afterEach(() => { cleanup(); localStorage.removeItem(GROUPS_KEY); localStorage.removeItem(SNAPSHOTS_KEY); localStorage.removeItem(SCENE_LINKS_KEY); });
 
   it("Patch: sends an input to track 3 and back", async () => {
     render(<ObsPatch />);
@@ -163,6 +183,35 @@ describe("OBS desk views (demo OBS)", () => {
     fireEvent.change(screen.getByLabelText("Voice preset"), { target: { value: "Flat" } });
     await waitFor(async () => expect((await engine.readVoice("Music Bed")).comp.on).toBe(false));
     expect((await engine.readVoice("Music Bed")).duck).toMatchObject({ on: true, source: "Presenter Lav" });
+  });
+
+  it("Show: going to a linked scene brings its mix back, but only with Auto-recall on", async () => {
+    const goTo = (scene: string) => act(() => (engine as unknown as { onTransportEvent(e: unknown): void }).onTransportEvent({ type: "programScene", scene }));
+    const mic = () => engine.getSnapshot().audio.find((c) => c.name === "CAM 1 Mic")!;
+    render(<><SceneMixRunner /><ObsShow /></>);
+    await waitFor(() => expect(mic()).toBeTruthy());
+    await engine.setAudioVolume("CAM 1 Mic", -6);
+    await waitFor(() => expect(mic().db).toBe(-6));
+    fireEvent.click(await screen.findByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/^Saved/));
+    await screen.findByRole("option", { name: "Camera 2 Close" });
+    fireEvent.change(screen.getByLabelText("Scene for this slot"), { target: { value: "Camera 2 Close" } });
+    expect(JSON.parse(localStorage.getItem(SCENE_LINKS_KEY)!).scenes[0]).toBe("Camera 2 Close");
+    await engine.setAudioVolume("CAM 1 Mic", -20);
+    await waitFor(() => expect(mic().db).toBe(-20));
+    // Auto-recall is off: the scene changes, the mix does not.
+    await goTo("Camera 3 Guest");
+    await goTo("Camera 2 Close");
+    await new Promise((r) => setTimeout(r, 60));
+    expect(mic().db).toBe(-20);
+    // Auto-recall on: the linked scene brings the saved mix back.
+    fireEvent.click(screen.getByRole("button", { name: /^Auto-recall$/ }));
+    await goTo("Camera 1 Wide");
+    await new Promise((r) => setTimeout(r, 60));
+    expect(mic().db).toBe(-20); // an unlinked scene changes nothing
+    await goTo("Camera 2 Close");
+    await waitFor(() => expect(mic().db).toBe(-6));
+    expect(screen.getByRole("status").textContent).toMatch(/^Scene "Camera 2 Close" came on: recalled "SNAPSHOT 1"/);
   });
 
   it("Show: saves the mix, and recall puts back what was changed afterwards", async () => {

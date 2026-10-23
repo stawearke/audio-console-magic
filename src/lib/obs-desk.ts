@@ -117,3 +117,37 @@ export function recallPlan(snap: Snapshot, channels: AudioChannel[]) {
   const names = Object.keys(snap.inputs);
   return { apply: names.filter((n) => have.has(n)), missing: names.filter((n) => !have.has(n)) };
 }
+
+export const SCENE_LINKS_KEY = "voxone-obs-scene-links";
+
+/** Which OBS scene each snapshot slot belongs to, and whether switching scenes recalls it automatically. */
+export interface SceneLinks {
+  auto: boolean;
+  scenes: (string | null)[];
+}
+
+export const defaultLinks = (): SceneLinks => ({ auto: false, scenes: Array.from({ length: SNAPSHOT_SLOTS }, () => null) });
+
+export function sanitizeLinks(raw: unknown): SceneLinks {
+  const out = defaultLinks();
+  if (!raw || typeof raw !== "object") return out;
+  const r = raw as Record<string, unknown>;
+  out.auto = r["auto"] === true;
+  if (Array.isArray(r["scenes"])) out.scenes = out.scenes.map((_, i) => (isStr((r["scenes"] as unknown[])[i]) && (r["scenes"] as string[])[i] ? (r["scenes"] as string[])[i]! : null));
+  return out;
+}
+
+/** First slot that has a snapshot and is linked to this scene, or -1. */
+export function slotForScene(links: SceneLinks, slots: (Snapshot | null)[], scene: string): number {
+  return links.scenes.findIndex((s, i) => s === scene && !!slots[i]);
+}
+
+const readJson = (key: string): unknown => {
+  try {
+    return typeof window === "undefined" ? null : JSON.parse(window.localStorage.getItem(key) ?? "null");
+  } catch {
+    return null;
+  }
+};
+export const loadSlots = () => sanitizeSnapshots(readJson(SNAPSHOTS_KEY));
+export const loadLinks = () => sanitizeLinks(readJson(SCENE_LINKS_KEY));
