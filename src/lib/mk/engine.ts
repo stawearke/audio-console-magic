@@ -123,6 +123,8 @@ function toOutput(active: boolean, paused = false, durationMs = 0): OutputState 
 }
 
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export class SwitcherEngine {
   private state: SwitcherState = initialState(DEFAULT_CONFIG);
   private listeners = new Set<() => void>();
@@ -1039,6 +1041,17 @@ export class SwitcherEngine {
     void this.transport?.setTBarPosition(position, false).catch(() => {});
   };
 
+  /** True once OBS reports a program scene different from `before` (the pull completed). */
+  private async waitProgramChange(t: Transport, before: string, ms: number) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const now = await this.soon(t.getCurrentProgramScene(), 500);
+      if (now && now !== before) return true;
+      await sleep(100);
+    }
+    return false;
+  }
+
   /** Wait for an OBS call but never hang the console on it. */
   private async soon<T>(p: Promise<T>, ms = 1500): Promise<T | null> {
     return Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
@@ -1064,8 +1077,7 @@ export class SwitcherEngine {
     this.tbarTimer = null;
     this.tbarPending = null;
     if (p >= 1) {
-      const oldProgram = this.state.programScene;
-      const oldPreview = this.state.previewScene;
+      const wasDifferent = !!this.state.previewScene && this.state.previewScene !== this.state.programScene;
       // Show the finished take straight away: handle rests on the far side, PGM/PVW swapped, nothing "in transition".
       this.tbarSettling = true;
       this.tbarHeld = true;
@@ -1075,15 +1087,27 @@ export class SwitcherEngine {
       void (async () => {
         try {
           const t = this.transport;
-          await this.soon(t?.setTBarPosition(1, true) ?? Promise.resolve());
-          if (t && !this.state.demo) {
-            await new Promise((r) => setTimeout(r, 350));
-            const now = await this.soon(t.getCurrentProgramScene());
-            // OBS ignored the T-bar completion → perform the take ourselves.
-            if (now && oldProgram && oldPreview && now === oldProgram && oldPreview !== oldProgram) {
+          if (!t) return;
+          const real = !this.state.demo;
+          const before = real && wasDifferent ? await this.soon(t.getCurrentProgramScene(), 800) : null;
+          // OBS eases its T-bar toward the commanded position (torque). Releasing in the same instant makes it
+          // think the bar was let go mid-way and it falls back to the scene you came from. So: park at the end, let OBS
+          // catch up, then release.
+          await this.soon(t.setTBarPosition(1, false));
+          if (real) await sleep(250);
+          await this.soon(t.setTBarPosition(1, true));
+          if (before) {
+            let done = await this.waitProgramChange(t, before, 1200);
+            if (!done) {
+              await this.soon(t.setTBarPosition(1, false));
+              await sleep(200);
+              await this.soon(t.setTBarPosition(1, true));
+              done = await this.waitProgramChange(t, before, 1000);
+            }
+            // Last resort only: OBS never completed the pull → reset its T-bar and cut to the preview scene.
+            if (!done) {
               await this.soon(t.setTBarPosition(0, true));
-              await this.soon(t.setProgramScene(oldPreview));
-              await this.soon(t.setPreviewScene(oldProgram));
+              await this.soon(t.performCut());
             }
           }
         } finally {
@@ -1094,9 +1118,21 @@ export class SwitcherEngine {
         }
       })();
     } else if (p <= 0) {
-      void this.transport?.setTBarPosition(0, true).catch(() => {});
-      this.tbarHeld = false;
+      // Pulled back to the start: park at 0, let OBS catch up, then release so it cancels cleanly.
+      this.tbarSettling = true;
       this.set({ tBar: 0, transitioning: false });
+      void (async () => {
+        try {
+          const t = this.transport;
+          await this.soon(t?.setTBarPosition(0, false) ?? Promise.resolve());
+          if (!this.state.demo) await sleep(150);
+          await this.soon(t?.setTBarPosition(0, true) ?? Promise.resolve());
+        } finally {
+          this.tbarSettling = false;
+          this.tbarHeld = false;
+          this.set({ tBar: 0, transitioning: false });
+        }
+      })();
     } else {
       // Left mid-way (like a hardware lever): keep the position, keep holding.
       this.set({ tBar: p, transitioning: true });
