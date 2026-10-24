@@ -9,7 +9,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { cloudConfigured, needsLogin, startAuth, useAuth } from "../lib/mk/cloud";
 import { useAccess } from "../lib/mk/roles";
@@ -135,10 +135,21 @@ function LockGuard() {
     void startAuth();
   }, []);
   const mustSignIn = cloudConfigured() && auth.ready && !auth.id && needsLogin(path);
+  // Where this guard wants the user to be right now (null = already fine). Never "redirect" to the page we are on.
+  const target = mustSignIn ? "/login" : blocked ? "/" : null;
+  const tries = useRef<number[]>([]);
   useEffect(() => {
-    if (mustSignIn) void navigate({ to: "/login", replace: true });
-    else if (blocked) void navigate({ to: "/", replace: true });
-  }, [mustSignIn, blocked, navigate]);
+    if (!target || target === path) return;
+    // Loop breaker: if redirects keep firing (e.g. sign-in state flapping), stop after 8 in 2s instead of
+    // exhausting React's update depth and leaving a blank screen. The state is logged so it can be traced.
+    const now = Date.now();
+    tries.current = [...tries.current.filter((t) => now - t < 2000), now];
+    if (tries.current.length > 8) {
+      console.error("[LockGuard] redirect loop stopped", { path, target, authReady: auth.ready, signedIn: !!auth.id, role: auth.role });
+      return;
+    }
+    void navigate({ to: target, replace: true });
+  }, [target, path, navigate, auth.ready, auth.id, auth.role]);
   return null;
 }
 
