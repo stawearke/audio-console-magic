@@ -3,12 +3,15 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
+  useNavigate,
+  useRouterState,
   useRouter,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { useAccess } from "../lib/mk/roles";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -93,7 +96,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -116,12 +122,25 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** A locked desk (crew link) cannot wander to the switcher or other desks' pages. */
+function LockGuard() {
+  const { route } = useAccess();
+  const path = useRouterState({ select: (st) => st.location.pathname });
+  const navigate = useNavigate();
+  const blocked = !route(path);
+  useEffect(() => {
+    if (blocked) void navigate({ to: "/", replace: true });
+  }, [blocked, navigate]);
+  return null;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <LockGuard />
       <Outlet />
     </QueryClientProvider>
   );

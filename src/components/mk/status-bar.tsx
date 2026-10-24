@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { useAccess } from "@/lib/mk/roles";
 import type { ConnectionStatus } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
@@ -25,9 +26,12 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ status, statusMessage, demo, menus, listen, role }: StatusBarProps) {
+  const { route } = useAccess();
   return (
     <header className="mk-chassis flex h-10 shrink-0 items-center gap-2 border-b border-white/10 px-2">
-      <h1 className="shrink-0 text-base leading-none font-bold tracking-[0.22em] text-foreground">MK VISION</h1>
+      <h1 className="shrink-0 text-base leading-none font-bold tracking-[0.22em] text-foreground">
+        MK VISION
+      </h1>
       <div className="flex min-w-0 items-center gap-1 overflow-x-auto">{menus}</div>
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -53,16 +57,38 @@ export function StatusBar({ status, statusMessage, demo, menus, listen, role }: 
             {statusMessage && !demo ? ` · ${statusMessage}` : ""}
           </span>
         </div>
-        <a href="/onair" className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]" aria-label="OnAir Studio graphics">
-          OnAir
-        </a>
-        <a href="/audio" className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]" aria-label="VOXONE audio console">
-          Audio
-        </a>
-        <Link to="/playout" className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]" aria-label="Video playout">
-          Playout
-        </Link>
-        <Link to="/settings" className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]" aria-label="Settings">
+        {route("/onair") && (
+          <a
+            href="/onair"
+            className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]"
+            aria-label="OnAir Studio graphics"
+          >
+            OnAir
+          </a>
+        )}
+        {route("/audio") && (
+          <a
+            href="/audio"
+            className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]"
+            aria-label="VOXONE audio console"
+          >
+            Audio
+          </a>
+        )}
+        {route("/playout") && (
+          <Link
+            to="/playout"
+            className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]"
+            aria-label="Video playout"
+          >
+            Playout
+          </Link>
+        )}
+        <Link
+          to="/settings"
+          className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]"
+          aria-label="Settings"
+        >
           <Settings className="h-3.5 w-3.5" />
         </Link>
         <span className="mk-label hidden text-[8px] lg:block">By Konchella</span>

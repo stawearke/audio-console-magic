@@ -92,5 +92,79 @@ export function useRole(): Role {
 /** Link to give a crew member: opens the app straight into their desk. */
 export function roleLink(role: Role): string {
   if (typeof window === "undefined") return "";
-  return `${window.location.origin}/?role=${role}`;
+  return `${window.location.origin}/?role=${role}&lock=1`;
+}
+
+// ------------------------------------------------------------------ locked desks
+// A desk opened from a crew link (…/?role=sound&lock=1) is locked: no desk switch, no links to other
+// pages, and typing another address bounces back to its own screen. Open …/?unlock=1 to undo.
+// This keeps people on their own job; it is not security (OBS has one password).
+
+const LOCK_KEY = "mkvision.lock.v1";
+let lockCache: boolean | null = null;
+
+function loadLock(): boolean {
+  try {
+    return window.localStorage.getItem(LOCK_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function isLocked(): boolean {
+  if (typeof window === "undefined") return false;
+  return (lockCache ??= loadLock());
+}
+
+export function setLocked(on: boolean) {
+  if (lockCache === on) return;
+  lockCache = on;
+  try {
+    if (on) window.localStorage.setItem(LOCK_KEY, "1");
+    else window.localStorage.removeItem(LOCK_KEY);
+  } catch {
+    /* blocked storage: holds until reload */
+  }
+  listeners.forEach((l) => l());
+}
+
+export function useLocked(): boolean {
+  return useSyncExternalStore(subscribe, isLocked, () => false);
+}
+
+/** Pages each desk may open when locked (the Director is never restricted). */
+const ROUTES: Record<Exclude<Role, "director">, string[]> = {
+  graphics: ["/", "/graphics", "/onair", "/settings"],
+  sound: ["/", "/audio", "/sounds", "/settings"],
+  prompter: ["/", "/prompter", "/settings"],
+};
+
+export function routeAllowed(role: Role, locked: boolean, path: string): boolean {
+  if (!locked || role === "director") return true;
+  const clean = path.length > 1 ? path.replace(/\/+$/, "") : path;
+  return ROUTES[role].includes(clean);
+}
+
+/** Settings sections a locked desk may see: connection always, plus what its own job needs. */
+const SECTIONS: Record<Exclude<Role, "director">, string[]> = {
+  graphics: ["OBS Connection", "Graphics"],
+  sound: ["OBS Connection", "Sounds", "Listen (hear OBS on this device)"],
+  prompter: ["OBS Connection"],
+};
+
+export function sectionAllowed(role: Role, locked: boolean, title: string): boolean {
+  if (!locked || role === "director") return true;
+  return SECTIONS[role].includes(title);
+}
+
+/** Hook: is this page / settings section open to the current desk? */
+export function useAccess() {
+  const role = useRole();
+  const locked = useLocked();
+  return {
+    role,
+    locked,
+    route: (path: string) => routeAllowed(role, locked, path),
+    section: (title: string) => sectionAllowed(role, locked, title),
+  };
 }

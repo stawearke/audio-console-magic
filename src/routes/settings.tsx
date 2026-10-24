@@ -1,3 +1,4 @@
+import { useAccess } from "@/lib/mk/roles";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -36,6 +37,8 @@ export const Route = createFileRoute("/settings")({
 });
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const { section } = useAccess();
+  if (!section(title)) return null;
   return (
     <section className="mk-panel rounded-md p-3 sm:p-4">
       <h2 className="mk-label mb-3 text-foreground">{title}</h2>

@@ -138,3 +138,34 @@ describe("prompter desk", () => {
     setPrompterRelay(null);
   });
 });
+
+describe("locked desks", () => {
+  test("a locked sound / graphics / prompter desk cannot open the switcher or other desks' pages", async () => {
+    const { routeAllowed } = await import("../src/lib/mk/roles");
+    for (const r of ["sound", "graphics", "prompter"] as const) {
+      expect(routeAllowed(r, true, "/")).toBe(true);
+      expect(routeAllowed(r, true, "/settings")).toBe(true);
+      expect(routeAllowed(r, true, "/playout")).toBe(false);
+      expect(routeAllowed(r, true, "/output")).toBe(false);
+      expect(routeAllowed(r, true, "/rundown")).toBe(false);
+    }
+    expect(routeAllowed("sound", true, "/audio")).toBe(true);
+    expect(routeAllowed("sound", true, "/graphics")).toBe(false);
+    expect(routeAllowed("graphics", true, "/audio")).toBe(false);
+    expect(routeAllowed("prompter", true, "/prompter")).toBe(true);
+    expect(routeAllowed("prompter", true, "/onair")).toBe(false);
+  });
+
+  test("unlocked, and the Director, can go anywhere; locked desks only see their own settings", async () => {
+    const { routeAllowed, sectionAllowed } = await import("../src/lib/mk/roles");
+    expect(routeAllowed("sound", false, "/playout")).toBe(true);
+    expect(routeAllowed("director", true, "/playout")).toBe(true);
+    expect(sectionAllowed("sound", true, "OBS Connection")).toBe(true);
+    expect(sectionAllowed("sound", true, "DSK (Downstream Keyers)")).toBe(false);
+    expect(sectionAllowed("sound", true, "Keyboard")).toBe(false);
+    expect(sectionAllowed("graphics", true, "Source Mapping")).toBe(false);
+    expect(sectionAllowed("graphics", true, "Graphics")).toBe(true);
+    expect(sectionAllowed("prompter", true, "Sounds")).toBe(false);
+    expect(sectionAllowed("director", true, "Keyboard")).toBe(true);
+  });
+});

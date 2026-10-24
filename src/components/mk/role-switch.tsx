@@ -60,7 +60,7 @@ export function RoleSwitch() {
         type="button"
         onClick={() => void copy()}
         className="mk-button hidden h-7 rounded-[3px] px-2 text-[9px] tracking-[0.12em] lg:block"
-        title="Copy the link that opens a crew member straight into a desk"
+        title="Copy a locked link: opens a crew member straight into this desk, with no way to the other desks"
       >
         {copied ? "COPIED" : "DESK LINK"}
       </button>

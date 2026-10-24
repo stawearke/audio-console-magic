@@ -21,15 +21,30 @@ import { FX_SCENE } from "@/lib/mk/fx";
 import { comms, tallyOf } from "@/lib/mk/intercom";
 import { startPrompterHost } from "@/lib/mk/prompter";
 import { useShortcuts } from "@/lib/mk/use-shortcuts";
-import { ROLE_CAN, ROLE_PANELS, isRole, setRole, useRole, type Role } from "@/lib/mk/roles";
+import {
+  ROLE_CAN,
+  ROLE_PANELS,
+  isRole,
+  setLocked,
+  setRole,
+  useLocked,
+  useRole,
+  type Role,
+} from "@/lib/mk/roles";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   // /?role=graphics or /?role=sound opens straight into that desk (all desks share one OBS WebSocket).
-  validateSearch: (s: Record<string, unknown>): { role?: Role; lock?: boolean } => ({
-    ...(isRole(s["role"]) ? { role: s["role"] } : {}),
-    ...(s["lock"] === true || s["lock"] === "1" || s["lock"] === 1 ? { lock: true } : {}),
-  }),
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { role?: Role; lock?: boolean; unlock?: boolean } => {
+    const on = (v: unknown) => v === true || v === "1" || v === 1 || v === "true";
+    return {
+      ...(isRole(s["role"]) ? { role: s["role"] } : {}),
+      ...(on(s["lock"]) ? { lock: true } : {}),
+      ...(on(s["unlock"]) ? { unlock: true } : {}),
+    };
+  },
   head: () => ({
     meta: [
       { title: "MK VISION — Professional Live Production Control" },
@@ -63,10 +78,13 @@ const PANEL_LABEL: Record<Panel, string> = {
 function Switcher() {
   const state = useSwitcher();
   const role = useRole();
-  const { role: wanted, lock } = Route.useSearch();
+  const { role: wanted, lock, unlock } = Route.useSearch();
+  const locked = useLocked();
   useEffect(() => {
     if (wanted) setRole(wanted);
-  }, [wanted]);
+    if (unlock) setLocked(false);
+    else if (lock) setLocked(true);
+  }, [wanted, lock, unlock]);
   const host = ROLE_CAN.host(role);
   const canSwitch = ROLE_CAN.switch(role);
   useShortcuts(state.config.shortcuts, host);
@@ -91,9 +109,7 @@ function Switcher() {
   const bottom = show.audio || show.status || show.graphics || show.sounds;
 
   if (role === "prompter")
-    return (
-      <PrompterDesk status={state.status} message={state.statusMessage} locked={lock === true} />
-    );
+    return <PrompterDesk status={state.status} message={state.statusMessage} locked={locked} />;
 
   const menus = ROLE_PANELS[role].map((p) => (
     <button
@@ -118,7 +134,7 @@ function Switcher() {
         demo={state.demo}
         menus={menus}
         listen={<ListenControl config={state.config} />}
-        role={<RoleSwitch />}
+        role={locked ? undefined : <RoleSwitch />}
       />
       <ReconnectOverlay
         status={state.status}
