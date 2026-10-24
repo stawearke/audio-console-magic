@@ -156,12 +156,14 @@ describe("locked desks", () => {
     expect(routeAllowed("prompter", true, "/onair")).toBe(false);
   });
 
-  test("unlocked, and the Director, can go anywhere; locked desks only see their own settings", async () => {
+  test("only the Director can go anywhere; every other desk, locked or not, sees only its own pages and settings", async () => {
     const { routeAllowed, sectionAllowed } = await import("../src/lib/mk/roles");
-    expect(routeAllowed("sound", false, "/playout")).toBe(true);
+    expect(routeAllowed("sound", false, "/playout")).toBe(false);
     expect(routeAllowed("director", true, "/playout")).toBe(true);
     expect(sectionAllowed("sound", true, "OBS Connection")).toBe(true);
-    expect(sectionAllowed("sound", true, "DSK (Downstream Keyers)")).toBe(false);
+    expect(sectionAllowed("sound", false, "DSK (Downstream Keyers)")).toBe(false);
+    expect(sectionAllowed("sound", false, "Transition")).toBe(false);
+    expect(sectionAllowed("sound", false, "Source Mapping")).toBe(false);
     expect(sectionAllowed("sound", true, "Keyboard")).toBe(false);
     expect(sectionAllowed("graphics", true, "Source Mapping")).toBe(false);
     expect(sectionAllowed("graphics", true, "Graphics")).toBe(true);

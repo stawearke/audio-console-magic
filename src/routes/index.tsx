@@ -82,8 +82,9 @@ function Switcher() {
   const locked = useLocked();
   useEffect(() => {
     if (wanted) setRole(wanted);
-    if (unlock) setLocked(false);
-    else if (lock) setLocked(true);
+    // A crew desk link is always locked; only the Director link (or ?unlock=1) frees the screen.
+    if (unlock || wanted === "director") setLocked(false);
+    else if (lock || wanted) setLocked(true);
   }, [wanted, lock, unlock]);
   const host = ROLE_CAN.host(role);
   const canSwitch = ROLE_CAN.switch(role);

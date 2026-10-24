@@ -132,28 +132,28 @@ export function useLocked(): boolean {
   return useSyncExternalStore(subscribe, isLocked, () => false);
 }
 
-/** Pages each desk may open when locked (the Director is never restricted). */
+/** Pages each desk may open. Only the Director is unrestricted, whether or not the link was locked. */
 const ROUTES: Record<Exclude<Role, "director">, string[]> = {
   graphics: ["/", "/graphics", "/onair", "/settings"],
   sound: ["/", "/audio", "/sounds", "/settings"],
   prompter: ["/", "/prompter", "/settings"],
 };
 
-export function routeAllowed(role: Role, locked: boolean, path: string): boolean {
-  if (!locked || role === "director") return true;
+export function routeAllowed(role: Role, _locked: boolean, path: string): boolean {
+  if (role === "director") return true;
   const clean = path.length > 1 ? path.replace(/\/+$/, "") : path;
   return ROUTES[role].includes(clean);
 }
 
-/** Settings sections a locked desk may see: connection always, plus what its own job needs. */
+/** Settings sections each desk may see: connection always, plus what its own job needs. */
 const SECTIONS: Record<Exclude<Role, "director">, string[]> = {
   graphics: ["OBS Connection", "Graphics"],
   sound: ["OBS Connection", "Sounds", "Listen (hear OBS on this device)"],
   prompter: ["OBS Connection"],
 };
 
-export function sectionAllowed(role: Role, locked: boolean, title: string): boolean {
-  if (!locked || role === "director") return true;
+export function sectionAllowed(role: Role, _locked: boolean, title: string): boolean {
+  if (role === "director") return true;
   return SECTIONS[role].includes(title);
 }
 
