@@ -6,7 +6,7 @@ import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
-import { EVENT_TAG, SHARED_REALM, slotName } from "./shared";
+import { EVENT_TAG, PROMPTER_TAG, SHARED_REALM, slotName } from "./shared";
 import { DEFAULT_VOICE, FILTER_CHAIN, VOICE_FILTERS, applySettings, toSettings, type ObsVoice, type VoiceKey } from "./obs-voice";
 import { DSK_COUNT, FLAT_EQ, type AudioChannel, type EqValues, type MonitorType, type OutputCheckRow } from "./types";
 
@@ -160,6 +160,10 @@ export class ObsTransport implements Transport {
     // Another desk changed shared setup (camera map, graphics design ...): tell the engine to re-read it.
     this.obs.on("CustomEvent", (data) => {
       const d = data as { tag?: unknown; from?: unknown; keys?: unknown };
+      if (d?.tag === PROMPTER_TAG) {
+        this.bus.emit({ type: "prompter", message: data as Record<string, unknown> });
+        return;
+      }
       if (d?.tag !== EVENT_TAG || typeof d.from !== "string" || !Array.isArray(d.keys)) return;
       this.bus.emit({ type: "shared", from: d.from, keys: d.keys.filter((k): k is string => typeof k === "string") });
     });
@@ -246,6 +250,10 @@ export class ObsTransport implements Transport {
       slotName: slotName(key),
       slotValue: value as never,
     });
+  }
+
+  async sendPrompter(message: Record<string, unknown>): Promise<void> {
+    await this.obs.call("BroadcastCustomEvent", { eventData: { ...message, tag: PROMPTER_TAG } as never });
   }
 
   async sharedNotify(from: string, keys: string[]): Promise<void> {

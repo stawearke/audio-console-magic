@@ -6,24 +6,27 @@ import { useSyncExternalStore } from "react";
 
 import type { Panel } from "./use-panels";
 
-export type Role = "director" | "graphics" | "sound";
-export const ROLES: Role[] = ["director", "graphics", "sound"];
+export type Role = "director" | "graphics" | "sound" | "prompter";
+export const ROLES: Role[] = ["director", "graphics", "sound", "prompter"];
 export const ROLE_LABEL: Record<Role, string> = {
   director: "Director",
   graphics: "Graphics",
   sound: "Sound",
+  prompter: "Prompter",
 };
 
 const KEY = "mkvision.role.v1";
 
 export const isRole = (v: unknown): v is Role =>
-  v === "director" || v === "graphics" || v === "sound";
+  typeof v === "string" && (ROLES as string[]).includes(v);
 
 /** Panels each desk may show (the Director sees everything). */
 export const ROLE_PANELS: Record<Role, Panel[]> = {
   director: ["multiview", "wall", "audio", "status", "graphics", "sounds"],
   graphics: ["multiview", "status", "graphics"],
   sound: ["multiview", "audio", "sounds"],
+  /** The prompter operator gets one screen of their own (no switcher panels at all). */
+  prompter: [],
 };
 
 /** Parts of the screen that only some desks get. */
@@ -36,12 +39,15 @@ export const ROLE_CAN = {
   master: (r: Role) => r === "director" || r === "sound",
   /** Keyboard shortcuts, camera tally, teleprompter host (one desk runs these, not three). */
   host: (r: Role) => r === "director",
+  /** Runs the teleprompter script + keeps the output window(s) in step. */
+  prompter: (r: Role) => r === "director" || r === "prompter",
 };
 
 /** Which shared setup keys a desk may write back to OBS (the Director may write all of them). */
 const WRITES: Record<Exclude<Role, "director">, string[]> = {
   graphics: ["graphics", "graphicsScene", "tags"],
   sound: ["hiddenAudio", "limiter", "audioFollowVideo"],
+  prompter: [],
 };
 export const canWrite = (role: Role, key: string) =>
   role === "director" || (WRITES[role] ?? []).includes(key);

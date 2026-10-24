@@ -10,6 +10,7 @@ import type { MkConfig } from "./types";
 export const SHARED_REALM = "OBS_WEBSOCKET_DATA_REALM_GLOBAL";
 export const slotName = (key: string) => `mkvision.shared.v1.${key}`;
 export const EVENT_TAG = "mkvision.cfg";
+export const PROMPTER_TAG = "mkvision.prompter";
 
 export const SHARED_KEYS = [
   "camScenes",

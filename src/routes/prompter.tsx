@@ -2,7 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PrompterView } from "@/components/mk/prompter-view";
-import { DEFAULT_PROMPTER, PROMPTER_CHANNEL, type PrompterState } from "@/lib/mk/prompter";
+import {
+  PROMPTER_CHANNEL,
+  cleanPrompter,
+  prompter,
+  prompterRelayUp,
+  prompterStore,
+  usePrompter,
+} from "@/lib/mk/prompter";
+import { useSwitcher } from "@/lib/mk/use-switcher";
 
 export const Route = createFileRoute("/prompter")({
   head: () => ({ meta: [{ title: "Prompter — MK VISION" }] }),
@@ -14,7 +22,9 @@ export const Route = createFileRoute("/prompter")({
  * double-click for full screen). It mirrors the switcher window; keys here control playback.
  */
 function PrompterOutput() {
-  const [state, setState] = useState<PrompterState>(DEFAULT_PROMPTER);
+  // Connects to OBS too (this browser's saved OBS settings), so the output follows a prompter desk on ANY PC.
+  const sw = useSwitcher();
+  const state = usePrompter();
   const [linked, setLinked] = useState(false);
   const ch = useRef<BroadcastChannel | null>(null);
 
@@ -24,7 +34,7 @@ function PrompterOutput() {
     ch.current = c;
     c.onmessage = (e: MessageEvent) => {
       if (e.data?.type === "state") {
-        setState(e.data.state as PrompterState);
+        prompterStore.apply(cleanPrompter(e.data.state, prompterStore.get()));
         setLinked(true);
       }
     };
@@ -41,7 +51,17 @@ function PrompterOutput() {
   }, []);
 
   useEffect(() => {
-    const send = (cmd: string) => ch.current?.postMessage({ type: "cmd", cmd });
+    const send = (cmd: string) => {
+      // Over OBS: change our own copy, it is sent to every desk. Same browser only: ask the switcher window.
+      if (prompterRelayUp()) {
+        if (cmd === "toggle") prompter.toggle();
+        else if (cmd === "top") prompter.top();
+        else if (cmd === "back") prompter.nudge(-3);
+        else if (cmd === "fwd") prompter.nudge(3);
+        else if (cmd === "faster") prompter.setSpeed(prompterStore.get().speed + 1);
+        else if (cmd === "slower") prompter.setSpeed(prompterStore.get().speed - 1);
+      } else ch.current?.postMessage({ type: "cmd", cmd });
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === " ") send("toggle");
       else if (e.key === "ArrowUp") send("back");
@@ -58,11 +78,23 @@ function PrompterOutput() {
   }, [fullscreen]);
 
   return (
-    <div className="h-[100dvh] bg-black" style={{ cursor: state.playing ? "none" : "default" }} onDoubleClick={fullscreen}>
-      <PrompterView state={state} full onEnd={(em) => ch.current?.postMessage({ type: "ended", em })} />
-      {!linked && (
+    <div
+      className="h-[100dvh] bg-black"
+      style={{ cursor: state.playing ? "none" : "default" }}
+      onDoubleClick={fullscreen}
+    >
+      <PrompterView
+        state={state}
+        full
+        onEnd={(em) =>
+          prompterRelayUp() ? prompter.ended(em) : ch.current?.postMessage({ type: "ended", em })
+        }
+      />
+      {!linked && state.text === "" && (
         <p className="pointer-events-none fixed inset-x-0 bottom-4 text-center font-mono text-xs text-white/50">
-          Waiting for the switcher window… keep it open (same browser).
+          {sw.status === "connected"
+            ? "Waiting for the prompter desk…"
+            : "Waiting for the prompter desk… keep the switcher window open (same browser), or connect this browser to OBS in Settings."}
         </p>
       )}
     </div>

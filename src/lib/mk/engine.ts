@@ -51,6 +51,7 @@ import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
 import { canWrite, getRole } from "./roles";
+import { receivePrompter, setPrompterRelay } from "./prompter";
 import {
   SHARED_KEYS,
   changedKeys,
@@ -318,6 +319,7 @@ export class SwitcherEngine {
   private async syncShared() {
     if (!this.sharedReady) {
       setSync({ state: "off" });
+    setPrompterRelay(null);
       return;
     }
     setSync({ state: "busy" });
@@ -441,6 +443,7 @@ export class SwitcherEngine {
       await new Promise<void>((resolve) => {
         this.queueShared(() => this.syncShared().finally(resolve));
       });
+      if (!demoMode && transport.sendPrompter) setPrompterRelay((m) => void transport.sendPrompter!(m).catch(() => {}));
     } catch {
       this.scheduleReconnect();
     }
@@ -507,6 +510,9 @@ export class SwitcherEngine {
         if (event.status === "error") this.scheduleReconnect();
         break;
       }
+      case "prompter":
+        receivePrompter(event.message);
+        break;
       case "shared": {
         if (event.from === deskId()) break;
         const keys = event.keys.filter(isSharedKey);

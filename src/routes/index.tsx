@@ -9,6 +9,7 @@ import { usePanels, type Panel } from "@/lib/mk/use-panels";
 import { Multiview } from "@/components/mk/multiview";
 import { OutputControls } from "@/components/mk/output-controls";
 import { ReconnectOverlay } from "@/components/mk/reconnect-overlay";
+import { PrompterDesk } from "@/components/mk/prompter-desk";
 import { RoleSwitch } from "@/components/mk/role-switch";
 import { SoundPad } from "@/components/mk/sound-pad";
 import { SourceBus } from "@/components/mk/source-bus";
@@ -25,8 +26,10 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   // /?role=graphics or /?role=sound opens straight into that desk (all desks share one OBS WebSocket).
-  validateSearch: (s: Record<string, unknown>): { role?: Role } =>
-    isRole(s["role"]) ? { role: s["role"] } : {},
+  validateSearch: (s: Record<string, unknown>): { role?: Role; lock?: boolean } => ({
+    ...(isRole(s["role"]) ? { role: s["role"] } : {}),
+    ...(s["lock"] === true || s["lock"] === "1" || s["lock"] === 1 ? { lock: true } : {}),
+  }),
   head: () => ({
     meta: [
       { title: "MK VISION — Professional Live Production Control" },
@@ -60,7 +63,7 @@ const PANEL_LABEL: Record<Panel, string> = {
 function Switcher() {
   const state = useSwitcher();
   const role = useRole();
-  const wanted = Route.useSearch().role;
+  const { role: wanted, lock } = Route.useSearch();
   useEffect(() => {
     if (wanted) setRole(wanted);
   }, [wanted]);
@@ -68,7 +71,8 @@ function Switcher() {
   const canSwitch = ROLE_CAN.switch(role);
   useShortcuts(state.config.shortcuts, host);
   // Teleprompter host: keeps the /prompter output window in sync even when the Tools panel is hidden.
-  useEffect(() => (host ? startPrompterHost() : undefined), [host]);
+  const runsPrompter = ROLE_CAN.prompter(role);
+  useEffect(() => (runsPrompter ? startPrompterHost() : undefined), [runsPrompter]);
   // Camera tally for the operators' phones (red = on air, green = next). Runs even when the Tools panel is hidden.
   useEffect(() => {
     if (!host) return;
@@ -85,6 +89,11 @@ function Switcher() {
   const hiddenAudio = state.config.hiddenAudio;
   const stripInputs = mixInputs.filter((c) => !hiddenAudio.includes(c.name));
   const bottom = show.audio || show.status || show.graphics || show.sounds;
+
+  if (role === "prompter")
+    return (
+      <PrompterDesk status={state.status} message={state.statusMessage} locked={lock === true} />
+    );
 
   const menus = ROLE_PANELS[role].map((p) => (
     <button

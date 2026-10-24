@@ -3,7 +3,11 @@ import { describe, expect, test } from "bun:test";
 
 const store = new Map<string, string>();
 (globalThis as any).window = {
-  localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) },
+  localStorage: {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => store.set(k, v),
+    removeItem: (k: string) => store.delete(k),
+  },
   sessionStorage: { getItem: () => null, setItem() {} },
   location: { origin: "http://localhost:8080", href: "http://localhost:8080/" },
   addEventListener() {},
@@ -17,7 +21,16 @@ describe("shared setup", () => {
     const { DEFAULT_CONFIG } = await import("../src/lib/mk/types");
     const next = { ...DEFAULT_CONFIG, host: "10.0.0.9", password: "x", hiddenAudio: ["Mic"] };
     expect(changedKeys(DEFAULT_CONFIG, next)).toEqual(["hiddenAudio"]);
-    for (const k of ["host", "port", "password", "demoMode", "autoConnect", "shortcuts", "listenUrl"]) expect((SHARED_KEYS as readonly string[]).includes(k)).toBe(false);
+    for (const k of [
+      "host",
+      "port",
+      "password",
+      "demoMode",
+      "autoConnect",
+      "shortcuts",
+      "listenUrl",
+    ])
+      expect((SHARED_KEYS as readonly string[]).includes(k)).toBe(false);
   });
 
   test("pull applies newer remote keys, skips own writes and unsent local edits", async () => {
@@ -71,5 +84,57 @@ describe("shared setup", () => {
     slots.set("hiddenAudio", { rev: held.rev + 1, by: "other", value: ["Mic 2", "Cam 3"] });
     await e.pullShared(["hiddenAudio"]);
     expect(e.state.config.hiddenAudio).toEqual(["Mic 2", "Cam 3"]);
+  });
+});
+
+describe("prompter desk", () => {
+  test("prompter is a role with no switcher panels and no shared-setup writes", async () => {
+    const { isRole, ROLE_PANELS, ROLE_CAN, canWrite } = await import("../src/lib/mk/roles");
+    expect(isRole("prompter")).toBe(true);
+    expect(ROLE_PANELS.prompter).toEqual([]);
+    expect(ROLE_CAN.switch("prompter")).toBe(false);
+    expect(ROLE_CAN.output("prompter")).toBe(false);
+    expect(ROLE_CAN.master("prompter")).toBe(false);
+    expect(ROLE_CAN.prompter("prompter")).toBe(true);
+    expect(canWrite("prompter", "camScenes")).toBe(false);
+    expect(canWrite("prompter", "graphics")).toBe(false);
+  });
+
+  test("two prompter peers converge: newest revision wins, scroll start travels as an age", async () => {
+    const { prompter, prompterStore, setPrompterRelay, receivePrompter } =
+      await import("../src/lib/mk/prompter");
+    const sent: any[] = [];
+    setPrompterRelay((m) => void sent.push(m));
+    expect(sent[0].type).toBe("hello");
+    prompter.setSpeed(9);
+    const out = sent.find((m) => m.type === "state");
+    expect(out.state.speed).toBe(9);
+    expect(out.state.t0).toBeUndefined();
+    expect(typeof out.state.age).toBe("number");
+    // an older revision from another desk is ignored
+    receivePrompter({
+      type: "state",
+      from: "other",
+      rev: out.rev - 1,
+      state: { speed: 3, age: 0 },
+    });
+    expect(prompterStore.get().speed).toBe(9);
+    // a newer one is taken, and not sent back out
+    const before = sent.length;
+    receivePrompter({
+      type: "state",
+      from: "other",
+      rev: out.rev + 5,
+      state: { speed: 4, playing: true, age: 2000, text: "Hello" },
+    });
+    expect(prompterStore.get().speed).toBe(4);
+    expect(prompterStore.get().text).toBe("Hello");
+    expect(prompterStore.get().playing).toBe(true);
+    expect(Date.now() - prompterStore.get().t0).toBeGreaterThanOrEqual(1990);
+    expect(sent.length).toBe(before);
+    // a late joiner asking "hello" gets the full state, script included
+    receivePrompter({ type: "hello", from: "late" });
+    expect(sent.at(-1).state.text).toBe("Hello");
+    setPrompterRelay(null);
   });
 });

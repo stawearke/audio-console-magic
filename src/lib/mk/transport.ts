@@ -36,7 +36,9 @@ export type TransportEvent =
   | { type: "stream"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
   | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
   /** Another desk (Director / Graphics / Sound) changed shared setup stored in OBS. */
-  | { type: "shared"; from: string; keys: string[] };
+  | { type: "shared"; from: string; keys: string[] }
+  /** Teleprompter state / hello from another desk or the prompter output page. */
+  | { type: "prompter"; message: Record<string, unknown> };
 
 /** Video playout: one scene holding one media source, reused for every file. */
 export interface InputTiming {
@@ -173,6 +175,8 @@ export interface Transport {
   sharedSet?(key: string, value: unknown): Promise<void>;
   /** Tell the other desks connected to this OBS that shared setup changed. */
   sharedNotify?(from: string, keys: string[]): Promise<void>;
+  /** Send a teleprompter message to every other desk / output page on this OBS. */
+  sendPrompter?(message: Record<string, unknown>): Promise<void>;
   subscribe(listener: (event: TransportEvent) => void): () => void;
 }
 

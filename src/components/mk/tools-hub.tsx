@@ -276,7 +276,7 @@ function RundownTab({ items }: { items: RundownItem[] }) {
 
 // ------------------------------------------------------------------ prompter
 
-function PrompterTab() {
+export function PrompterTab() {
   const p = usePrompter();
   // The operator always reads the preview un-mirrored; mirror/flip only apply to the real output.
   const view = useMemo(() => ({ ...p, mirror: false, flip: false }), [p]);
