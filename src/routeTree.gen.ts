@@ -16,6 +16,7 @@ import { Route as GraphicsRouteImport } from './routes/graphics'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OnairRouteImport } from './routes/onair'
 import { Route as OutputRouteImport } from './routes/output'
+import { Route as OwnerRouteImport } from './routes/owner'
 import { Route as PlayoutRouteImport } from './routes/playout'
 import { Route as PrompterRouteImport } from './routes/prompter'
 import { Route as RundownRouteImport } from './routes/rundown'
@@ -58,6 +59,11 @@ const OutputRoute = OutputRouteImport.update({
   path: '/output',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OwnerRoute = OwnerRouteImport.update({
+  id: '/owner',
+  path: '/owner',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlayoutRoute = PlayoutRouteImport.update({
   id: '/playout',
   path: '/playout',
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/onair': typeof OnairRoute
   '/output': typeof OutputRoute
+  '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onair': typeof OnairRoute
   '/output': typeof OutputRoute
+  '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/onair': typeof OnairRoute
   '/output': typeof OutputRoute
+  '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/onair'
     | '/output'
+    | '/owner'
     | '/playout'
     | '/prompter'
     | '/rundown'
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/onair'
     | '/output'
+    | '/owner'
     | '/playout'
     | '/prompter'
     | '/rundown'
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/onair'
     | '/output'
+    | '/owner'
     | '/playout'
     | '/prompter'
     | '/rundown'
@@ -191,6 +203,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   OnairRoute: typeof OnairRoute
   OutputRoute: typeof OutputRoute
+  OwnerRoute: typeof OwnerRoute
   PlayoutRoute: typeof PlayoutRoute
   PrompterRoute: typeof PrompterRoute
   RundownRoute: typeof RundownRoute
@@ -250,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OutputRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/owner': {
+      id: '/owner'
+      path: '/owner'
+      fullPath: '/owner'
+      preLoaderRoute: typeof OwnerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/playout': {
       id: '/playout'
       path: '/playout'
@@ -303,6 +323,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   OnairRoute: OnairRoute,
   OutputRoute: OutputRoute,
+  OwnerRoute: OwnerRoute,
   PlayoutRoute: PlayoutRoute,
   PrompterRoute: PrompterRoute,
   RundownRoute: RundownRoute,

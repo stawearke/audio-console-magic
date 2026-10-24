@@ -74,6 +74,13 @@ export function setAccountRole(role: Role | null) {
   listeners.forEach((l) => l());
 }
 export const accountRole = () => account;
+
+/** The platform owner (set in Supabase) may open /owner whatever desk they have. */
+let accountOwner = false;
+export function setAccountOwner(on: boolean) {
+  accountOwner = on;
+  listeners.forEach((l) => l());
+}
 const fixedByAccount = () => account !== null && account !== "director";
 
 export function getRole(): Role {
@@ -160,6 +167,7 @@ export function routeAllowed(role: Role, _locked: boolean, path: string): boolea
   const clean = path.length > 1 ? path.replace(/\/+$/, "") : path;
   // Every desk may open the page the invite / reset email link lands on.
   if (clean === "/set-password") return true;
+  if (clean === "/owner" && accountOwner) return true;
   return ROUTES[role].includes(clean);
 }
 

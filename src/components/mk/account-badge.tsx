@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+
 import { cloudConfigured, signOut, useAuth } from "@/lib/mk/cloud";
 import { ROLE_LABEL } from "@/lib/mk/roles";
 
@@ -13,6 +15,14 @@ export function AccountBadge() {
       >
         {auth.email} · {auth.role ? ROLE_LABEL[auth.role] : ""}
       </span>
+      {auth.owner && (
+        <Link
+          to="/owner"
+          className="mk-button grid h-7 place-items-center rounded-[3px] px-2 text-[9px] tracking-[0.12em]"
+        >
+          OWNER
+        </Link>
+      )}
       <button
         type="button"
         className="mk-button h-7 rounded-[3px] px-2 text-[9px] tracking-[0.12em]"

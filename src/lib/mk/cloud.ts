@@ -4,7 +4,7 @@
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { useSyncExternalStore } from "react";
 
-import { isRole, setAccountRole, type Role } from "./roles";
+import { isRole, setAccountOwner, setAccountRole, type Role } from "./roles";
 import { scripts, type Script, type ScriptCloud, type ScriptVersion } from "./scripts";
 import { isSharedKey, type SharedKey } from "./shared";
 
@@ -37,8 +37,10 @@ export interface Auth {
   id: string | null;
   email: string | null;
   role: Role | null;
+  /** The platform owner (can create studios). Set in Supabase, never from the app. */
+  owner: boolean;
 }
-let auth: Auth = { ready: false, id: null, email: null, role: null };
+let auth: Auth = { ready: false, id: null, email: null, role: null, owner: false };
 const subs = new Set<() => void>();
 const setAuth = (next: Auth) => {
   auth = next;
@@ -47,19 +49,22 @@ const setAuth = (next: Auth) => {
 
 async function applySession(c: SupabaseClient, session: Session | null) {
   if (!session) {
+    setAccountOwner(false);
     setAccountRole(null);
     void scripts.attachCloud(null);
-    setAuth({ ready: true, id: null, email: null, role: null });
+    setAuth({ ready: true, id: null, email: null, role: null, owner: false });
     return;
   }
   const { data } = await c
     .from("mk_profiles")
-    .select("role")
+    .select("role,is_owner")
     .eq("id", session.user.id)
     .maybeSingle();
   const role = isRole(data?.role) ? data.role : "prompter";
+  const owner = data?.is_owner === true;
+  setAccountOwner(owner);
   setAccountRole(role);
-  setAuth({ ready: true, id: session.user.id, email: session.user.email ?? null, role });
+  setAuth({ ready: true, id: session.user.id, email: session.user.email ?? null, role, owner });
   if (role === "director" || role === "prompter")
     void scripts.attachCloud(scriptCloud(c, session.user.id)).catch(() => {});
   else void scripts.attachCloud(null);
@@ -72,7 +77,7 @@ export async function startAuth() {
   started = true;
   const c = await sb();
   if (!c) {
-    setAuth({ ready: true, id: null, email: null, role: null });
+    setAuth({ ready: true, id: null, email: null, role: null, owner: false });
     return;
   }
   const { data } = await c.auth.getSession();
@@ -219,6 +224,48 @@ export async function resendCrew(id: string): Promise<CrewResult> {
 
 export async function removeCrew(id: string): Promise<CrewResult> {
   const r = await crewCall({ action: "remove", id });
+  return r.ok ? { ok: true, data: null } : r;
+}
+
+// ------------------------------------------------------------------ studios (platform owner)
+
+export interface StudioEntry {
+  id: string;
+  name: string;
+  active: boolean;
+  members: number;
+  directors: string[];
+}
+
+export async function listStudios(): Promise<CrewResult<StudioEntry[]>> {
+  const r = await crewCall<{ studios: unknown[] }>({ action: "studios_list" });
+  if (!r.ok) return r;
+  const studios = (r.data.studios ?? []).map((row): StudioEntry => {
+    const s = row as Record<string, unknown>;
+    return {
+      id: String(s["id"] ?? ""),
+      name: String(s["name"] ?? ""),
+      active: s["active"] !== false,
+      members: Number(s["members"]) || 0,
+      directors: Array.isArray(s["directors"]) ? s["directors"].map(String) : [],
+    };
+  });
+  return { ok: true, data: studios };
+}
+
+/** Owner: makes a new studio and emails its first Director an invite. */
+export async function createStudio(p: {
+  name: string;
+  directorEmail: string;
+  directorName: string;
+}): Promise<CrewResult> {
+  const r = await crewCall({ action: "studio_create", ...p, redirectTo: passwordPageUrl() });
+  return r.ok ? { ok: true, data: null } : r;
+}
+
+/** Owner: switch a studio off (nobody in it can read or write) or back on. */
+export async function setStudioActive(id: string, active: boolean): Promise<CrewResult> {
+  const r = await crewCall({ action: "studio_set_active", id, active });
   return r.ok ? { ok: true, data: null } : r;
 }
 
