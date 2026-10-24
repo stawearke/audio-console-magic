@@ -1,3 +1,4 @@
+import { CrewList } from "@/components/mk/crew-section";
 import { useAccess } from "@/lib/mk/roles";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
@@ -220,6 +221,10 @@ function SettingsPage() {
       </header>
 
       <div className="mx-auto grid max-w-3xl gap-3 p-3">
+        <Section title="Crew (accounts)">
+          <CrewList />
+        </Section>
+
         <Section title="OBS Connection">
           <label className="grid gap-1">
             <span className="mk-label">Host / IP</span>

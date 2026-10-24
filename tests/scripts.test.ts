@@ -58,3 +58,57 @@ describe("prompter script library", () => {
     expect(lib.active).toBeNull();
   });
 });
+
+describe("shared script library (cloud merge)", () => {
+  test("same script: the newer save wins and brings its versions; local-only scripts are uploaded", async () => {
+    const { mergeLib } = await import("../src/lib/mk/scripts");
+    const local = {
+      items: [
+        { id: "a", name: "A", text: "new local", updated: 500, versions: [] },
+        { id: "b", name: "B", text: "same", updated: 100, versions: [] },
+        { id: "c", name: "C", text: "only here", updated: 10, versions: [] },
+      ],
+      active: "a",
+    };
+    const remote = [
+      {
+        id: "a",
+        name: "A",
+        text: "old cloud",
+        updated: 200,
+        versions: [{ at: 150, text: "older" }],
+      },
+      { id: "b", name: "B", text: "same", updated: 300, versions: [] },
+      { id: "d", name: "D", text: "only cloud", updated: 20, versions: [] },
+    ];
+    const { lib, upload } = mergeLib(local, remote);
+    expect(lib.items.map((s) => s.id).sort()).toEqual(["a", "b", "c", "d"]);
+    expect(lib.items.find((s) => s.id === "a")!.text).toBe("new local");
+    expect(lib.items.find((s) => s.id === "a")!.versions).toEqual([{ at: 150, text: "older" }]);
+    expect(upload.map((s) => s.id).sort()).toEqual(["a", "c"]);
+    expect(lib.active).toBe("a");
+  });
+});
+
+describe("accounts", () => {
+  test("control pages need a login, output / camera / prompter pages do not", async () => {
+    const { needsLogin } = await import("../src/lib/mk/cloud");
+    for (const p of ["/", "/settings", "/audio", "/playout", "/graphics"])
+      expect(needsLogin(p)).toBe(true);
+    for (const p of ["/login", "/prompter", "/output", "/cam", "/prompter/"])
+      expect(needsLogin(p)).toBe(false);
+  });
+
+  test("a signed-in non-Director account is fixed to its desk and locked; a Director can still preview", async () => {
+    const { setAccountRole, getRole, setRole, isLocked } = await import("../src/lib/mk/roles");
+    setAccountRole("sound");
+    setRole("director");
+    expect(getRole()).toBe("sound");
+    expect(isLocked()).toBe(true);
+    setAccountRole("director");
+    setRole("graphics");
+    expect(getRole()).toBe("graphics");
+    setRole("director");
+    setAccountRole(null);
+  });
+});

@@ -90,6 +90,17 @@ function Switcher() {
   const canSwitch = ROLE_CAN.switch(role);
   useShortcuts(state.config.shortcuts, host);
   // Teleprompter host: keeps the /prompter output window in sync even when the Tools panel is hidden.
+  // Closing or hiding the page: send any edit still waiting to go out.
+  useEffect(() => {
+    const flush = () => engine.flushShared();
+    const hidden = () => document.visibilityState === "hidden" && flush();
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  }, []);
   const runsPrompter = ROLE_CAN.prompter(role);
   useEffect(() => (runsPrompter ? startPrompterHost() : undefined), [runsPrompter]);
   // Camera tally for the operators' phones (red = on air, green = next). Runs even when the Tools panel is hidden.

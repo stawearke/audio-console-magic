@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { AccountBadge } from "@/components/mk/account-badge";
 import { useAccess } from "@/lib/mk/roles";
 import type { ConnectionStatus } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ export function StatusBar({ status, statusMessage, demo, menus, listen, role }: 
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {role}
+        <AccountBadge />
         {listen}
         {demo && (
           <span className="mk-lit-amber rounded-[3px] px-2 py-1 text-[9px] leading-none font-bold tracking-[0.16em] uppercase">

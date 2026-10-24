@@ -102,6 +102,38 @@ export function setActive(lib: Lib, id: string | null): Lib {
   return { ...lib, active: id !== null && lib.items.some((s) => s.id === id) ? id : null };
 }
 
+/**
+ * Join this device's library with the shared one (Supabase). Same id: the newer save wins and brings its
+ * versions. Scripts only on one side are kept; those only here are returned in `upload`.
+ */
+export function mergeLib(local: Lib, remote: Script[]): { lib: Lib; upload: Script[] } {
+  const byId = new Map(remote.map((r) => [r.id, r]));
+  const upload: Script[] = [];
+  const items: Script[] = local.items.map((l) => {
+    const r = byId.get(l.id);
+    byId.delete(l.id);
+    if (!r) {
+      upload.push(l);
+      return l;
+    }
+    if (l.updated > r.updated && l.text !== r.text) {
+      upload.push(l);
+      return { ...l, versions: r.versions.length ? r.versions : l.versions };
+    }
+    return r;
+  });
+  for (const r of byId.values()) items.push(r);
+  const merged = cleanLib({ items: items.slice(0, MAX_SCRIPTS), active: local.active });
+  return { lib: merged, upload };
+}
+
+/** Where scripts are also kept (shared between PCs). Optional: without it scripts stay on this device. */
+export interface ScriptCloud {
+  list(): Promise<Script[]>;
+  upsert(s: Script): Promise<void>;
+  remove(id: string): Promise<void>;
+}
+
 // ------------------------------------------------------------------ store (this device)
 
 const KEY = "mkvision.scripts.v1";
@@ -129,6 +161,8 @@ function commit(next: Lib) {
   subs.forEach((f) => f());
 }
 
+let cloud: ScriptCloud | null = null;
+const quiet = (p: Promise<unknown> | undefined) => void p?.catch(() => {});
 const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 export const scripts = {
@@ -146,19 +180,35 @@ export const scripts = {
     load();
     const id = newId();
     commit(addScript(lib, id, name, text, Date.now()));
+    const s = lib.items.find((x) => x.id === id);
+    if (s) quiet(cloud?.upsert(s));
     return id;
   },
   save: (id: string, text: string) => {
     load();
     commit(saveScript(lib, id, text, Date.now()));
+    const s = lib.items.find((x) => x.id === id);
+    if (s) quiet(cloud?.upsert(s));
   },
   rename: (id: string, name: string) => {
     load();
     commit(renameScript(lib, id, name));
+    const s = lib.items.find((x) => x.id === id);
+    if (s) quiet(cloud?.upsert(s));
   },
   remove: (id: string) => {
     load();
     commit(removeScript(lib, id));
+    quiet(cloud?.remove(id));
+  },
+  /** Start (or with null, stop) sharing scripts through the cloud: merge both sides, then keep them in step. */
+  async attachCloud(next: ScriptCloud | null) {
+    cloud = next;
+    if (!next) return;
+    load();
+    const { lib: merged, upload } = mergeLib(lib, await next.list());
+    commit(merged);
+    for (const s of upload) await next.upsert(s);
   },
   setActive: (id: string | null) => {
     load();

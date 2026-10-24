@@ -50,6 +50,7 @@ import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, ta
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
+import { cloudSettings } from "./cloud";
 import { canWrite, getRole } from "./roles";
 import { receivePrompter, setPrompterRelay } from "./prompter";
 import {
@@ -246,6 +247,14 @@ export class SwitcherEngine {
     this.sharedTimer = setTimeout(() => this.queueShared(() => this.pushShared()), 350);
   }
 
+  /** Send pending shared edits now (page is being closed or hidden). */
+  flushShared() {
+    if (!this.sharedTimer) return;
+    clearTimeout(this.sharedTimer);
+    this.sharedTimer = null;
+    this.queueShared(() => this.pushShared());
+  }
+
   private get sharedReady(): boolean {
     const t = this.transport;
     return !!t?.sharedGet && !!t.sharedSet && !this.state.demo && this.state.status === "connected";
@@ -268,23 +277,26 @@ export class SwitcherEngine {
     const plan = planPull(remote, this.sharedKnown, this.sharedDirty, deskId());
     Object.assign(this.sharedKnown, plan.revs);
     saveKnown(this.sharedKnown);
-    if (plan.keys.length) {
-      this.applyingShared = true;
-      try {
-        // Round-trip through the loader so remote data is validated exactly like stored data.
-        saveConfig({ ...this.state.config, ...plan.patch } as MkConfig);
-        this.set({ config: loadConfig() });
-        this.set({
-          program: this.camForScene(this.state.programScene),
-          preview: this.camForScene(this.state.previewScene),
-        });
-      } finally {
-        this.applyingShared = false;
-      }
-      if (plan.keys.includes("dsks")) void this.syncDsks();
-      setSync({ lastKeys: plan.keys, at: Date.now() });
-    }
+    if (plan.keys.length) this.applySharedPatch(plan.patch, plan.keys);
     return remote;
+  }
+
+  /** Take setup values that came from elsewhere (another desk or the cloud). Not sent on again. */
+  private applySharedPatch(patch: Partial<Record<SharedKey, unknown>>, keys: SharedKey[]) {
+    this.applyingShared = true;
+    try {
+      // Round-trip through the loader so outside data is validated exactly like stored data.
+      saveConfig({ ...this.state.config, ...patch } as MkConfig);
+      this.set({ config: loadConfig() });
+      this.set({
+        program: this.camForScene(this.state.programScene),
+        preview: this.camForScene(this.state.previewScene),
+      });
+    } finally {
+      this.applyingShared = false;
+    }
+    if (keys.includes("dsks")) void this.syncDsks();
+    setSync({ lastKeys: keys, at: Date.now() });
   }
 
   /** Write this desk's unsent shared edits to OBS and tell the other desks. */
@@ -306,6 +318,7 @@ export class SwitcherEngine {
       }
       saveKnown(this.sharedKnown);
       await t.sharedNotify?.(deskId(), sent).catch(() => {});
+      void cloudSettings.push(sent.map((k) => ({ key: k, value: this.state.config[k], rev: this.sharedKnown[k] ?? 1 }))).catch(() => {});
       setSync({ state: "ok", at: Date.now() });
     } catch {
       for (const k of keys) if (!sent.includes(k)) this.sharedDirty.add(k);
@@ -325,7 +338,16 @@ export class SwitcherEngine {
     setSync({ state: "busy" });
     try {
       const remote = await this.pullShared(SHARED_KEYS);
-      if (getRole() === "director") for (const k of SHARED_KEYS) if (remote[k] === null) this.sharedDirty.add(k);
+      if (getRole() === "director") {
+        const missing = SHARED_KEYS.filter((k) => remote[k] === null);
+        if (missing.length) {
+          // OBS holds nothing for these (new or rebuilt OBS PC): the cloud copy beats this PC's defaults.
+          const saved = await cloudSettings.pull(missing).catch(() => ({}) as Awaited<ReturnType<typeof cloudSettings.pull>>);
+          const got = missing.filter((k) => saved[k] !== undefined);
+          if (got.length) this.applySharedPatch(Object.fromEntries(got.map((k) => [k, saved[k]!.value])), got);
+        }
+        for (const k of missing) this.sharedDirty.add(k);
+      }
       await this.pushShared();
       setSync({ state: "ok", at: Date.now() });
     } catch {

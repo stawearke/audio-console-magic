@@ -1,3 +1,4 @@
+import { AccountBadge } from "@/components/mk/account-badge";
 import { RoleSwitch } from "@/components/mk/role-switch";
 import { PrompterTab } from "@/components/mk/tools-hub";
 import type { ConnectionStatus } from "@/lib/mk/types";
@@ -31,6 +32,7 @@ export function PrompterDesk({
         </h1>
         <div className="ml-auto flex items-center gap-2">
           {!locked && <RoleSwitch />}
+          <AccountBadge />
           <span
             className={cn(
               "h-2 w-2 rounded-full",

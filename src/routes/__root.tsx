@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { cloudConfigured, needsLogin, startAuth, useAuth } from "../lib/mk/cloud";
 import { useAccess } from "../lib/mk/roles";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -128,10 +129,27 @@ function LockGuard() {
   const path = useRouterState({ select: (st) => st.location.pathname });
   const navigate = useNavigate();
   const blocked = !route(path);
+  // With accounts set up, the control pages need a login (output / camera pages stay open for OBS and phones).
+  const auth = useAuth();
   useEffect(() => {
-    if (blocked) void navigate({ to: "/", replace: true });
-  }, [blocked, navigate]);
+    void startAuth();
+  }, []);
+  const mustSignIn = cloudConfigured() && auth.ready && !auth.id && needsLogin(path);
+  useEffect(() => {
+    if (mustSignIn) void navigate({ to: "/login", replace: true });
+    else if (blocked) void navigate({ to: "/", replace: true });
+  }, [mustSignIn, blocked, navigate]);
   return null;
+}
+
+/** Nothing of a control page is drawn (or connects to OBS) until the login check passes. */
+function Guarded({ children }: { children: ReactNode }) {
+  const auth = useAuth();
+  const { route } = useAccess();
+  const path = useRouterState({ select: (st) => st.location.pathname });
+  if (cloudConfigured() && needsLogin(path) && (!auth.ready || !auth.id)) return null;
+  if (!route(path)) return null;
+  return <>{children}</>;
 }
 
 function RootComponent() {
@@ -141,7 +159,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <LockGuard />
-      <Outlet />
+      <Guarded>
+        <Outlet />
+      </Guarded>
     </QueryClientProvider>
   );
 }

@@ -64,12 +64,26 @@ function load(): Role {
   }
 }
 
+/**
+ * The role of the signed-in account (Supabase). A Director account may still preview the other desks with
+ * the switch; any other account is fixed to its own role and is always locked.
+ */
+let account: Role | null = null;
+export function setAccountRole(role: Role | null) {
+  account = role;
+  listeners.forEach((l) => l());
+}
+export const accountRole = () => account;
+const fixedByAccount = () => account !== null && account !== "director";
+
 export function getRole(): Role {
   if (typeof window === "undefined") return "director";
+  if (fixedByAccount()) return account as Role;
   return (cache ??= load());
 }
 
 export function setRole(role: Role) {
+  if (fixedByAccount()) return;
   if (cache === role) return;
   cache = role;
   try {
@@ -113,10 +127,12 @@ function loadLock(): boolean {
 
 export function isLocked(): boolean {
   if (typeof window === "undefined") return false;
+  if (fixedByAccount()) return true;
   return (lockCache ??= loadLock());
 }
 
 export function setLocked(on: boolean) {
+  if (fixedByAccount()) return;
   if (lockCache === on) return;
   lockCache = on;
   try {
