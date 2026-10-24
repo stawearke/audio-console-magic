@@ -158,6 +158,8 @@ const ROUTES: Record<Exclude<Role, "director">, string[]> = {
 export function routeAllowed(role: Role, _locked: boolean, path: string): boolean {
   if (role === "director") return true;
   const clean = path.length > 1 ? path.replace(/\/+$/, "") : path;
+  // Every desk may open the page the invite / reset email link lands on.
+  if (clean === "/set-password") return true;
   return ROUTES[role].includes(clean);
 }
 

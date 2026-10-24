@@ -95,7 +95,7 @@ describe("accounts", () => {
     const { needsLogin } = await import("../src/lib/mk/cloud");
     for (const p of ["/", "/settings", "/audio", "/playout", "/graphics"])
       expect(needsLogin(p)).toBe(true);
-    for (const p of ["/login", "/prompter", "/output", "/cam", "/prompter/"])
+    for (const p of ["/login", "/set-password", "/prompter", "/output", "/cam", "/prompter/"])
       expect(needsLogin(p)).toBe(false);
   });
 

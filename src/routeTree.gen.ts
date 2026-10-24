@@ -19,6 +19,7 @@ import { Route as OutputRouteImport } from './routes/output'
 import { Route as PlayoutRouteImport } from './routes/playout'
 import { Route as PrompterRouteImport } from './routes/prompter'
 import { Route as RundownRouteImport } from './routes/rundown'
+import { Route as SetPasswordRouteImport } from './routes/set-password'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SoundsRouteImport } from './routes/sounds'
 
@@ -72,6 +73,11 @@ const RundownRoute = RundownRouteImport.update({
   path: '/rundown',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SetPasswordRoute = SetPasswordRouteImport.update({
+  id: '/set-password',
+  path: '/set-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
+  '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sounds': typeof SoundsRoute
 }
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
+  '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sounds': typeof SoundsRoute
 }
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
+  '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sounds': typeof SoundsRoute
 }
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/playout'
     | '/prompter'
     | '/rundown'
+    | '/set-password'
     | '/settings'
     | '/sounds'
   fileRoutesByTo: FileRoutesByTo
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/playout'
     | '/prompter'
     | '/rundown'
+    | '/set-password'
     | '/settings'
     | '/sounds'
   id:
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/playout'
     | '/prompter'
     | '/rundown'
+    | '/set-password'
     | '/settings'
     | '/sounds'
   fileRoutesById: FileRoutesById
@@ -182,6 +194,7 @@ export interface RootRouteChildren {
   PlayoutRoute: typeof PlayoutRoute
   PrompterRoute: typeof PrompterRoute
   RundownRoute: typeof RundownRoute
+  SetPasswordRoute: typeof SetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SoundsRoute: typeof SoundsRoute
 }
@@ -258,6 +271,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RundownRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/set-password': {
+      id: '/set-password'
+      path: '/set-password'
+      fullPath: '/set-password'
+      preLoaderRoute: typeof SetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -286,6 +306,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlayoutRoute: PlayoutRoute,
   PrompterRoute: PrompterRoute,
   RundownRoute: RundownRoute,
+  SetPasswordRoute: SetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SoundsRoute: SoundsRoute,
 }

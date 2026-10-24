@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-import { cloudConfigured, signIn, signUp, useAuth } from "@/lib/mk/cloud";
+import { cloudConfigured, sendPasswordReset, signIn, useAuth } from "@/lib/mk/cloud";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign in — MK VISION" }] }),
@@ -13,7 +13,6 @@ function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -25,15 +24,18 @@ function Login() {
   const submit = async () => {
     setBusy(true);
     setMsg("");
-    if (creating) {
-      const r = await signUp(email.trim(), password);
-      setMsg(
-        r.error ?? (r.confirm ? "Account created. Check your email to confirm, then sign in." : ""),
-      );
-      if (!r.error && r.confirm) setCreating(false);
-    } else {
-      setMsg((await signIn(email.trim(), password)) ?? "");
+    setMsg((await signIn(email.trim(), password)) ?? "");
+    setBusy(false);
+  };
+
+  const forgot = async () => {
+    if (!email.trim()) {
+      setMsg("Type your email above first, then press Forgot password.");
+      return;
     }
+    setBusy(true);
+    const err = await sendPasswordReset(email.trim());
+    setMsg(err ?? "If that email has an account, a link to choose a new password is on its way.");
     setBusy(false);
   };
 
@@ -41,7 +43,7 @@ function Login() {
     <div className="mk-chassis flex min-h-[100dvh] items-center justify-center p-4">
       <div className="mk-panel grid w-full max-w-sm gap-3 rounded-md p-4">
         <h1 className="text-base font-bold tracking-[0.22em] text-foreground">MK VISION</h1>
-        <p className="mk-label text-[9px]">{creating ? "CREATE ACCOUNT" : "SIGN IN"}</p>
+        <p className="mk-label text-[9px]">SIGN IN</p>
         <label className="grid gap-1">
           <span className="mk-label">Email</span>
           <input
@@ -57,7 +59,7 @@ function Login() {
           <input
             className="mk-field h-9 rounded-sm px-2 text-sm"
             type="password"
-            autoComplete={creating ? "new-password" : "current-password"}
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && email && password && void submit()}
@@ -70,21 +72,19 @@ function Login() {
           disabled={busy || !email || !password}
           onClick={() => void submit()}
         >
-          {creating ? "CREATE ACCOUNT" : "SIGN IN"}
+          SIGN IN
         </button>
         <button
           type="button"
           className="mk-label text-[9px] hover:text-foreground"
-          onClick={() => setCreating((v) => !v)}
+          disabled={busy}
+          onClick={() => void forgot()}
         >
-          {creating ? "I already have an account" : "New here? Create an account"}
+          Forgot password?
         </button>
-        {creating && (
-          <p className="text-[10px] text-engrave">
-            New accounts start with the Prompter desk. The Director gives you your real desk in
-            Settings → Crew.
-          </p>
-        )}
+        <p className="text-[10px] text-engrave">
+          Accounts are created by your Director. Ask them to send you an invite by email.
+        </p>
       </div>
     </div>
   );

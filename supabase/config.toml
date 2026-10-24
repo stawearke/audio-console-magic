@@ -1,0 +1,5 @@
+# Minimal Supabase CLI config: only needed so `npx supabase functions deploy crew-admin` works.
+project_id = "audio-console-magic"
+
+[functions.crew-admin]
+verify_jwt = true
