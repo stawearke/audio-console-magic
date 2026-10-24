@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { CommsPanel } from "@/components/mk/comms-panel";
 import { PrompterView } from "@/components/mk/prompter-view";
+import { ScriptLibrary } from "@/components/mk/script-library";
 import { RundownScreen } from "@/components/mk/rundown-screen";
 import { useComms } from "@/lib/mk/intercom";
 import { playout } from "@/lib/mk/playout";
@@ -285,6 +286,7 @@ export function PrompterTab() {
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-1.5">
       {/* script */}
       <div className="flex min-h-0 min-w-0 flex-col gap-1">
+        <ScriptLibrary />
         <textarea
           className="mk-field min-h-0 w-full flex-1 resize-none rounded-[3px] p-1.5 text-[11px] leading-snug"
           value={p.text}
