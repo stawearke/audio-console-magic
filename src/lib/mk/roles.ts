@@ -167,6 +167,9 @@ export function routeAllowed(role: Role, _locked: boolean, path: string): boolea
   const clean = path.length > 1 ? path.replace(/\/+$/, "") : path;
   // Every desk may open the page the invite / reset email link lands on.
   if (clean === "/set-password") return true;
+  // The sign-in page is open to every desk: a signed-out visitor may still carry a stored desk role / lock
+  // from an old crew link, and without this "/" -> "/login" -> "/" redirects ping-pong forever (blank screen).
+  if (clean === "/login") return true;
   if (clean === "/owner" && accountOwner) return true;
   return ROUTES[role].includes(clean);
 }
