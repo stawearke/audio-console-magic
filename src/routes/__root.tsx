@@ -12,7 +12,7 @@ import {
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { cloudConfigured, needsLogin, startAuth, useAuth } from "../lib/mk/cloud";
-import { useAccess } from "../lib/mk/roles";
+import { isLocked, useAccess } from "../lib/mk/roles";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -145,11 +145,14 @@ function LockGuard() {
     const now = Date.now();
     tries.current = [...tries.current.filter((t) => now - t < 2000), now];
     if (tries.current.length > 8) {
-      console.error("[LockGuard] redirect loop stopped", { path, target, authReady: auth.ready, signedIn: !!auth.id, role: auth.role });
+      console.error(
+        "[LockGuard] redirect loop stopped " +
+          JSON.stringify({ path, target, href: window.location.href, authReady: auth.ready, signedIn: !!auth.id, role: auth.role, locked: isLocked(), mustSignIn, blocked, cloud: cloudConfigured() }),
+      );
       return;
     }
     void navigate({ to: target, replace: true });
-  }, [target, path, navigate, auth.ready, auth.id, auth.role]);
+  }, [target, path, navigate, auth.ready, auth.id, auth.role, mustSignIn, blocked]);
   return null;
 }
 
