@@ -395,6 +395,15 @@ function SettingsPage() {
           </p>
         </Section>
 
+        <Section title="Studio">
+          <Link to="/studio" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+            Open Scenes &amp; Sources
+          </Link>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Add, rename and delete scenes, and add cameras, microphones, screens, media and web pages to them.
+          </p>
+        </Section>
+
         <Section title="Sounds">
           <Link to="/sounds" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
             Open Sounds library
