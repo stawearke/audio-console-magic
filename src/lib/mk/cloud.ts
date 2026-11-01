@@ -16,8 +16,15 @@ export const cloudConfigured = () => URL !== "" && KEY !== "";
 /** Pages that control the show need a login. Output / camera pages open inside OBS or on phones stay open. */
 // /set-password is open because the invite / reset email link lands there before anyone is signed in.
 const OPEN_PAGES = ["/login", "/set-password", "/prompter", "/output", "/cam"];
+/** Running inside MK VISION Studio (the built-in engine published its details at /mk-config.json). */
+export const isEmbedded = () =>
+  typeof window !== "undefined" &&
+  (window as unknown as { __MK_EMBEDDED__?: boolean }).__MK_EMBEDDED__ === true;
+
+/** The installed app is a local desk: it opens straight to the Director desk with no cloud sign-in.
+ *  Signing in (for crew accounts, shared scripts) stays available at /login. */
 export const needsLogin = (path: string) =>
-  !OPEN_PAGES.includes(path.length > 1 ? path.replace(/\/+$/, "") : path);
+  !isEmbedded() && !OPEN_PAGES.includes(path.length > 1 ? path.replace(/\/+$/, "") : path);
 
 let client: SupabaseClient | null = null;
 async function sb(): Promise<SupabaseClient | null> {

@@ -81,14 +81,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "MK VISION" },
+      { name: "description", content: "MK VISION: live production desk" },
+      { name: "author", content: "MK VISION" },
+      { property: "og:title", content: "MK VISION" },
+      { property: "og:description", content: "MK VISION: live production desk" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     scripts: [
       {
@@ -96,7 +95,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         // /mk-config.json (same origin, this PC only). Apply them before the app starts so
         // nothing has to be typed in. On any other host this quietly does nothing.
         children:
-          '(function(){try{var x=new XMLHttpRequest();x.open("GET","/mk-config.json",false);x.send();if(x.status!==200)return;var c=JSON.parse(x.responseText);if(!c||c.mk!==1||typeof c.port!=="number")return;var k="mkvision.config.v1",s={};try{s=JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){}s.host=String(c.host||"127.0.0.1");s.port=c.port;s.password=String(c.password||"");s.autoConnect=true;s.demoMode=false;localStorage.setItem(k,JSON.stringify(s))}catch(e){}})();',
+          '(function(){try{var x=new XMLHttpRequest();x.open("GET","/mk-config.json",false);x.send();if(x.status!==200)return;var c=JSON.parse(x.responseText);if(!c||c.mk!==1||typeof c.port!=="number")return;var k="mkvision.config.v1",s={};try{s=JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){}s.host=String(c.host||"127.0.0.1");s.port=c.port;s.password=String(c.password||"");s.autoConnect=true;s.demoMode=false;localStorage.setItem(k,JSON.stringify(s));window.__MK_EMBEDDED__=true}catch(e){}})();',
       },
     ],
     links: [
