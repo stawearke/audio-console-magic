@@ -404,6 +404,15 @@ function SettingsPage() {
           </p>
         </Section>
 
+        <Section title="Stream & Record">
+          <Link to="/streaming" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+            Open Stream &amp; Record settings
+          </Link>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Start and stop streaming and recording, set the stream server and key, bitrate, and where recordings are saved.
+          </p>
+        </Section>
+
         <Section title="Sounds">
           <Link to="/sounds" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
             Open Sounds library

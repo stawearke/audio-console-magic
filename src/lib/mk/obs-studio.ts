@@ -67,7 +67,7 @@ export interface DeviceOption {
 }
 
 export class StudioClient {
-  private obs = new OBSWebSocket();
+  protected obs = new OBSWebSocket();
   private connected = false;
   onClose?: () => void;
 
