@@ -36,6 +36,35 @@ export const REC_QUALITIES = [
   { value: "Lossless", label: "Lossless, huge file" },
 ];
 
+export interface VideoSettings {
+  baseWidth: number;
+  baseHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+  fpsNumerator: number;
+  fpsDenominator: number;
+}
+
+export const RESOLUTIONS = [
+  { w: 3840, h: 2160, label: "3840×2160 (4K)" },
+  { w: 2560, h: 1440, label: "2560×1440" },
+  { w: 1920, h: 1080, label: "1920×1080 (Full HD)" },
+  { w: 1600, h: 900, label: "1600×900" },
+  { w: 1280, h: 720, label: "1280×720 (HD)" },
+  { w: 854, h: 480, label: "854×480" },
+  { w: 1080, h: 1920, label: "1080×1920 (vertical)" },
+];
+
+export const FRAME_RATES = [
+  { n: 24, d: 1, label: "24" },
+  { n: 25, d: 1, label: "25" },
+  { n: 30, d: 1, label: "30" },
+  { n: 30000, d: 1001, label: "29.97" },
+  { n: 50, d: 1, label: "50" },
+  { n: 60, d: 1, label: "60" },
+  { n: 60000, d: 1001, label: "59.94" },
+];
+
 export const AUDIO_BITRATES = [96, 128, 160, 192, 256, 320];
 
 export interface QualitySettings {
@@ -133,6 +162,20 @@ export class OutputClient extends StudioClient {
     if (q.recFormat)
       await this.setParam(adv ? "AdvOut" : "SimpleOutput", "RecFormat2", q.recFormat);
   }
+
+  async video(): Promise<VideoSettings> {
+    const r = await this.obs.call("GetVideoSettings");
+    return {
+      baseWidth: r.baseWidth,
+      baseHeight: r.baseHeight,
+      outputWidth: r.outputWidth,
+      outputHeight: r.outputHeight,
+      fpsNumerator: r.fpsNumerator,
+      fpsDenominator: r.fpsDenominator,
+    };
+  }
+  /** OBS refuses this while streaming, recording or running the virtual camera. */
+  saveVideo = (v: VideoSettings) => this.obs.call("SetVideoSettings", { ...v });
 
   async recordFolder(): Promise<string> {
     const r = await this.obs.call("GetRecordDirectory");

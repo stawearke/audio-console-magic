@@ -5,11 +5,14 @@ import {
   AUDIO_BITRATES,
   OutputClient,
   REC_FORMATS,
+  FRAME_RATES,
   REC_QUALITIES,
+  RESOLUTIONS,
   SERVER_PRESETS,
   type OutputStatus,
   type QualitySettings,
   type StreamDest,
+  type VideoSettings,
 } from "@/lib/mk/obs-output";
 import { cn } from "@/lib/utils";
 
@@ -50,11 +53,13 @@ export function StreamSettings() {
     recQuality: "",
   });
   const [folder, setFolder] = useState("");
+  const [video, setVideo] = useState<VideoSettings | null>(null);
 
   const load = useCallback(async (c: OutputClient) => {
     setDest(await c.dest());
     setQ(await c.quality());
     setFolder(await c.recordFolder().catch(() => ""));
+    setVideo(await c.video().catch(() => null));
     setOut(await c.status());
   }, []);
 
@@ -247,6 +252,108 @@ export function StreamSettings() {
           Save destination
         </button>
       </Panel>
+
+      {video && (
+        <Panel title="VIDEO">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="grid gap-1">
+              <span className="mk-label text-[9px]">CANVAS (what you build scenes on)</span>
+              <select
+                value={`${video.baseWidth}x${video.baseHeight}`}
+                onChange={(e) => {
+                  const [w = 0, h = 0] = e.target.value.split("x").map(Number);
+                  const same =
+                    video.outputWidth === video.baseWidth &&
+                    video.outputHeight === video.baseHeight;
+                  setVideo({
+                    ...video,
+                    baseWidth: w,
+                    baseHeight: h,
+                    ...(same ? { outputWidth: w, outputHeight: h } : {}),
+                  });
+                }}
+                className={field}
+              >
+                {!RESOLUTIONS.some((r) => r.w === video.baseWidth && r.h === video.baseHeight) && (
+                  <option value={`${video.baseWidth}x${video.baseHeight}`}>
+                    {video.baseWidth}×{video.baseHeight}
+                  </option>
+                )}
+                {RESOLUTIONS.map((r) => (
+                  <option key={r.label} value={`${r.w}x${r.h}`}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="mk-label text-[9px]">OUTPUT (what is streamed / recorded)</span>
+              <select
+                value={`${video.outputWidth}x${video.outputHeight}`}
+                onChange={(e) => {
+                  const [w = 0, h = 0] = e.target.value.split("x").map(Number);
+                  setVideo({ ...video, outputWidth: w, outputHeight: h });
+                }}
+                className={field}
+              >
+                {!RESOLUTIONS.some(
+                  (r) => r.w === video.outputWidth && r.h === video.outputHeight,
+                ) && (
+                  <option value={`${video.outputWidth}x${video.outputHeight}`}>
+                    {video.outputWidth}×{video.outputHeight}
+                  </option>
+                )}
+                {RESOLUTIONS.map((r) => (
+                  <option key={r.label} value={`${r.w}x${r.h}`}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="mk-label text-[9px]">FRAME RATE (fps)</span>
+              <select
+                value={`${video.fpsNumerator}/${video.fpsDenominator}`}
+                onChange={(e) => {
+                  const [n = 30, d = 1] = e.target.value.split("/").map(Number);
+                  setVideo({ ...video, fpsNumerator: n, fpsDenominator: d });
+                }}
+                className={field}
+              >
+                {!FRAME_RATES.some(
+                  (f) => f.n === video.fpsNumerator && f.d === video.fpsDenominator,
+                ) && (
+                  <option value={`${video.fpsNumerator}/${video.fpsDenominator}`}>
+                    {(video.fpsNumerator / video.fpsDenominator).toFixed(2)}
+                  </option>
+                )}
+                {FRAME_RATES.map((f) => (
+                  <option key={f.label} value={`${f.n}/${f.d}`}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Video settings can only be changed while not streaming or recording. Changing the canvas
+            can move sources, so check your scenes afterwards.
+          </p>
+          <button
+            type="button"
+            disabled={out.streaming || out.recording}
+            onClick={() =>
+              void run(async () => {
+                await c.saveVideo(video);
+                setVideo(await c.video());
+              }, "Video settings saved.")
+            }
+            className="mk-button h-9 w-fit rounded-sm px-4 text-xs"
+          >
+            Save video settings
+          </button>
+        </Panel>
+      )}
 
       <Panel title="QUALITY">
         {advanced ? (
