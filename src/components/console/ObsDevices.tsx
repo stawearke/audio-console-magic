@@ -17,6 +17,12 @@ interface Reply {
   channels: Chan[];
 }
 
+interface MonReply {
+  devices: Dev[];
+  currentId: string;
+  currentName: string;
+}
+
 const DISABLED = "disabled";
 const SLOT_LABEL: Record<number, string> = {
   1: "Desktop audio 1",
@@ -56,6 +62,7 @@ export function ObsDevices() {
   const [data, setData] = useState<Reply | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(0);
+  const [mon, setMon] = useState<MonReply | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const seen = useRef<Set<string> | null>(null);
 
@@ -70,6 +77,7 @@ export function ObsDevices() {
         all.forEach((id) => seen.current!.add(id));
       }
       setData(r);
+      setMon(await api<MonReply>("monitor-devices"));
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read the devices.");
@@ -103,6 +111,18 @@ export function ObsDevices() {
     }
   };
 
+  const setMonitor = async (deviceId: string) => {
+    setBusy((n) => n + 1);
+    try {
+      await api("monitor-device", { deviceId });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not change the monitoring device.");
+    } finally {
+      setBusy((n) => n - 1);
+    }
+  };
+
   if (!isEmbedded()) {
     return (
       <section className="mixer-surface p-3" aria-label="Devices">
@@ -122,6 +142,26 @@ export function ObsDevices() {
         within a few seconds, marked NEW.
       </p>
       {error && <p className="mb-2 text-xs text-amber">{error}</p>}
+      {mon && (
+        <div className="channel-strip mb-3 flex flex-col gap-1 p-2">
+          <span className="text-[11px] font-bold uppercase tracking-widest">Monitoring output (Main / Solo)</span>
+          <span className="label-text text-[10px]">Where pre-listen and monitored channels are heard on this PC.</span>
+          <select
+            aria-label="Monitoring output device"
+            className="console-select rounded px-2 py-1 text-xs"
+            value={mon.currentId}
+            disabled={busy > 0}
+            onChange={(e) => void setMonitor(e.target.value)}
+          >
+            {!mon.devices.some((d) => d.id === mon.currentId) && <option value={mon.currentId}>(device not connected)</option>}
+            {mon.devices.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {!data ? (
         <p className="label-text text-xs">Reading devices…</p>
       ) : (
