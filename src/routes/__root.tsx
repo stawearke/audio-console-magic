@@ -93,9 +93,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         // Inside MK VISION Studio the built-in engine publishes its connection details at
         // /mk-config.json (same origin, this PC only). Apply them before the app starts so
-        // nothing has to be typed in. On any other host this quietly does nothing.
+        // nothing has to be typed in. A crew desk opened from the Director's address (port 17870)
+        // takes the engine address from the page address and the password / desk from the link.
+        // On any other host this quietly does nothing.
         children:
-          '(function(){try{var x=new XMLHttpRequest();x.open("GET","/mk-config.json",false);x.send();if(x.status!==200)return;var c=JSON.parse(x.responseText);if(!c||c.mk!==1||typeof c.port!=="number")return;var k="mkvision.config.v1",s={};try{s=JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){}s.host=String(c.host||"127.0.0.1");s.port=c.port;s.password=String(c.password||"");s.autoConnect=true;s.demoMode=false;localStorage.setItem(k,JSON.stringify(s));window.__MK_EMBEDDED__=true}catch(e){}})();',
+          '(function(){try{var k="mkvision.config.v1",s={};try{s=JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){}var x=new XMLHttpRequest();x.open("GET","/mk-config.json",false);x.send();var c=null;if(x.status===200){try{c=JSON.parse(x.responseText)}catch(e){}}if(c&&c.mk===1&&typeof c.port==="number"){s.host=String(c.host||"127.0.0.1");s.port=c.port;s.password=String(c.password||"");s.autoConnect=true;s.demoMode=false;localStorage.setItem(k,JSON.stringify(s));localStorage.setItem("mkvision.engine.v1",JSON.stringify({crew:!!c.crew,lan:c.lan||[],crewPort:c.crewPort||0}));window.__MK_EMBEDDED__=true}else if(location.port==="17870"){var h=location.hash||"",m=h.match(/mkpw=([^&]*)/),pt=h.match(/mkport=(\\d+)/),r=h.match(/role=([a-z]+)/);s.host=location.hostname;s.port=pt?Number(pt[1]):(s.port&&s.host===location.hostname?s.port:4455);s.autoConnect=true;s.demoMode=false;if(m)s.password=decodeURIComponent(m[1]);localStorage.setItem(k,JSON.stringify(s));if(r&&/^(director|graphics|sound|prompter)$/.test(r[1]))localStorage.setItem("mkvision.role.v1",r[1]);if((m||r||pt)&&history.replaceState)history.replaceState(null,"",location.pathname+location.search);window.__MK_EMBEDDED__=true}}catch(e){}})();',
       },
     ],
     links: [

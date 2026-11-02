@@ -1,4 +1,5 @@
 import { CrewList } from "@/components/mk/crew-section";
+import { ShareDesk } from "@/components/mk/share-desk";
 import { useAccess } from "@/lib/mk/roles";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
@@ -48,7 +49,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-
 /** Pre-listen bridge status (no Recording involved): MediaMTX + Aitum output + ffmpeg, checked from this device. */
 function PrelistenBridge({ saved, host }: { saved: string; host: string }) {
   const [rep, setRep] = useState<BridgeReport | null>(null);
@@ -67,12 +67,23 @@ function PrelistenBridge({ saved, host }: { saved: string; host: string }) {
   const btn = "mk-button h-9 rounded-sm px-3 text-xs";
   return (
     <div className="grid gap-2 rounded-sm border border-border p-2">
-      <span className="mk-label">Pre-listen link (Aitum Multistream: Recording is not touched)</span>
+      <span className="mk-label">
+        Pre-listen link (Aitum Multistream: Recording is not touched)
+      </span>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy} className={`${btn} mk-lit-amber`} onClick={() => void run()}>
+        <button
+          type="button"
+          disabled={busy}
+          className={`${btn} mk-lit-amber`}
+          onClick={() => void run()}
+        >
           CHECK NOW
         </button>
-        {rep && <span className={`font-mono text-[10px] ${rep.ready ? "text-preview" : "text-amber"}`}>{rep.next}</span>}
+        {rep && (
+          <span className={`font-mono text-[10px] ${rep.ready ? "text-preview" : "text-amber"}`}>
+            {rep.next}
+          </span>
+        )}
       </div>
       {rep && (
         <ul className="grid gap-0.5 font-mono text-[10px]">
@@ -85,10 +96,11 @@ function PrelistenBridge({ saved, host }: { saved: string; host: string }) {
         </ul>
       )}
       <p className="font-mono text-[10px] text-muted-foreground">
-        One time in Aitum Multistream (OBS PC): add output, custom RTMP, server rtmp://127.0.0.1:1935, key raw, audio Track 2
-        only, share the main video encoder. Saved by Aitum; from then on just start it. On the OBS PC run
-        audio-bridge\MK-Setup.bat once: it installs ffmpeg + MediaMTX, opens the firewall and starts the server. Any phone or PC
-        on the same network then opens MK and presses Listen.
+        One time in Aitum Multistream (OBS PC): add output, custom RTMP, server
+        rtmp://127.0.0.1:1935, key raw, audio Track 2 only, share the main video encoder. Saved by
+        Aitum; from then on just start it. On the OBS PC run audio-bridge\MK-Setup.bat once: it
+        installs ffmpeg + MediaMTX, opens the firewall and starts the server. Any phone or PC on the
+        same network then opens MK and presses Listen.
       </p>
     </div>
   );
@@ -108,20 +120,36 @@ function PrelistenOutput({ connected }: { connected: boolean }) {
     <div className="grid gap-2 rounded-sm border border-border p-2">
       <span className="mk-label">OBS pre-listen output (Recording tab to MediaMTX)</span>
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={!connected || busy} className={btn} onClick={() => void run(() => engine.checkPrelistenOutput(false))}>
+        <button
+          type="button"
+          disabled={!connected || busy}
+          className={btn}
+          onClick={() => void run(() => engine.checkPrelistenOutput(false))}
+        >
           CHECK
         </button>
-        <button type="button" disabled={!connected || busy} className={`${btn} mk-lit-amber`} onClick={() => void run(() => engine.checkPrelistenOutput(true))}>
+        <button
+          type="button"
+          disabled={!connected || busy}
+          className={`${btn} mk-lit-amber`}
+          onClick={() => void run(() => engine.checkPrelistenOutput(true))}
+        >
           SET UP IN OBS
         </button>
-        <button type="button" disabled={!connected || busy} className={btn} onClick={() => void run(() => engine.restorePrelistenOutput())}>
+        <button
+          type="button"
+          disabled={!connected || busy}
+          className={btn}
+          onClick={() => void run(() => engine.restorePrelistenOutput())}
+        >
           RESTORE MY OLD SETTINGS
         </button>
       </div>
       <p className="font-mono text-[10px] text-muted-foreground">
-        SET UP IN OBS writes: Recording = Custom Output (FFmpeg) to rtsp://127.0.0.1:8554/mk, audio Track 2 only. That uses
-        OBS&apos;s Recording slot, so normal file recording stops while it is set. RESTORE puts back what was there before.
-        Press REC in OBS (or in MK) to start the feed.
+        SET UP IN OBS writes: Recording = Custom Output (FFmpeg) to rtsp://127.0.0.1:8554/mk, audio
+        Track 2 only. That uses OBS&apos;s Recording slot, so normal file recording stops while it
+        is set. RESTORE puts back what was there before. Press REC in OBS (or in MK) to start the
+        feed.
       </p>
       {!connected && <p className="font-mono text-[10px] text-amber">Connect to OBS first.</p>}
       {rows && (
@@ -204,7 +232,9 @@ function SettingsPage() {
 
   const sceneOptions = state.scenes;
   // MK Graphics is always pickable for a DSK, even before it exists in OBS.
-  const dskSceneOptions = sceneOptions.includes(GFX_SCENE) ? sceneOptions : [...sceneOptions, GFX_SCENE];
+  const dskSceneOptions = sceneOptions.includes(GFX_SCENE)
+    ? sceneOptions
+    : [...sceneOptions, GFX_SCENE];
 
   return (
     <div className="mk-chassis min-h-[100dvh] pb-10">
@@ -221,6 +251,10 @@ function SettingsPage() {
       </header>
 
       <div className="mx-auto grid max-w-3xl gap-3 p-3">
+        <Section title="Crew on this network">
+          <ShareDesk />
+        </Section>
+
         <Section title="Crew (accounts)">
           <CrewList />
         </Section>
@@ -329,12 +363,11 @@ function SettingsPage() {
                       {scene}
                     </option>
                   ))}
-                  {config.camScenes[index] &&
-                    !sceneOptions.includes(config.camScenes[index]!) && (
-                      <option value={config.camScenes[index]!}>
-                        {config.camScenes[index]} (offline)
-                      </option>
-                    )}
+                  {config.camScenes[index] && !sceneOptions.includes(config.camScenes[index]!) && (
+                    <option value={config.camScenes[index]!}>
+                      {config.camScenes[index]} (offline)
+                    </option>
+                  )}
                 </select>
               </label>
             ))}
@@ -378,43 +411,58 @@ function SettingsPage() {
               </p>
             )}
           <p className="font-mono text-[10px] text-muted-foreground">
-            Each DSK toggles its own source. Pick “MK Graphics” as the scene to put the built-in graphics (logo, lower third,
-            ticker, clock, badge) on that DSK, then choose the layer in the source dropdown. Design them on the Graphics page.
+            Each DSK toggles its own source. Pick “MK Graphics” as the scene to put the built-in
+            graphics (logo, lower third, ticker, clock, badge) on that DSK, then choose the layer in
+            the source dropdown. Design them on the Graphics page.
           </p>
         </Section>
 
         <LiveFxSettings />
 
         <Section title="Graphics">
-          <Link to="/graphics" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+          <Link
+            to="/graphics"
+            className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground"
+          >
             Open Graphics studio
           </Link>
           <p className="font-mono text-[10px] text-muted-foreground">
-            Design the logo, lower third, ticker, clock and badge on their own page, pick the one scene they
-            belong to, and press Save.
+            Design the logo, lower third, ticker, clock and badge on their own page, pick the one
+            scene they belong to, and press Save.
           </p>
         </Section>
 
         <Section title="Studio">
-          <Link to="/studio" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+          <Link
+            to="/studio"
+            className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground"
+          >
             Open Scenes &amp; Sources
           </Link>
           <p className="font-mono text-[10px] text-muted-foreground">
-            Add, rename and delete scenes, and add cameras, microphones, screens, media and web pages to them.
+            Add, rename and delete scenes, and add cameras, microphones, screens, media and web
+            pages to them.
           </p>
         </Section>
 
         <Section title="Stream & Record">
-          <Link to="/streaming" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+          <Link
+            to="/streaming"
+            className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground"
+          >
             Open Stream &amp; Record settings
           </Link>
           <p className="font-mono text-[10px] text-muted-foreground">
-            Start and stop streaming and recording, set the stream server and key, bitrate, and where recordings are saved.
+            Start and stop streaming and recording, set the stream server and key, bitrate, and
+            where recordings are saved.
           </p>
         </Section>
 
         <Section title="Sounds">
-          <Link to="/sounds" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+          <Link
+            to="/sounds"
+            className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground"
+          >
             Open Sounds library
           </Link>
         </Section>
@@ -430,8 +478,9 @@ function SettingsPage() {
             />
           </label>
           <p className="font-mono text-[10px] text-muted-foreground">
-            Leave empty to use the OBS host with port 8889. Needs the free MediaMTX server running on the OBS PC and OBS
-            sending audio to it — see audio-bridge/SETUP.md. Then press Listen at the top of the switcher.
+            Leave empty to use the OBS host with port 8889. Needs the free MediaMTX server running
+            on the OBS PC and OBS sending audio to it — see audio-bridge/SETUP.md. Then press Listen
+            at the top of the switcher.
           </p>
           <button
             type="button"
@@ -442,8 +491,8 @@ function SettingsPage() {
             REMOTE LISTENING {config.listenRemote ? "ON" : "OFF"}
           </button>
           <p className="font-mono text-[10px] text-muted-foreground">
-            ON = also connect across routers and the internet (adds a STUN server). The address must be https when this page
-            is https (phones block http): see audio-bridge/REMOTE.md.
+            ON = also connect across routers and the internet (adds a STUN server). The address must
+            be https when this page is https (phones block http): see audio-bridge/REMOTE.md.
           </p>
           <label className="grid gap-1">
             <span className="mk-label">Extra ICE servers (optional, separated by ;)</span>
@@ -456,7 +505,9 @@ function SettingsPage() {
           </label>
           <PrelistenBridge saved={config.listenUrl} host={config.host} />
           <details className="rounded-sm border border-border p-2">
-            <summary className="mk-label cursor-pointer">Old way: use OBS Recording (not recommended, blocks file recording)</summary>
+            <summary className="mk-label cursor-pointer">
+              Old way: use OBS Recording (not recommended, blocks file recording)
+            </summary>
             <div className="mt-2">
               <PrelistenOutput connected={state.status === "connected"} />
             </div>
@@ -536,9 +587,7 @@ function SettingsPage() {
                 className={fieldClass}
                 value={config.shortcuts.cut}
                 maxLength={1}
-                onChange={(e) =>
-                  engine.setShortcuts({ ...config.shortcuts, cut: e.target.value })
-                }
+                onChange={(e) => engine.setShortcuts({ ...config.shortcuts, cut: e.target.value })}
               />
             </label>
             <label className="flex items-center gap-2">
@@ -560,9 +609,7 @@ function SettingsPage() {
                 className={fieldClass}
                 value={config.shortcuts.dsk}
                 maxLength={1}
-                onChange={(e) =>
-                  engine.setShortcuts({ ...config.shortcuts, dsk: e.target.value })
-                }
+                onChange={(e) => engine.setShortcuts({ ...config.shortcuts, dsk: e.target.value })}
               />
             </label>
             <label className="flex items-center gap-2">
@@ -571,9 +618,7 @@ function SettingsPage() {
                 className={fieldClass}
                 value={config.shortcuts.dsk2}
                 maxLength={1}
-                onChange={(e) =>
-                  engine.setShortcuts({ ...config.shortcuts, dsk2: e.target.value })
-                }
+                onChange={(e) => engine.setShortcuts({ ...config.shortcuts, dsk2: e.target.value })}
               />
             </label>
           </div>

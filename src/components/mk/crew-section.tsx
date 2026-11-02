@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -48,7 +49,12 @@ export function CrewList() {
     );
   if (auth.role !== "director")
     return (
-      <p className="text-xs text-engrave">Sign in with a Director account to manage the crew.</p>
+      <p className="text-xs text-engrave">
+        Sign in with a Director account to manage crew accounts by email.{" "}
+        <Link to="/login" className="underline">
+          Sign in
+        </Link>
+      </p>
     );
 
   const invite = async () => {
