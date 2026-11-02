@@ -183,6 +183,8 @@ export class SwitcherEngine {
    * its original scene item is switched off and the bus holds the only visible copy. `base` = the item's own OBS transform.
    */
   private dskBus: ({ scene: string; source: string; base: Record<string, unknown> | null } | null)[] = Array.from({ length: DSK_COUNT }, () => null);
+  /** Scene each DSK is currently showing over (so it can follow the program and be hidden again). */
+  private dskOver: (string | null)[] = Array.from({ length: DSK_COUNT }, () => null);
 
   /** Hydrate stored config on the client. Safe to call repeatedly. */
   boot() {
@@ -472,6 +474,26 @@ export class SwitcherEngine {
   }
 
   /** Read the real on/off state of both DSK items from OBS. */
+  /** DSKs that are on keep showing over the scene that is on air now (and leave the one that went off). */
+  private async followDsks(to: string) {
+    const t = this.transport;
+    if (!t || this.state.demo || !to) return;
+    for (let i = 0; i < DSK_COUNT; i++) {
+      const target = this.state.config.dsks[i];
+      if (!target?.source || !this.state.dskActive[i] || this.dskBus[i]) continue;
+      const prev = this.dskOver[i];
+      if (prev === to) continue;
+      try {
+        if (prev) await t.dskOverlay(prev, target.source, false);
+        await t.dskOverlay(to, target.source, true);
+        if (target.place) await this.applyDskPlace(i, to);
+        this.dskOver[i] = to;
+      } catch {
+        this.dskOver[i] = null;
+      }
+    }
+  }
+
   private async syncDsks() {
     if (!this.transport || this.state.demo) return;
     const active = [...this.state.dskActive];
@@ -581,8 +603,14 @@ export class SwitcherEngine {
           program: this.camForScene(event.scene),
         });
         this.applyAfv();
-        // DSK set to "current program" reads a different item in every scene.
-        if (this.state.config.dsks.some((d) => d.source && !d.scene)) void this.syncDsks();
+        {
+          // A DSK that is on stays on air over the new scene, then the lights are re-read.
+          // DSK set to "current program" reads a different item in every scene.
+          const needSync = this.state.config.dsks.some((d) => d.source && !d.scene);
+          void this.followDsks(event.scene).finally(() => {
+            if (needSync) void this.syncDsks();
+          });
+        }
         break;
       case "previewScene":
         if (this.live) {
@@ -2550,7 +2578,34 @@ export class SwitcherEngine {
     this.set({ dskActive });
     try {
       if (next && target.place && target.source && !this.state.demo) await this.applyDskPlace(index, scene);
-      await this.transport.toggleDSK(index, !!next, scene, target.source || `DSK ${index + 1}`);
+      let shown = false;
+      let ownError: unknown = null;
+      try {
+        await this.transport.toggleDSK(index, !!next, scene, target.source || `DSK ${index + 1}`);
+        shown = true;
+      } catch (error) {
+        ownError = error;
+      }
+      // Like a real downstream keyer: also show it over whatever scene is on air, even when the
+      // item lives in another scene (graphics scene, a camera without it, ...).
+      const onAir = this.state.programScene;
+      if (!this.state.demo && target.source && (onAir || this.dskOver[index])) {
+        try {
+          if (next && onAir) {
+            await this.transport.dskOverlay(onAir, target.source, true);
+            if (target.place) await this.applyDskPlace(index, onAir);
+            this.dskOver[index] = onAir;
+            shown = true;
+          } else if (!next && this.dskOver[index]) {
+            await this.transport.dskOverlay(this.dskOver[index] as string, target.source, false);
+            this.dskOver[index] = null;
+            shown = true;
+          }
+        } catch {
+          /* keep whatever the item in its own scene did */
+        }
+      }
+      if (!shown) throw ownError ?? new Error("DSK failed");
     } catch {
       // Roll back the light if OBS rejected it (wrong scene / source name).
       const rollback = [...this.state.dskActive];
@@ -2639,6 +2694,11 @@ export class SwitcherEngine {
         await t.fxFrame({ [target.source]: rect }, bus);
         await t.fxFrame({ [target.source]: rect }, free);
         await t.toggleDSK(i, false, scene, target.source);
+        const over = this.dskOver[i];
+        if (over) {
+          await t.dskOverlay(over, target.source, false).catch(() => {});
+          this.dskOver[i] = null;
+        }
       } catch {
         this.dskBus[i] = null;
         this.notice(`DSK ${i + 1}: could not move into the live layout`);

@@ -297,6 +297,8 @@ export class DemoTransport implements Transport {
     return { width: 1920, height: 1080 };
   }
 
+  async dskOverlay() {}
+
   async placeDSK() {}
 
   async readItemTransform(): Promise<Record<string, unknown> | null> {

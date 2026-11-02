@@ -762,6 +762,30 @@ export class ObsTransport implements Transport {
     });
   }
 
+  /** Show or hide `source` over `scene`, adding it there first if it is not (inputs and scenes can live in many scenes). */
+  async dskOverlay(scene: string, source: string, on: boolean) {
+    if (!scene || !source) return;
+    let sceneItemId: number;
+    try {
+      ({ sceneItemId } = await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: source }));
+    } catch {
+      if (!on) return;
+      ({ sceneItemId } = await this.obs.call("CreateSceneItem", {
+        sceneName: scene,
+        sourceName: source,
+        sceneItemEnabled: false,
+      }));
+    }
+    if (on) {
+      // Keep it on top of the picture.
+      const { sceneItems } = await this.obs.call("GetSceneItemList", { sceneName: scene });
+      await this.obs
+        .call("SetSceneItemIndex", { sceneName: scene, sceneItemId, sceneItemIndex: Math.max(0, sceneItems.length - 1) })
+        .catch(() => {});
+    }
+    await this.obs.call("SetSceneItemEnabled", { sceneName: scene, sceneItemId, sceneItemEnabled: on });
+  }
+
   async getCanvas() {
     const v = await this.obs.call("GetVideoSettings");
     return { width: v.baseWidth, height: v.baseHeight };

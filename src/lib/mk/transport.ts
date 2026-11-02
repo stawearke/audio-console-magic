@@ -71,6 +71,8 @@ export interface Transport {
   setTransitionDuration(ms: number): Promise<void>;
   setTBarPosition(position: number, release: boolean): Promise<void>;
   toggleDSK(index: number, on: boolean, scene: string, source: string): Promise<void>;
+  /** Show / hide `source` over `scene` even when that scene does not contain it (adds a scene item the first time), like a downstream keyer. */
+  dskOverlay(scene: string, source: string, on: boolean): Promise<void>;
   /** OBS canvas size (base resolution). */
   getCanvas(): Promise<{ width: number; height: number }>;
   /** Move / size a DSK scene item to a hand-picked box (fitted inside it). Needs the canvas size. */
