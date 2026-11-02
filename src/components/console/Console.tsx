@@ -14,6 +14,7 @@ import {
   Wrench,
   Waves,
   Radio,
+  Plug,
 } from "lucide-react";
 import { AudioEngine } from "@/lib/audio-engine";
 import { useMidi } from "@/lib/midi";
@@ -58,6 +59,7 @@ import { ObsDesk } from "./ObsDesk";
 import { ObsChannel } from "./ObsChannel";
 import { ObsGroups } from "./ObsGroups";
 import { ObsPatch } from "./ObsPatch";
+import { ObsDevices } from "./ObsDevices";
 import { ObsShow } from "./ObsShow";
 import { SceneMixRunner } from "./ObsSceneMix";
 
@@ -134,6 +136,7 @@ const OBS_TABS: [View, string, typeof Power][] = [
   ["obsch", "Channel", AudioLines],
   ["obsgrp", "Mixer 2", SlidersHorizontal],
   ["obspatch", "Patch", Cable],
+  ["obsdev", "Devices", Plug],
   ["obsshow", "Show", MonitorPlay],
   ["speakers", "Speakers", Waves],
 ];
@@ -992,6 +995,7 @@ export function Console() {
           {view === "obsch" && <ObsChannel focus={obsInput} />}
           {view === "obsgrp" && <ObsGroups />}
           {view === "obspatch" && <ObsPatch />}
+          {view === "obsdev" && <ObsDevices />}
           {view === "obsshow" && <ObsShow />}
           <div hidden={view !== "speakers"}>
             <SpeakerPlanner />
