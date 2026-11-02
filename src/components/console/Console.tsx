@@ -815,7 +815,7 @@ export function Console() {
                 Switcher
               </a>
               <a
-                href="/onair"
+                href={isEmbedded() ? "/graphics" : "/onair"}
                 className="console-btn inline-flex h-8 items-center rounded px-3 text-xs"
                 title="Open OnAir Studio (graphics)"
               >

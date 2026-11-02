@@ -3,6 +3,7 @@ import { Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { AccountBadge } from "@/components/mk/account-badge";
+import { isEmbedded } from "@/lib/mk/cloud";
 import { useAccess } from "@/lib/mk/roles";
 import type { ConnectionStatus } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -59,7 +60,7 @@ export function StatusBar({ status, statusMessage, demo, menus, listen, role }: 
             {statusMessage && !demo ? ` · ${statusMessage}` : ""}
           </span>
         </div>
-        {route("/onair") && (
+        {route("/onair") && !isEmbedded() && (
           <a
             href="/onair"
             className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]"
