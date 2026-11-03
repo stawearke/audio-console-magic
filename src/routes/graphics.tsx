@@ -37,6 +37,7 @@ import {
   type GfxId,
   type GraphicsConfig,
 } from "@/lib/mk/types";
+import { isEmbedded } from "@/lib/mk/cloud";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/graphics")({
@@ -393,26 +394,34 @@ function GraphicsPage() {
           </section>
 
           <section className="mk-panel grid shrink-0 gap-1.5 rounded-md p-1.5 lg:grid-cols-[1fr_auto]">
-            <Row label="Add MK Graphics to this OBS scene only">
-              <select className={field} value={scene} onChange={(e) => setScene(e.target.value)}>
-                <option value="">— not nested in any scene —</option>
-                {sceneOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </Row>
+            {isEmbedded() ? (
+              <p className="self-center font-mono text-[10px] text-muted-foreground">
+                On air over every scene, like a downstream keyer. Nothing is copied into your scenes.
+              </p>
+            ) : (
+              <Row label="Add MK Graphics to this OBS scene only">
+                <select className={field} value={scene} onChange={(e) => setScene(e.target.value)}>
+                  <option value="">— not nested in any scene —</option>
+                  {sceneOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            )}
             <div className="flex flex-wrap items-end gap-1.5">
               <span className="pb-2 font-mono text-[10px] text-muted-foreground">{dirty ? "Unsaved changes" : "All saved"}</span>
-              <button
-                type="button"
-                className="mk-button h-8 rounded-[3px] px-2 text-[10px]"
-                title="Use once if an older version added the graphics to every scene"
-                onClick={() => void engine.saveGraphics(draft, scene, true)}
-              >
-                Save + clean other scenes
-              </button>
+              {!isEmbedded() && (
+                <button
+                  type="button"
+                  className="mk-button h-8 rounded-[3px] px-2 text-[10px]"
+                  title="Use once if an older version added the graphics to every scene"
+                  onClick={() => void engine.saveGraphics(draft, scene, true)}
+                >
+                  Save + clean other scenes
+                </button>
+              )}
               <button
                 type="button"
                 disabled={!dirty}

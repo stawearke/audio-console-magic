@@ -478,6 +478,8 @@ export class SwitcherEngine {
   private async followDsks(to: string) {
     const t = this.transport;
     if (!t || this.state.demo || !to) return;
+    // A global keyer already shows over every scene: nothing to follow.
+    if (await t.dskIsGlobal?.().catch(() => false)) return;
     for (let i = 0; i < DSK_COUNT; i++) {
       const target = this.state.config.dsks[i];
       if (!target?.source || !this.state.dskActive[i] || this.dskBus[i]) continue;
@@ -564,7 +566,7 @@ export class SwitcherEngine {
         break;
       }
       case "scenes":
-        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !isStage(n) && !(PIP_SCENES as string[]).includes(n) && !(MERGE_PANES as string[]).includes(n) && !TAG_SCENES.includes(n) && n !== MERGE_BG) });
+        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !isStage(n) && !(PIP_SCENES as string[]).includes(n) && !(MERGE_PANES as string[]).includes(n) && !TAG_SCENES.includes(n) && n !== MERGE_BG && !/^MK DSK \d+$/.test(n)) });
         break;
       case "transitions":
         this.set({ transitions: event.transitions });
@@ -2577,6 +2579,18 @@ export class SwitcherEngine {
     dskActive[index] = next;
     this.set({ dskActive });
     try {
+      if (!this.state.demo && target.source && (await this.transport.dskIsGlobal?.().catch(() => false))) {
+        // Real downstream keyer: the source rides an output channel above every scene (nothing is copied
+        // into the scenes). The original item is kept off so it is never drawn twice.
+        await this.transport.dskOverlay(scene, target.source, !!next);
+        if (next) {
+          const wrap = this.transport.dskWrapScene?.(target.source);
+          if (target.place && wrap) await this.applyDskPlace(index, wrap);
+          await this.transport.toggleDSK(index, false, scene, target.source).catch(() => {});
+        }
+        this.dskOver[index] = null;
+        return;
+      }
       if (next && target.place && target.source && !this.state.demo) await this.applyDskPlace(index, scene);
       let shown = false;
       let ownError: unknown = null;
@@ -2694,6 +2708,7 @@ export class SwitcherEngine {
         await t.fxFrame({ [target.source]: rect }, bus);
         await t.fxFrame({ [target.source]: rect }, free);
         await t.toggleDSK(i, false, scene, target.source);
+        if (await t.dskIsGlobal?.().catch(() => false)) await t.dskOverlay("", target.source, false).catch(() => {});
         const over = this.dskOver[i];
         if (over) {
           await t.dskOverlay(over, target.source, false).catch(() => {});
@@ -2990,6 +3005,18 @@ export class SwitcherEngine {
     }
     this.notice("Saving graphics to OBS…");
     try {
+      if (await this.transport.graphicsGlobal?.().catch(() => false)) {
+        // Like a downstream keyer: the MK Graphics scene is one overlay above every scene, never nested in them.
+        await this.transport.syncGraphics(
+          [],
+          GFX_LAYERS.map((l) => ({ name: l.name, url: layerUrl(l.id, graphics) })),
+          this.state.scenes,
+        );
+        await this.transport.graphicsGlobal?.();
+        await this.syncGfx();
+        this.notice("Graphics saved — on air over every scene, like a DSK");
+        return;
+      }
       const others = cleanOthers ? this.state.scenes : [];
       await this.transport.syncGraphics(
         scene ? [scene] : [],

@@ -6,6 +6,7 @@ import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
+import { nativeOverlaysAvailable, setOverlay } from "./native";
 import { EVENT_TAG, PROMPTER_TAG, SHARED_REALM, slotName } from "./shared";
 import { DEFAULT_VOICE, FILTER_CHAIN, VOICE_FILTERS, applySettings, toSettings, type ObsVoice, type VoiceKey } from "./obs-voice";
 import { DSK_COUNT, FLAT_EQ, type AudioChannel, type EqValues, type MonitorType, type OutputCheckRow } from "./types";
@@ -762,8 +763,59 @@ export class ObsTransport implements Transport {
     });
   }
 
+  /** DSK slots on the app's overlay channels (slot 1 = MK Graphics, 2 and 3 = DSK sources), by source name. */
+  private dskSlots = new Map<string, number>();
+
+  async dskIsGlobal(): Promise<boolean> {
+    return nativeOverlaysAvailable();
+  }
+
+  dskWrapScene(source: string): string | null {
+    const slot = this.dskSlots.get(source);
+    return slot === undefined ? null : `MK DSK ${slot - 1}`;
+  }
+
+  async graphicsGlobal(): Promise<boolean> {
+    if (!(await nativeOverlaysAvailable())) return false;
+    await setOverlay(1, GFX_SCENE);
+    return true;
+  }
+
+  /** Real keyer: `source` sits alone in its own MK scene, and that scene is an output channel above every scene. */
+  private async dskGlobal(source: string, on: boolean) {
+    let slot = this.dskSlots.get(source);
+    if (!on) {
+      if (slot !== undefined) {
+        await setOverlay(slot, "");
+        this.dskSlots.delete(source);
+      }
+      return;
+    }
+    if (slot === undefined) {
+      const used = new Set(this.dskSlots.values());
+      slot = [2, 3].find((s) => !used.has(s));
+      if (slot === undefined) throw new Error("No free DSK channel");
+      this.dskSlots.set(source, slot);
+    }
+    const wrap = `MK DSK ${slot - 1}`;
+    const scenes = await this.getScenes();
+    if (!scenes.includes(wrap)) await this.obs.call("CreateScene", { sceneName: wrap });
+    let sceneItemId: number;
+    try {
+      ({ sceneItemId } = await this.obs.call("GetSceneItemId", { sceneName: wrap, sourceName: source }));
+    } catch {
+      ({ sceneItemId } = await this.obs.call("CreateSceneItem", { sceneName: wrap, sourceName: source, sceneItemEnabled: true }));
+    }
+    await this.obs.call("SetSceneItemEnabled", { sceneName: wrap, sceneItemId, sceneItemEnabled: true });
+    await setOverlay(slot, wrap);
+  }
+
   /** Show or hide `source` over `scene`, adding it there first if it is not (inputs and scenes can live in many scenes). */
   async dskOverlay(scene: string, source: string, on: boolean) {
+    if (source && (await nativeOverlaysAvailable())) {
+      await this.dskGlobal(source, on);
+      return;
+    }
     if (!scene || !source) return;
     let sceneItemId: number;
     try {

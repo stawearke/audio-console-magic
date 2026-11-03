@@ -73,6 +73,12 @@ export interface Transport {
   toggleDSK(index: number, on: boolean, scene: string, source: string): Promise<void>;
   /** Show / hide `source` over `scene` even when that scene does not contain it (adds a scene item the first time), like a downstream keyer. */
   dskOverlay(scene: string, source: string, on: boolean): Promise<void>;
+  /** True when DSKs ride a global output channel inside the app: a real downstream keyer, nothing copied into scenes. */
+  dskIsGlobal?(): Promise<boolean>;
+  /** Scene that holds the global copy of a DSK source (where its hand-picked place is applied), or null. */
+  dskWrapScene?(source: string): string | null;
+  /** Put the MK Graphics scene on the global overlay channel. False when the app has no such channel. */
+  graphicsGlobal?(): Promise<boolean>;
   /** OBS canvas size (base resolution). */
   getCanvas(): Promise<{ width: number; height: number }>;
   /** Move / size a DSK scene item to a hand-picked box (fitted inside it). Needs the canvas size. */
