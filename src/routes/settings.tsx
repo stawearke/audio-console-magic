@@ -445,6 +445,15 @@ function SettingsPage() {
           </p>
         </Section>
 
+        <Section title="System">
+          <Link to="/system" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+            Open System menus
+          </Link>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Profiles, scene collections, scripts, tools, OBS settings and log files.
+          </p>
+        </Section>
+
         <Section title="Stream & Record">
           <Link
             to="/streaming"
