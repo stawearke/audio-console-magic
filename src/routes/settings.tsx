@@ -445,6 +445,13 @@ function SettingsPage() {
           </p>
         </Section>
 
+        <Section title="Multistream">
+          <Link to="/multistream" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+            Open Multistream
+          </Link>
+          <p className="font-mono text-[10px] text-muted-foreground">Send your stream to more sites at the same time.</p>
+        </Section>
+
         <Section title="System">
           <Link to="/system" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
             Open System menus
