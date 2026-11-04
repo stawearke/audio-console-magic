@@ -37,7 +37,7 @@ import {
   type GfxId,
   type GraphicsConfig,
 } from "@/lib/mk/types";
-import { isEmbedded } from "@/lib/mk/cloud";
+import { useEmbedded } from "@/lib/mk/cloud";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/graphics")({
@@ -201,6 +201,7 @@ function Preview({ id, g, backdrop }: { id: GfxId; g: GraphicsConfig; backdrop: 
 }
 
 function GraphicsPage() {
+  const embedded = useEmbedded();
   const state = useSwitcher();
   const { share } = Route.useSearch();
   const library = useGfxLibrary();
@@ -394,7 +395,7 @@ function GraphicsPage() {
           </section>
 
           <section className="mk-panel grid shrink-0 gap-1.5 rounded-md p-1.5 lg:grid-cols-[1fr_auto]">
-            {isEmbedded() ? (
+            {embedded ? (
               <p className="self-center font-mono text-[10px] text-muted-foreground">
                 On air over every scene, like a downstream keyer. Nothing is copied into your scenes.
               </p>
@@ -412,7 +413,7 @@ function GraphicsPage() {
             )}
             <div className="flex flex-wrap items-end gap-1.5">
               <span className="pb-2 font-mono text-[10px] text-muted-foreground">{dirty ? "Unsaved changes" : "All saved"}</span>
-              {!isEmbedded() && (
+              {!embedded && (
                 <button
                   type="button"
                   className="mk-button h-8 rounded-[3px] px-2 text-[10px]"

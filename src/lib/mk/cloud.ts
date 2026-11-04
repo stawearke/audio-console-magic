@@ -21,10 +21,18 @@ export const isEmbedded = () =>
   typeof window !== "undefined" &&
   (window as unknown as { __MK_EMBEDDED__?: boolean }).__MK_EMBEDDED__ === true;
 
+/** Hydration-safe: the first draw matches the server's HTML (not embedded), then the real value shows. */
+export const useEmbedded = () =>
+  useSyncExternalStore(
+    () => () => {},
+    isEmbedded,
+    () => false,
+  );
+
 /** The installed app is a local desk: it opens straight to the Director desk with no cloud sign-in.
  *  Signing in (for crew accounts, shared scripts) stays available at /login. */
-export const needsLogin = (path: string) =>
-  !isEmbedded() && !OPEN_PAGES.includes(path.length > 1 ? path.replace(/\/+$/, "") : path);
+export const needsLogin = (path: string, embedded: boolean = isEmbedded()) =>
+  !embedded && !OPEN_PAGES.includes(path.length > 1 ? path.replace(/\/+$/, "") : path);
 
 let client: SupabaseClient | null = null;
 async function sb(): Promise<SupabaseClient | null> {

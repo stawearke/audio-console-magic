@@ -1,4 +1,4 @@
-import { isEmbedded } from "@/lib/mk/cloud";
+import { isEmbedded, useEmbedded } from "@/lib/mk/cloud";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AudioLines,
@@ -154,6 +154,7 @@ function saveBlob(blob: Blob, name: string) {
 }
 
 export function Console() {
+  const embedded = useEmbedded();
   const engine = useRef<AudioEngine | null>(null);
   const getEngine = useCallback(() => {
     engine.current ??= new AudioEngine();
@@ -818,7 +819,7 @@ export function Console() {
                 Switcher
               </a>
               <a
-                href={isEmbedded() ? "/graphics" : "/onair"}
+                href={embedded ? "/graphics" : "/onair"}
                 className="console-btn inline-flex h-8 items-center rounded px-3 text-xs"
                 title="Open OnAir Studio (graphics)"
               >

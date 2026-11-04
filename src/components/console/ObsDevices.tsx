@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isEmbedded } from "@/lib/mk/cloud";
+import { isEmbedded, useEmbedded } from "@/lib/mk/cloud";
 
 interface Dev {
   name: string;
@@ -59,6 +59,7 @@ async function api<T>(route: string, body?: unknown): Promise<T> {
 
 /** Audio devices: any USB / system audio device OBS can capture, put on an always-live channel. */
 export function ObsDevices() {
+  const embedded = useEmbedded();
   const [data, setData] = useState<Reply | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(0);
@@ -123,7 +124,7 @@ export function ObsDevices() {
     }
   };
 
-  if (!isEmbedded()) {
+  if (!embedded) {
     return (
       <section className="mixer-surface p-3" aria-label="Devices">
         <p className="label-text text-xs">Devices are managed inside MK VISION Studio.</p>

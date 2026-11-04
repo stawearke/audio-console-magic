@@ -11,7 +11,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { cloudConfigured, needsLogin, startAuth, useAuth } from "../lib/mk/cloud";
+import { cloudConfigured, needsLogin, startAuth, useAuth, useEmbedded } from "../lib/mk/cloud";
 import { isLocked, useAccess } from "../lib/mk/roles";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -144,7 +144,8 @@ function LockGuard() {
   useEffect(() => {
     void startAuth();
   }, []);
-  const mustSignIn = cloudConfigured() && auth.ready && !auth.id && needsLogin(path);
+  const embedded = useEmbedded();
+  const mustSignIn = cloudConfigured() && auth.ready && !auth.id && needsLogin(path, embedded);
   // Where this guard wants the user to be right now (null = already fine). Never "redirect" to the page we are on.
   const target = mustSignIn ? "/login" : blocked ? "/" : null;
   const tries = useRef<number[]>([]);
@@ -182,7 +183,8 @@ function Guarded({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const { route } = useAccess();
   const path = useRouterState({ select: (st) => st.location.pathname });
-  if (cloudConfigured() && needsLogin(path) && (!auth.ready || !auth.id)) return null;
+  const embedded = useEmbedded();
+  if (cloudConfigured() && needsLogin(path, embedded) && (!auth.ready || !auth.id)) return null;
   if (!route(path)) return null;
   return <>{children}</>;
 }
