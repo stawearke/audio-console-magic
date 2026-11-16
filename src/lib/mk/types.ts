@@ -172,6 +172,8 @@ export interface GraphicsConfig {
     font: GfxFont;
     /** Channel strap style: logo shown in the left panel (null = none). */
     logoImage: string | null;
+    /** Channel strap: logo size inside its panel, percent (100 = default). */
+    logoSize: number;
     /** Channel strap style: the tag above the logo (e.g. BARAZA LA MTAA). Empty = no tag. */
     tag: string;
     tagBg: string;
@@ -351,6 +353,7 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     text: "#ffffff",
     font: "sans",
     logoImage: null,
+    logoSize: 100,
     tag: "BARAZA LA MTAA",
     tagBg: "#9b0a14",
     tagText: "#ffffff",

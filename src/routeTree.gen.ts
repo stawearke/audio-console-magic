@@ -14,6 +14,7 @@ import { Route as AudioRouteImport } from './routes/audio'
 import { Route as CamRouteImport } from './routes/cam'
 import { Route as GraphicsRouteImport } from './routes/graphics'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MultistreamRouteImport } from './routes/multistream'
 import { Route as OnairRouteImport } from './routes/onair'
 import { Route as OutputRouteImport } from './routes/output'
 import { Route as OwnerRouteImport } from './routes/owner'
@@ -25,6 +26,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SoundsRouteImport } from './routes/sounds'
 import { Route as StreamingRouteImport } from './routes/streaming'
 import { Route as StudioRouteImport } from './routes/studio'
+import { Route as SystemRouteImport } from './routes/system'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -49,6 +51,11 @@ const GraphicsRoute = GraphicsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MultistreamRoute = MultistreamRouteImport.update({
+  id: '/multistream',
+  path: '/multistream',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnairRoute = OnairRouteImport.update({
@@ -106,6 +113,11 @@ const StudioRoute = StudioRouteImport.update({
   path: '/studio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SystemRoute = SystemRouteImport.update({
+  id: '/system',
+  path: '/system',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -113,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
+  '/multistream': typeof MultistreamRoute
   '/onair': typeof OnairRoute
   '/output': typeof OutputRoute
   '/owner': typeof OwnerRoute
@@ -124,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/sounds': typeof SoundsRoute
   '/streaming': typeof StreamingRoute
   '/studio': typeof StudioRoute
+  '/system': typeof SystemRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -131,6 +145,7 @@ export interface FileRoutesByTo {
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
+  '/multistream': typeof MultistreamRoute
   '/onair': typeof OnairRoute
   '/output': typeof OutputRoute
   '/owner': typeof OwnerRoute
@@ -142,6 +157,7 @@ export interface FileRoutesByTo {
   '/sounds': typeof SoundsRoute
   '/streaming': typeof StreamingRoute
   '/studio': typeof StudioRoute
+  '/system': typeof SystemRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -150,6 +166,7 @@ export interface FileRoutesById {
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
+  '/multistream': typeof MultistreamRoute
   '/onair': typeof OnairRoute
   '/output': typeof OutputRoute
   '/owner': typeof OwnerRoute
@@ -161,6 +178,7 @@ export interface FileRoutesById {
   '/sounds': typeof SoundsRoute
   '/streaming': typeof StreamingRoute
   '/studio': typeof StudioRoute
+  '/system': typeof SystemRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -170,6 +188,7 @@ export interface FileRouteTypes {
     | '/cam'
     | '/graphics'
     | '/login'
+    | '/multistream'
     | '/onair'
     | '/output'
     | '/owner'
@@ -181,6 +200,7 @@ export interface FileRouteTypes {
     | '/sounds'
     | '/streaming'
     | '/studio'
+    | '/system'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,6 +208,7 @@ export interface FileRouteTypes {
     | '/cam'
     | '/graphics'
     | '/login'
+    | '/multistream'
     | '/onair'
     | '/output'
     | '/owner'
@@ -199,6 +220,7 @@ export interface FileRouteTypes {
     | '/sounds'
     | '/streaming'
     | '/studio'
+    | '/system'
   id:
     | '__root__'
     | '/'
@@ -206,6 +228,7 @@ export interface FileRouteTypes {
     | '/cam'
     | '/graphics'
     | '/login'
+    | '/multistream'
     | '/onair'
     | '/output'
     | '/owner'
@@ -217,6 +240,7 @@ export interface FileRouteTypes {
     | '/sounds'
     | '/streaming'
     | '/studio'
+    | '/system'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -225,6 +249,7 @@ export interface RootRouteChildren {
   CamRoute: typeof CamRoute
   GraphicsRoute: typeof GraphicsRoute
   LoginRoute: typeof LoginRoute
+  MultistreamRoute: typeof MultistreamRoute
   OnairRoute: typeof OnairRoute
   OutputRoute: typeof OutputRoute
   OwnerRoute: typeof OwnerRoute
@@ -236,6 +261,7 @@ export interface RootRouteChildren {
   SoundsRoute: typeof SoundsRoute
   StreamingRoute: typeof StreamingRoute
   StudioRoute: typeof StudioRoute
+  SystemRoute: typeof SystemRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -273,6 +299,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/multistream': {
+      id: '/multistream'
+      path: '/multistream'
+      fullPath: '/multistream'
+      preLoaderRoute: typeof MultistreamRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onair': {
@@ -352,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/system': {
+      id: '/system'
+      path: '/system'
+      fullPath: '/system'
+      preLoaderRoute: typeof SystemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -361,6 +401,7 @@ const rootRouteChildren: RootRouteChildren = {
   CamRoute: CamRoute,
   GraphicsRoute: GraphicsRoute,
   LoginRoute: LoginRoute,
+  MultistreamRoute: MultistreamRoute,
   OnairRoute: OnairRoute,
   OutputRoute: OutputRoute,
   OwnerRoute: OwnerRoute,
@@ -372,6 +413,7 @@ const rootRouteChildren: RootRouteChildren = {
   SoundsRoute: SoundsRoute,
   StreamingRoute: StreamingRoute,
   StudioRoute: StudioRoute,
+  SystemRoute: SystemRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

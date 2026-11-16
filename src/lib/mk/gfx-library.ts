@@ -106,6 +106,7 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
         text: hex(r["text"], d.text),
         font: oneOf(r["font"], GFX_FONTS, d.font),
         logoImage: safeImage(r["logoImage"]),
+        logoSize: num(r["logoSize"], d.logoSize, 40, 200),
         tag: str(r["tag"], d.tag, 40),
         tagBg: hex(r["tagBg"], d.tagBg),
         tagText: hex(r["tagText"], d.tagText),

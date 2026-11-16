@@ -549,6 +549,9 @@ function GraphicsPage() {
                         </Row>
                       </div>
                       <div className="col-span-2">
+                        <Range label="Logo size" value={c.lower.logoSize} min={40} max={200} step={5} onChange={(logoSize) => edit("lower", { logoSize })} />
+                      </div>
+                      <div className="col-span-2">
                         <Row label="Tag above the logo (empty = no tag)">
                           <input className={field} value={c.lower.tag} maxLength={40} onChange={(e) => edit("lower", { tag: e.target.value })} />
                         </Row>

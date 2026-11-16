@@ -213,7 +213,7 @@ function lower(g: GraphicsConfig) {
 .pg{position:absolute;top:0;height:7.1vw;clip-path:polygon(${SL}vw 0,100% 0,calc(100% - ${SL}vw) 100%,0 100%)}
 .bw{position:absolute;left:9vw;right:0;top:0;height:7.1vw;background:${barC};clip-path:polygon(0 0,calc(100% - 3.6vw) 0,calc(100% - 6.4vw) 100%,0 100%)}
 .lp{position:absolute;left:5vw;width:${(SL + 9.4).toFixed(1)}vw;top:0;height:7.1vw;background:${panel};clip-path:polygon(${SL}vw 0,100% 0,calc(100% - ${SL}vw) 100%,0 100%)}
-.lg{position:absolute;left:6.5vw;top:.5vw;width:7.4vw;height:6.1vw;object-fit:contain}
+.lg{position:absolute;left:6.5vw;top:.5vw;width:7.4vw;height:6.1vw;object-fit:contain;transform:scale(${(num(L.logoSize, 100, 40, 200) / 100).toFixed(2)})}
 .tx{position:absolute;left:19vw;right:8vw;top:0;height:7.1vw;display:flex;flex-direction:column;justify-content:center}
 .nm{color:${color(L.nameColor, "#0b0b0b")};font-size:2.7vw;font-weight:700;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ti{color:${color(L.titleColor, "#0b0b0b")};font-size:2.1vw;font-weight:400;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
