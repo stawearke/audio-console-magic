@@ -1,4 +1,5 @@
 // Local-only configuration persistence. OBS credentials never leave the device.
+import { cleanCustomEls } from "./custom-gfx";
 import {
   AD_LAYOUTS,
   AD_STYLES,
@@ -54,6 +55,7 @@ interface LooseGraphics {
   lowerTitle?: string;
   accent?: string;
   // Current format
+  custom?: { elements?: unknown };
   lower?: Partial<GraphicsConfig["lower"]>;
   ticker?: Partial<GraphicsConfig["ticker"]>;
   clock?: Partial<GraphicsConfig["clock"]>;
@@ -135,6 +137,7 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
     score: { ...D.score, ...(r.score ?? {}) },
     social: { ...D.social, ...(r.social ?? {}) },
     full: { ...D.full, ...(r.full ?? {}) },
+    custom: { elements: cleanCustomEls(r.custom?.elements) },
   };
 }
 

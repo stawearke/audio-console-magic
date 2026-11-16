@@ -19,6 +19,7 @@ const SHORT: Record<GfxId, string> = {
   score: "Scoreboard",
   social: "Social",
   full: "Full Screen",
+  custom: "Custom",
 };
 
 interface GraphicsPanelProps {

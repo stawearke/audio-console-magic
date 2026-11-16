@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Copy, Download, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { CustomCanvas, CustomInspector } from "@/components/mk/custom-gfx-editor";
 import { DesignLibrary } from "@/components/mk/design-library";
 import { GfxRundown } from "@/components/mk/gfx-rundown";
 import { NewsDesk } from "@/components/mk/news-desk";
@@ -210,6 +211,7 @@ function GraphicsPage() {
   const [mode, setMode] = useState<"design" | "rundown" | "news" | "live">("design");
   const [active, setActive] = useState<GfxId>("lower");
   const [backdrop, setBackdrop] = useState<Backdrop>("video");
+  const [selEl, setSelEl] = useState<string | null>(null);
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [incoming, setIncoming] = useState<ReturnType<typeof parsePack> | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -389,7 +391,17 @@ function GraphicsPage() {
             </div>
             <div className="flex aspect-video w-full items-center justify-center fit:aspect-auto fit:min-h-0 fit:flex-1" style={{ containerType: "size" }}>
               <div style={{ width: "min(100cqw, calc(100cqh * 16 / 9))" }}>
-                <Preview id={active} g={draft} backdrop={backdrop} />
+                {active === "custom" ? (
+                  <CustomCanvas
+                    elements={draft.custom.elements}
+                    onChange={(elements) => edit("custom", { elements })}
+                    sel={selEl}
+                    setSel={setSelEl}
+                    backdropClass={BACKDROP[backdrop]}
+                  />
+                ) : (
+                  <Preview id={active} g={draft} backdrop={backdrop} />
+                )}
               </div>
             </div>
           </section>
@@ -628,6 +640,10 @@ function GraphicsPage() {
                     <Range label="Size" value={c.lower.size} min={30} max={300} step={5} onChange={(size) => edit("lower", { size })} />
                   </div>
                 </>
+              )}
+
+              {active === "custom" && (
+                <CustomInspector elements={draft.custom.elements} onChange={(elements) => edit("custom", { elements })} sel={selEl} setSel={setSelEl} say={say} />
               )}
 
               {active === "ticker" && (

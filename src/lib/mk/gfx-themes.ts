@@ -41,6 +41,8 @@ const LIVE_RED = "#d0161d";
 /** Re-colour and re-style every layer from a theme. Text, positions, sizes and scroll presets are kept. */
 export function applyTheme(g: GraphicsConfig, t: GfxTheme): GraphicsConfig {
   return {
+    // Custom designs keep their own colours.
+    custom: g.custom,
     // The logo mark floats over the picture (not on a coloured bar), so it stays white in every theme.
     logo: { ...g.logo, textColor: "#ffffff" },
     lower: { ...g.lower, style: t.lower, primary: t.primary, accent: t.accent, bg: t.secondary, bgOpacity: 96, text: t.onDark ?? t.text, font: t.font },

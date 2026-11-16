@@ -2,7 +2,7 @@
 // embedded in a data: URL — nothing to host or upload. Layers live in the
 // "MK Graphics" scene and are switched on/off independently of the DSKs.
 import type { PlacePos } from "./fx";
-import { GFX_ANIMS, type Corner, type GfxAnim, type GfxFont, type GfxId, type GraphicsConfig } from "./types";
+import { GFX_ANIMS, type Corner, type CustomEl, type GfxAnim, type GfxFont, type GfxId, type GraphicsConfig } from "./types";
 
 export const GFX_SCENE = "MK Graphics";
 
@@ -18,6 +18,7 @@ export const GFX_LAYERS: { id: GfxId; name: string; label: string }[] = [
   { id: "score", name: "MK Scoreboard", label: "Scoreboard" },
   { id: "full", name: "MK Full Screen", label: "Full Screen" },
   { id: "breaking", name: "MK Breaking", label: "Breaking" },
+  { id: "custom", name: "MK Custom", label: "Custom" },
 ];
 
 export const gfxName = (id: GfxId) => GFX_LAYERS.find((l) => l.id === id)!.name;
@@ -57,7 +58,8 @@ function shade(hex: string, f: number) {
 }
 
 const BARLOW = "'Barlow Semi Condensed','Barlow Condensed','Arial Narrow',Arial,sans-serif";
-const BARLOW_IMPORT = "@import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&display=swap');";
+export const BARLOW_IMPORT_CSS = "@import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&display=swap');";
+const BARLOW_IMPORT = BARLOW_IMPORT_CSS;
 
 const FONT: Record<GfxFont, string> = {
   sans: "'Segoe UI',Arial,sans-serif",
@@ -588,6 +590,50 @@ t();setInterval(t,250);`,
   );
 }
 
+/** Entrance keyframes for the custom editor's elements. */
+export const CUSTOM_KEYFRAMES =
+  "@keyframes cfade{from{opacity:0}}@keyframes cleft{from{transform:translateX(-120%);opacity:0}}@keyframes cright{from{transform:translateX(120%);opacity:0}}" +
+  "@keyframes cup{from{transform:translateY(120%);opacity:0}}@keyframes cdown{from{transform:translateY(-120%);opacity:0}}" +
+  "@keyframes cscale{from{transform:scale(.4);opacity:0}}@keyframes cwipe{from{clip-path:inset(0 100% 0 0)}}@keyframes crotate{from{transform:rotate(-90deg) scale(.5);opacity:0}}";
+
+/** One custom element as HTML. `u` turns design pixels (1920 wide) into a CSS length. */
+export function customElHtml(e: CustomEl, u: (px: number) => string): string {
+  if (!e.visible) return "";
+  const f = (n: number) => n.toFixed(3);
+  const pos = `left:${f(e.x / 19.2)}%;top:${f(e.y / 10.8)}%;width:${f(e.w / 19.2)}%;height:${f(e.h / 10.8)}%;transform:rotate(${num(e.rot, 0, -360, 360)}deg);opacity:${num(e.opacity, 100, 0, 100) / 100}`;
+  const anim = e.anim === "none" ? "" : `animation:c${e.anim} ${num(e.animMs, 600, 50, 5000)}ms cubic-bezier(.2,.8,.2,1) ${num(e.delay, 0, 0, 10000)}ms both;`;
+  const sh = e.shadow > 0 ? `filter:drop-shadow(0 ${u(e.shadow / 3)} ${u(e.shadow)} rgba(0,0,0,.55));` : "";
+  let vis = "";
+  let inner = "";
+  if (e.type === "text") {
+    const jc = e.align === "left" ? "flex-start" : e.align === "right" ? "flex-end" : "center";
+    vis = `display:flex;align-items:center;justify-content:${jc};text-align:${e.align};white-space:pre;font-family:${fontB(e.font)};font-size:${u(e.fontSize)};font-weight:${e.weight};letter-spacing:${u(e.spacing)};color:${color(e.color, "#ffffff")};${e.upper ? "text-transform:uppercase;" : ""}`;
+    inner = esc(e.text);
+  } else if (e.type === "image") {
+    const img = safeImage(e.image);
+    inner = img ? `<img src="${img}" style="width:100%;height:100%;object-fit:contain;display:block">` : "";
+  } else {
+    const c1 = color(e.fill, "#e5322d");
+    const bg = e.fill2 ? `linear-gradient(${num(e.angle, 90, 0, 360)}deg,${c1},${color(e.fill2, c1)})` : c1;
+    const rad = e.type === "ellipse" ? "50%" : u(e.radius);
+    const s = Math.round(num(e.slant, 0, -600, 600));
+    const clip = e.type === "rect" && s !== 0 ? (s > 0 ? `clip-path:polygon(${u(s)} 0,100% 0,calc(100% - ${u(s)}) 100%,0 100%);` : `clip-path:polygon(0 0,calc(100% - ${u(-s)}) 0,100% 100%,${u(-s)} 100%);`) : "";
+    const bd = e.strokeW > 0 ? `border:${u(e.strokeW)} solid ${color(e.stroke, "#ffffff")};` : "";
+    vis = `background:${bg};border-radius:${rad};box-sizing:border-box;${bd}${clip}`;
+  }
+  return `<div style="position:absolute;${pos}"><div style="width:100%;height:100%;${anim}${sh}"><div style="width:100%;height:100%;${vis}">${inner}</div></div></div>`;
+}
+
+function customLayer(g: GraphicsConfig) {
+  const els = Array.isArray(g.custom?.elements) ? g.custom.elements : [];
+  const u = (px: number) => `${(px / 19.2).toFixed(3)}vw`;
+  const condensed = els.some((e) => e.type === "text" && e.font === "condensed");
+  return page(
+    `.cv{position:absolute;inset:0}${CUSTOM_KEYFRAMES}${condensed ? "/*Barlow Semi*/" : ""}`,
+    `<div class="cv">${els.map((e) => customElHtml(e, u)).join("")}</div>`,
+  );
+}
+
 export function layerUrl(id: GfxId, g: GraphicsConfig): string {
   switch (id) {
     case "logo":
@@ -610,6 +656,8 @@ export function layerUrl(id: GfxId, g: GraphicsConfig): string {
       return social(g);
     case "full":
       return full(g);
+    case "custom":
+      return customLayer(g);
   }
 }
 

@@ -27,7 +27,7 @@ export interface DskTarget {
 
 export type Corner = "tl" | "tr" | "bl" | "br";
 export type GfxId =
-  "logo" | "lower" | "ticker" | "clock" | "badge" | "news" | "breaking" | "score" | "social" | "full";
+  "logo" | "lower" | "ticker" | "clock" | "badge" | "news" | "breaking" | "score" | "social" | "full" | "custom";
 export const GFX_IDS: GfxId[] = [
   "logo",
   "lower",
@@ -39,6 +39,7 @@ export const GFX_IDS: GfxId[] = [
   "score",
   "social",
   "full",
+  "custom",
 ];
 
 /** What the full-screen layer shows. */
@@ -139,6 +140,62 @@ export interface NewsTag {
   full?: boolean;
 }
 
+/** Custom graphic editor: every element sits on a 1920 x 1080 canvas. */
+export type CustomElType = "rect" | "ellipse" | "text" | "image";
+export type CustomAnim = "none" | "fade" | "left" | "right" | "up" | "down" | "scale" | "wipe" | "rotate";
+export const CUSTOM_ANIMS: { id: CustomAnim; label: string }[] = [
+  { id: "none", label: "None (appears)" },
+  { id: "fade", label: "Fade" },
+  { id: "left", label: "Slide from left" },
+  { id: "right", label: "Slide from right" },
+  { id: "up", label: "Slide from bottom" },
+  { id: "down", label: "Slide from top" },
+  { id: "scale", label: "Pop (scale)" },
+  { id: "wipe", label: "Wipe" },
+  { id: "rotate", label: "Spin in" },
+];
+export interface CustomEl {
+  id: string;
+  name: string;
+  type: CustomElType;
+  visible: boolean;
+  locked: boolean;
+  /** Box on the 1920 x 1080 canvas, design pixels. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot: number;
+  opacity: number;
+  /** Shapes. */
+  fill: string;
+  /** Second colour for a gradient; null = flat colour. */
+  fill2: string | null;
+  angle: number;
+  radius: number;
+  /** Parallelogram slant in px (negative leans the other way). */
+  slant: number;
+  stroke: string;
+  strokeW: number;
+  /** Drop-shadow blur, 0 = none. */
+  shadow: number;
+  /** Text. */
+  text: string;
+  font: GfxFont;
+  fontSize: number;
+  weight: number;
+  color: string;
+  align: "left" | "center" | "right";
+  spacing: number;
+  upper: boolean;
+  /** Image element. */
+  image: string | null;
+  /** Entrance. */
+  anim: CustomAnim;
+  animMs: number;
+  delay: number;
+}
+
 export interface GraphicsConfig {
   logo: {
     image: string | null;
@@ -183,6 +240,7 @@ export interface GraphicsConfig {
     nameColor: string;
     titleColor: string;
   };
+  custom: { elements: CustomEl[] };
   ticker: {
     /** Hand-placed spot; only the vertical (y) part is used — the bar always spans the width. null = use `pos`. */
     at: PlacePos | null;
@@ -435,6 +493,7 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     font: "condensed",
     anim: "slide",
   },
+  custom: { elements: [] },
   full: {
     kind: "headline",
     kicker: "TOP STORY",
@@ -469,6 +528,7 @@ export const IDLE_GFX: Record<GfxId, boolean> = {
   score: false,
   social: false,
   full: false,
+  custom: false,
 };
 
 export interface MkConfig {

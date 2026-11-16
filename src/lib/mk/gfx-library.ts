@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 import { cleanScrolls } from "./config";
+import { cleanCustomEls } from "./custom-gfx";
 import { safeImage } from "./graphics";
 import {
   BADGE_STYLES,
@@ -243,6 +244,8 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
         anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
       } as LayerData<K>;
     }
+    case "custom":
+      return { elements: cleanCustomEls((r["elements"] as unknown) ?? []) } as LayerData<K>;
     case "full": {
       const d = D.full;
       return {
