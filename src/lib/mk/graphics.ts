@@ -192,6 +192,34 @@ function lower(g: GraphicsConfig) {
   const title = esc(L.title);
 
   // ---- broadcast styles (Presenter / Guest strap / Player ID)
+  if (L.style === "strap") {
+    // Channel strap: dark frame, slanted logo panel, white bar with 2 text lines, tag ABOVE the logo.
+    const SL = 2.8; // slant, vw
+    const para = (left: number, thick: number, col: string, extra = "") =>
+      `<div class="pg" style="left:${left}vw;width:${(SL + thick).toFixed(2)}vw;background:${col}${extra}"></div>`;
+    const frame = color(L.bg, "#112b43");
+    const panel = prim;
+    const barC = color(L.barBg, "#ffffff");
+    const tagBg = color(L.tagBg, "#9b0a14");
+    const tagTx = color(L.tagText, "#ffffff");
+    const img = safeImage(L.logoImage);
+    const tag = (L.tag ?? "").trim();
+    const ffs = fontB(L.font);
+    return page(
+      `${head}.lt{font-family:${ffs}}
+.st{position:relative;width:78vw;height:10.4vw}
+.tg{position:absolute;top:0;left:4.3vw;height:2.5vw;min-width:14vw;padding:0 2.2vw;box-sizing:border-box;display:flex;align-items:center;justify-content:center;background:${tagBg};color:${tagTx};font-size:1.7vw;font-weight:600;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;clip-path:polygon(.9vw 0,100% 0,calc(100% - .9vw) 100%,0 100%)}
+.br{position:absolute;left:0;right:0;top:2.6vw;height:7.8vw;background:${frame};overflow:hidden}
+.pg{position:absolute;top:0;height:7.1vw;clip-path:polygon(${SL}vw 0,100% 0,calc(100% - ${SL}vw) 100%,0 100%)}
+.bw{position:absolute;left:9vw;right:0;top:0;height:7.1vw;background:${barC};clip-path:polygon(0 0,calc(100% - 3.6vw) 0,calc(100% - 6.4vw) 100%,0 100%)}
+.lp{position:absolute;left:5vw;width:${(SL + 9.4).toFixed(1)}vw;top:0;height:7.1vw;background:${panel};clip-path:polygon(${SL}vw 0,100% 0,calc(100% - ${SL}vw) 100%,0 100%)}
+.lg{position:absolute;left:6.5vw;top:.5vw;width:7.4vw;height:6.1vw;object-fit:contain}
+.tx{position:absolute;left:19vw;right:8vw;top:0;height:7.1vw;display:flex;flex-direction:column;justify-content:center}
+.nm{color:${color(L.nameColor, "#0b0b0b")};font-size:2.7vw;font-weight:700;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ti{color:${color(L.titleColor, "#0b0b0b")};font-size:2.1vw;font-weight:400;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
+      `<div class="sc"><div class="an"><div class="lt"><div class="st">${tag ? `<div class="tg">${esc(tag)}</div>` : ""}<div class="br"><div class="bw"></div>${para(3.6, 0.5, "#ffffff")}${para(4.3, 0.7, a)}<div class="lp"></div>${img ? `<img class="lg" src="${img}">` : ""}${para(71.6, 0.7, a)}${para(72.3, 0.5, "#ffffff")}<div class="tx"><div class="nm">${name}</div><div class="ti">${title}</div></div></div></div></div></div></div>`,
+    );
+  }
   if (L.style === "presenter") {
     return page(
       `${head}.lt{flex-direction:column}.r{display:flex}.ab{width:.73vw;background:${a}}

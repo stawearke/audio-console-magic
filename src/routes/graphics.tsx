@@ -516,6 +516,91 @@ function GraphicsPage() {
                       <input className={field} value={c.lower.number} maxLength={4} onChange={(e) => edit("lower", { number: e.target.value })} />
                     </Row>
                   )}
+                  {c.lower.style === "strap" ? (
+                    <>
+                      <div className="col-span-2">
+                        <Row label="Logo (left panel)">
+                          <span className="flex items-center gap-1.5">
+                            <span className="mk-button flex h-8 flex-1 cursor-pointer items-center justify-center gap-1 rounded-[3px] px-2 text-[10px]">
+                              <Upload className="h-3 w-3" />
+                              {c.lower.logoImage ? "Change logo" : "Upload logo"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = "";
+                                  if (!file) return;
+                                  try {
+                                    edit("lower", { logoImage: await fileToLogo(file) });
+                                  } catch {
+                                    say("That file is not a valid image");
+                                  }
+                                }}
+                              />
+                            </span>
+                            {c.lower.logoImage && (
+                              <button type="button" className="mk-button h-8 rounded-[3px] px-2 text-[10px]" onClick={() => edit("lower", { logoImage: null })}>
+                                Remove
+                              </button>
+                            )}
+                          </span>
+                        </Row>
+                      </div>
+                      <div className="col-span-2">
+                        <Row label="Tag above the logo (empty = no tag)">
+                          <input className={field} value={c.lower.tag} maxLength={40} onChange={(e) => edit("lower", { tag: e.target.value })} />
+                        </Row>
+                      </div>
+                      <Row label="Tag colour">
+                        <Colour value={c.lower.tagBg} onChange={(tagBg) => edit("lower", { tagBg })} />
+                      </Row>
+                      <Row label="Tag text colour">
+                        <Colour value={c.lower.tagText} onChange={(tagText) => edit("lower", { tagText })} />
+                      </Row>
+                      <Row label="Frame colour">
+                        <Colour value={c.lower.bg} onChange={(bg) => edit("lower", { bg })} />
+                      </Row>
+                      <Row label="Logo panel colour">
+                        <Colour value={c.lower.primary} onChange={(primary) => edit("lower", { primary })} />
+                      </Row>
+                      <Row label="Stripe colour">
+                        <Colour value={c.lower.accent} onChange={(accent) => edit("lower", { accent })} />
+                      </Row>
+                      <Row label="Bar colour">
+                        <Colour value={c.lower.barBg} onChange={(barBg) => edit("lower", { barBg })} />
+                      </Row>
+                      <Row label="Title text colour">
+                        <Colour value={c.lower.nameColor} onChange={(nameColor) => edit("lower", { nameColor })} />
+                      </Row>
+                      <Row label="Subtitle text colour">
+                        <Colour value={c.lower.titleColor} onChange={(titleColor) => edit("lower", { titleColor })} />
+                      </Row>
+                      <div className="col-span-2">
+                        <button
+                          type="button"
+                          className="mk-button h-8 w-full rounded-[3px] px-2 text-[10px]"
+                          onClick={() =>
+                            edit("lower", {
+                              bg: "#112b43",
+                              primary: "#164a70",
+                              accent: "#a00714",
+                              tagBg: "#a00714",
+                              tagText: "#ffffff",
+                              barBg: "#ffffff",
+                              nameColor: "#0b0b0b",
+                              titleColor: "#0b0b0b",
+                              font: "condensed",
+                            })
+                          }
+                        >
+                          Reset to sample colours (navy / red)
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
                   {(c.lower.style === "presenter" || c.lower.style === "sport") && (
                     <Row label="Name block colour">
                       <Colour value={c.lower.primary} onChange={(primary) => edit("lower", { primary })} />
@@ -534,6 +619,8 @@ function GraphicsPage() {
                     <Colour value={c.lower.bg} onChange={(bg) => edit("lower", { bg })} />
                   </Row>
                   <Range label="Bg opacity" value={c.lower.bgOpacity} min={0} max={100} onChange={(bgOpacity) => edit("lower", { bgOpacity })} />
+                    </>
+                  )}
                   <div className="col-span-2">
                     <Range label="Size" value={c.lower.size} min={30} max={300} step={5} onChange={(size) => edit("lower", { size })} />
                   </div>

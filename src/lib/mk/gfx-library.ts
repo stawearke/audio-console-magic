@@ -105,6 +105,13 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
         bgOpacity: num(r["bgOpacity"], d.bgOpacity, 0, 100),
         text: hex(r["text"], d.text),
         font: oneOf(r["font"], GFX_FONTS, d.font),
+        logoImage: safeImage(r["logoImage"]),
+        tag: str(r["tag"], d.tag, 40),
+        tagBg: hex(r["tagBg"], d.tagBg),
+        tagText: hex(r["tagText"], d.tagText),
+        barBg: hex(r["barBg"], d.barBg),
+        nameColor: hex(r["nameColor"], d.nameColor),
+        titleColor: hex(r["titleColor"], d.titleColor),
       } as LayerData<K>;
     }
     case "ticker": {

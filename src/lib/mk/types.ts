@@ -76,8 +76,9 @@ export const GFX_FONTS: { id: GfxFont; label: string }[] = [
   { id: "mono", label: "Mono" },
 ];
 
-export type LowerStyle = "bar" | "glass" | "underline" | "box" | "presenter" | "guest" | "sport";
+export type LowerStyle = "bar" | "glass" | "underline" | "box" | "presenter" | "guest" | "sport" | "strap";
 export const LOWER_STYLES: { id: LowerStyle; label: string }[] = [
+  { id: "strap", label: "Channel strap (logo + tag)" },
   { id: "presenter", label: "Presenter (news)" },
   { id: "guest", label: "Guest strap" },
   { id: "sport", label: "Player ID (sport)" },
@@ -169,6 +170,16 @@ export interface GraphicsConfig {
     bgOpacity: number;
     text: string;
     font: GfxFont;
+    /** Channel strap style: logo shown in the left panel (null = none). */
+    logoImage: string | null;
+    /** Channel strap style: the tag above the logo (e.g. BARAZA LA MTAA). Empty = no tag. */
+    tag: string;
+    tagBg: string;
+    tagText: string;
+    /** Channel strap style: the middle bar and its two text lines. */
+    barBg: string;
+    nameColor: string;
+    titleColor: string;
   };
   ticker: {
     /** Hand-placed spot; only the vertical (y) part is used — the bar always spans the width. null = use `pos`. */
@@ -339,6 +350,13 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     bgOpacity: 90,
     text: "#ffffff",
     font: "sans",
+    logoImage: null,
+    tag: "BARAZA LA MTAA",
+    tagBg: "#9b0a14",
+    tagText: "#ffffff",
+    barBg: "#ffffff",
+    nameColor: "#0b0b0b",
+    titleColor: "#0b0b0b",
   },
   ticker: {
     at: null,
