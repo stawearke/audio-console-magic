@@ -154,6 +154,15 @@ export const CUSTOM_ANIMS: { id: CustomAnim; label: string }[] = [
   { id: "wipe", label: "Wipe" },
   { id: "rotate", label: "Spin in" },
 ];
+export type CustomLoop = "none" | "pulse" | "blink" | "float" | "spin" | "wobble";
+export const CUSTOM_LOOPS: { id: CustomLoop; label: string }[] = [
+  { id: "none", label: "None" },
+  { id: "pulse", label: "Pulse (grow / shrink)" },
+  { id: "blink", label: "Blink" },
+  { id: "float", label: "Float (up / down)" },
+  { id: "spin", label: "Spin" },
+  { id: "wobble", label: "Wobble" },
+];
 export interface CustomEl {
   id: string;
   name: string;
@@ -194,6 +203,13 @@ export interface CustomEl {
   anim: CustomAnim;
   animMs: number;
   delay: number;
+  /** Exit, played when the graphic is taken off air. */
+  out: CustomAnim;
+  outMs: number;
+  outDelay: number;
+  /** Endless effect that starts once the entrance is done. */
+  loop: CustomLoop;
+  loopMs: number;
 }
 
 export interface GraphicsConfig {

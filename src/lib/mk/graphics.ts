@@ -594,14 +594,32 @@ t();setInterval(t,250);`,
 export const CUSTOM_KEYFRAMES =
   "@keyframes cfade{from{opacity:0}}@keyframes cleft{from{transform:translateX(-120%);opacity:0}}@keyframes cright{from{transform:translateX(120%);opacity:0}}" +
   "@keyframes cup{from{transform:translateY(120%);opacity:0}}@keyframes cdown{from{transform:translateY(-120%);opacity:0}}" +
-  "@keyframes cscale{from{transform:scale(.4);opacity:0}}@keyframes cwipe{from{clip-path:inset(0 100% 0 0)}}@keyframes crotate{from{transform:rotate(-90deg) scale(.5);opacity:0}}";
+  "@keyframes cscale{from{transform:scale(.4);opacity:0}}@keyframes cwipe{from{clip-path:inset(0 100% 0 0)}}@keyframes crotate{from{transform:rotate(-90deg) scale(.5);opacity:0}}" +
+  "@keyframes ofade{to{opacity:0}}@keyframes oleft{to{transform:translateX(-120%);opacity:0}}@keyframes oright{to{transform:translateX(120%);opacity:0}}" +
+  "@keyframes oup{to{transform:translateY(120%);opacity:0}}@keyframes odown{to{transform:translateY(-120%);opacity:0}}" +
+  "@keyframes oscale{to{transform:scale(.4);opacity:0}}@keyframes owipe{to{clip-path:inset(0 0 0 100%)}}@keyframes orotate{to{transform:rotate(90deg) scale(.5);opacity:0}}" +
+  "@keyframes lpulse{50%{transform:scale(1.1)}}@keyframes lblink{50%{opacity:.15}}@keyframes lfloat{50%{transform:translateY(-12%)}}" +
+  "@keyframes lspin{to{transform:rotate(360deg)}}@keyframes lwobble{25%{transform:rotate(-6deg)}75%{transform:rotate(6deg)}}";
+
+/** How long the exit of the custom layer takes (ms); 0 = nothing animates out. */
+export function customOutMs(g: GraphicsConfig): number {
+  const els = Array.isArray(g.custom?.elements) ? g.custom.elements : [];
+  return els.reduce((m, e) => (e.visible && e.out !== "none" ? Math.max(m, num(e.outDelay, 0, 0, 10000) + num(e.outMs, 400, 50, 5000)) : m), 0);
+}
 
 /** One custom element as HTML. `u` turns design pixels (1920 wide) into a CSS length. */
-export function customElHtml(e: CustomEl, u: (px: number) => string): string {
+export function customElHtml(e: CustomEl, u: (px: number) => string, mode: "in" | "out" = "in"): string {
   if (!e.visible) return "";
   const f = (n: number) => n.toFixed(3);
   const pos = `left:${f(e.x / 19.2)}%;top:${f(e.y / 10.8)}%;width:${f(e.w / 19.2)}%;height:${f(e.h / 10.8)}%;transform:rotate(${num(e.rot, 0, -360, 360)}deg);opacity:${num(e.opacity, 100, 0, 100) / 100}`;
-  const anim = e.anim === "none" ? "" : `animation:c${e.anim} ${num(e.animMs, 600, 50, 5000)}ms cubic-bezier(.2,.8,.2,1) ${num(e.delay, 0, 0, 10000)}ms both;`;
+  const ent = num(e.delay, 0, 0, 10000) + num(e.animMs, 600, 50, 5000);
+  const looped =
+    mode === "in" && e.loop && e.loop !== "none"
+      ? `animation:l${e.loop} ${num(e.loopMs, 1200, 200, 10000)}ms ${e.loop === "spin" ? "linear" : "ease-in-out"} ${e.anim === "none" ? 0 : ent}ms infinite;`
+      : "";
+  const outAnim =
+    mode === "out" && e.out && e.out !== "none" ? `animation:o${e.out} ${num(e.outMs, 400, 50, 5000)}ms cubic-bezier(.5,0,.8,.5) ${num(e.outDelay, 0, 0, 10000)}ms forwards;` : "";
+  const anim = mode === "out" ? outAnim : e.anim === "none" ? "" : `animation:c${e.anim} ${num(e.animMs, 600, 50, 5000)}ms cubic-bezier(.2,.8,.2,1) ${num(e.delay, 0, 0, 10000)}ms both;`;
   const sh = e.shadow > 0 ? `filter:drop-shadow(0 ${u(e.shadow / 3)} ${u(e.shadow)} rgba(0,0,0,.55));` : "";
   let vis = "";
   let inner = "";
@@ -621,20 +639,20 @@ export function customElHtml(e: CustomEl, u: (px: number) => string): string {
     const bd = e.strokeW > 0 ? `border:${u(e.strokeW)} solid ${color(e.stroke, "#ffffff")};` : "";
     vis = `background:${bg};border-radius:${rad};box-sizing:border-box;${bd}${clip}`;
   }
-  return `<div style="position:absolute;${pos}"><div style="width:100%;height:100%;${anim}${sh}"><div style="width:100%;height:100%;${vis}">${inner}</div></div></div>`;
+  return `<div style="position:absolute;${pos}"><div style="width:100%;height:100%;${looped}"><div style="width:100%;height:100%;${anim}${sh}"><div style="width:100%;height:100%;${vis}">${inner}</div></div></div></div>`;
 }
 
-function customLayer(g: GraphicsConfig) {
+function customLayer(g: GraphicsConfig, out = false) {
   const els = Array.isArray(g.custom?.elements) ? g.custom.elements : [];
   const u = (px: number) => `${(px / 19.2).toFixed(3)}vw`;
   const condensed = els.some((e) => e.type === "text" && e.font === "condensed");
   return page(
     `.cv{position:absolute;inset:0}${CUSTOM_KEYFRAMES}${condensed ? "/*Barlow Semi*/" : ""}`,
-    `<div class="cv">${els.map((e) => customElHtml(e, u)).join("")}</div>`,
+    `<div class="cv">${els.map((e) => customElHtml(e, u, out ? "out" : "in")).join("")}</div>`,
   );
 }
 
-export function layerUrl(id: GfxId, g: GraphicsConfig): string {
+export function layerUrl(id: GfxId, g: GraphicsConfig, opts?: { out?: boolean }): string {
   switch (id) {
     case "logo":
       return logo(g);
@@ -657,7 +675,7 @@ export function layerUrl(id: GfxId, g: GraphicsConfig): string {
     case "full":
       return full(g);
     case "custom":
-      return customLayer(g);
+      return customLayer(g, opts?.out === true);
   }
 }
 

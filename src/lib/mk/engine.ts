@@ -48,7 +48,7 @@ import {
 } from "./merge";
 import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, tagUrl, type TagConfig, type TagSlot } from "./tags";
 import type { SavedGraphic } from "./gfx-library";
-import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
+import { customOutMs, GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
 import { cloudSettings } from "./cloud";
 import { canWrite, getRole } from "./roles";
@@ -2831,6 +2831,7 @@ export class SwitcherEngine {
       return false;
     }
     if (id === "ticker") this.cancelScrollTimer();
+    if (id === "custom") this.customRun++; // a take cancels a pending exit
     const wasOn = this.state.gfxActive[id];
     this.set({ gfxActive: { ...this.state.gfxActive, [id]: true } });
     try {
@@ -2860,11 +2861,35 @@ export class SwitcherEngine {
     const next = !this.state.gfxActive[id];
     this.set({ gfxActive: { ...this.state.gfxActive, [id]: next } });
     try {
-      await this.transport.setGraphicVisible(gfxName(id), next);
+      if (id === "custom" && !this.state.demo) await this.toggleCustom(next);
+      else await this.transport.setGraphicVisible(gfxName(id), next);
     } catch {
       this.set({ gfxActive: { ...this.state.gfxActive, [id]: !next } });
       this.notice("Graphics not set up in OBS yet — Settings → Graphics → Set up");
     }
+  }
+
+  private customRun = 0;
+
+  /** The Custom layer: load the entrance page before showing it, and play the exits before hiding it. */
+  private async toggleCustom(next: boolean) {
+    const tr = this.transport;
+    if (!tr) return;
+    const run = ++this.customRun;
+    const name = gfxName("custom");
+    const g = this.state.config.graphics;
+    if (next) {
+      await tr.updateGraphic(name, layerUrl("custom", g));
+      await tr.setGraphicVisible(name, true);
+      return;
+    }
+    const ms = customOutMs(g);
+    if (ms > 0) {
+      await tr.updateGraphic(name, layerUrl("custom", g, { out: true }));
+      await new Promise((r) => setTimeout(r, ms + 150));
+      if (run !== this.customRun) return;
+    }
+    await tr.setGraphicVisible(name, false);
   }
 
   private scrollRun = 0;

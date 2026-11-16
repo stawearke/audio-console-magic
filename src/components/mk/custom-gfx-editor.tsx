@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { makeEl, newElId } from "@/lib/mk/custom-gfx";
 import { BARLOW_IMPORT_CSS, CUSTOM_KEYFRAMES, customElHtml, fileToLogo } from "@/lib/mk/graphics";
-import { CUSTOM_ANIMS, GFX_FONTS, type CustomEl, type CustomElType } from "@/lib/mk/types";
+import { CUSTOM_ANIMS, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 const field = "mk-field h-8 w-full min-w-0 rounded-[3px] px-2 text-xs";
@@ -74,12 +74,13 @@ export function CustomCanvas({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [run, setRun] = useState(0);
+  const [mode, setMode] = useState<"in" | "out">("in");
   const drag = useRef<{ id: string; mode: string; sx: number; sy: number; o: CustomEl; k: number } | null>(null);
   const els = useRef(elements);
   els.current = elements;
 
   const html =
-    `<style>${BARLOW_IMPORT_CSS}${CUSTOM_KEYFRAMES}</style>` + elements.map((e) => customElHtml(e, (px) => `${(px / 19.2).toFixed(3)}cqw`)).join("");
+    `<style>${BARLOW_IMPORT_CSS}${CUSTOM_KEYFRAMES}</style>` + elements.map((e) => customElHtml(e, (px) => `${(px / 19.2).toFixed(3)}cqw`, mode)).join("");
 
   const snap = (v: number, targets: number[]) => {
     for (const t of targets) if (Math.abs(v - t) < SNAP) return t;
@@ -141,8 +142,25 @@ export function CustomCanvas({
     <div className="grid gap-1">
       <div className="flex flex-wrap items-center gap-1">
         <span className="mk-label mr-auto text-[9px]">Drag to move · corners to resize · arrows nudge · Delete removes</span>
-        <button type="button" className="mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px]" onClick={() => setRun((n) => n + 1)}>
-          <Play className="h-3 w-3" /> Replay animation
+        <button
+          type="button"
+          className="mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px]"
+          onClick={() => {
+            setMode("in");
+            setRun((n) => n + 1);
+          }}
+        >
+          <Play className="h-3 w-3" /> Replay entrance
+        </button>
+        <button
+          type="button"
+          className="mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px]"
+          onClick={() => {
+            setMode("out");
+            setRun((n) => n + 1);
+          }}
+        >
+          <Play className="h-3 w-3" /> Preview exit
         </button>
       </div>
       <div
@@ -428,6 +446,33 @@ export function CustomInspector({
           <div className="col-span-2">
             <Slide label="Delay" value={el.delay} min={0} max={5000} step={50} unit="ms" onChange={(delay) => edit(el.id, { delay })} />
           </div>
+
+          <div className="col-span-2 mk-label pt-1 text-[9px]">Exit animation (when taken off air)</div>
+          <Row label="Goes off with">
+            <select className={field} value={el.out} onChange={(e) => edit(el.id, { out: e.target.value as CustomEl["out"] })}>
+              {CUSTOM_ANIMS.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.id === "none" ? "None (vanishes)" : a.label.replace("from", "to")}
+                </option>
+              ))}
+            </select>
+          </Row>
+          <Num label="Duration (ms)" value={el.outMs} min={50} max={5000} step={50} onChange={(outMs) => edit(el.id, { outMs })} />
+          <div className="col-span-2">
+            <Slide label="Exit delay" value={el.outDelay} min={0} max={5000} step={50} unit="ms" onChange={(outDelay) => edit(el.id, { outDelay })} />
+          </div>
+
+          <div className="col-span-2 mk-label pt-1 text-[9px]">Loop effect (keeps going while on air)</div>
+          <Row label="Effect">
+            <select className={field} value={el.loop} onChange={(e) => edit(el.id, { loop: e.target.value as CustomEl["loop"] })}>
+              {CUSTOM_LOOPS.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </Row>
+          {el.loop !== "none" && <Num label="One cycle (ms)" value={el.loopMs} min={200} max={10000} step={100} onChange={(loopMs) => edit(el.id, { loopMs })} />}
         </div>
       ) : (
         <span className="text-[10px] text-muted-foreground">Select an element on the canvas or in the list to edit it.</span>

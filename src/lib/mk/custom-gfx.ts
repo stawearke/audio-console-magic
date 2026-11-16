@@ -1,6 +1,6 @@
 // Custom graphic editor: element factory + sanitizer (imported designs are untrusted).
 import { safeImage } from "./graphics";
-import { CUSTOM_ANIMS, GFX_FONTS, type CustomEl, type CustomElType } from "./types";
+import { CUSTOM_ANIMS, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType } from "./types";
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/;
 const hex = (v: unknown, d: string) => (typeof v === "string" && HEX.test(v) ? v : d);
@@ -49,6 +49,11 @@ export function makeEl(type: CustomElType, over: Partial<CustomEl> = {}): Custom
     anim: "fade",
     animMs: 600,
     delay: 0,
+    out: "fade",
+    outMs: 400,
+    outDelay: 0,
+    loop: "none",
+    loopMs: 1200,
     ...over,
   };
 }
@@ -91,6 +96,11 @@ export function cleanCustomEls(v: unknown): CustomEl[] {
       anim: oneOf(r["anim"], CUSTOM_ANIMS, "fade"),
       animMs: num(r["animMs"], 600, 50, 5000),
       delay: num(r["delay"], 0, 0, 10000),
+      out: oneOf(r["out"], CUSTOM_ANIMS, "none"),
+      outMs: num(r["outMs"], 400, 50, 5000),
+      outDelay: num(r["outDelay"], 0, 0, 10000),
+      loop: oneOf(r["loop"], CUSTOM_LOOPS, "none"),
+      loopMs: num(r["loopMs"], 1200, 200, 10000),
     };
   });
 }
