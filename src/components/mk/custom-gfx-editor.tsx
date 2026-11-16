@@ -2,7 +2,8 @@
 import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Lock, LockOpen, Pause, Play, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { makeEl, newElId } from "@/lib/mk/custom-gfx";
+import { CustomFields } from "@/components/mk/custom-fields";
+import { CUSTOM_TEMPLATES, makeEl, newElId } from "@/lib/mk/custom-gfx";
 import { BARLOW_IMPORT_CSS, CUSTOM_KEYFRAMES, customElHtml, customPoseAt, fileToLogo, NEUTRAL_POSE } from "@/lib/mk/graphics";
 import { CUSTOM_ANIMS, CUSTOM_EASES, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType, type CustomKey } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -277,6 +278,42 @@ export function CustomInspector({
 
   return (
     <div className="col-span-2 grid gap-2">
+      <div className="flex flex-wrap items-center gap-1">
+        <select
+          aria-label="Add a starter template"
+          className={cn(field, "w-auto")}
+          value=""
+          onChange={(e) => {
+            const t = CUSTOM_TEMPLATES.find((q) => q.id === e.target.value);
+            if (!t) return;
+            const els = t.build();
+            if (elements.length + els.length > 60) return say("Not enough room: 60 elements is the limit");
+            onChange([...elements, ...els]);
+            setSel(null);
+          }}
+        >
+          <option value="">Add template…</option>
+          {CUSTOM_TEMPLATES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        {elements.length > 0 && (
+          <button
+            type="button"
+            className={btn}
+            onClick={() => {
+              if (!window.confirm("Remove every element from this graphic?")) return;
+              onChange([]);
+              setSel(null);
+            }}
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+      <CustomFields elements={elements} onChange={onChange} say={say} />
       <div className="flex flex-wrap gap-1">
         <button type="button" className={btn} onClick={() => add("rect")}>+ Rectangle</button>
         <button type="button" className={btn} onClick={() => add("rect", { name: "Parallelogram", slant: 60 })}>+ Parallelogram</button>
@@ -344,6 +381,13 @@ export function CustomInspector({
               <input className={field} value={el.name} maxLength={40} onChange={(e) => edit(el.id, { name: e.target.value })} />
             </Row>
           </div>
+          {(el.type === "text" || el.type === "image") && (
+            <div className="col-span-2">
+              <Row label="Fill-in field name (crew edits this live; empty = fixed)">
+                <input className={field} value={el.field} maxLength={30} placeholder="e.g. Name" onChange={(e) => edit(el.id, { field: e.target.value })} />
+              </Row>
+            </div>
+          )}
           <Num label="X" value={el.x} onChange={(x) => edit(el.id, { x })} />
           <Num label="Y" value={el.y} onChange={(y) => edit(el.id, { y })} />
           <Num label="Width" value={el.w} min={1} onChange={(w) => edit(el.id, { w })} />

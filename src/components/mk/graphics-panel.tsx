@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Play, X } from "lucide-react";
 import { useState } from "react";
 
+import { CustomFields } from "@/components/mk/custom-fields";
 import { GFX_LAYERS } from "@/lib/mk/graphics";
 import { useGfxLibrary } from "@/lib/mk/gfx-library";
 import type { GfxId, GraphicsConfig } from "@/lib/mk/types";
@@ -121,6 +122,13 @@ export function GraphicsPanel({ graphics: g, active }: GraphicsPanelProps) {
           onChange={(e) => engine.setGraphic("lower", { title: e.target.value })}
         />
       </div>
+
+      {g.custom.elements.some((e) => e.field.trim()) && (
+        <div className="grid shrink-0 gap-0.5 border-t border-white/5 pt-1">
+          <span className="mk-label text-[8px]">Custom graphic</span>
+          <CustomFields title={false} elements={g.custom.elements} onChange={(elements) => engine.setGraphic("custom", { elements })} say={() => {}} />
+        </div>
+      )}
 
       <div className="flex min-h-0 shrink-0 items-center gap-1 overflow-x-auto">
         <button

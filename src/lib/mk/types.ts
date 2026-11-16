@@ -237,6 +237,8 @@ export interface CustomEl {
   /** Keyframes (sorted by time). */
   keys: CustomKey[];
   kfLoop: boolean;
+  /** Fill-in label. When set, the crew can edit this text / image from the live panel without opening the editor. */
+  field: string;
 }
 
 export interface GraphicsConfig {

@@ -56,6 +56,7 @@ export function makeEl(type: CustomElType, over: Partial<CustomEl> = {}): Custom
     loopMs: 1200,
     keys: [],
     kfLoop: false,
+    field: "",
     ...over,
   };
 }
@@ -125,6 +126,55 @@ export function cleanCustomEls(v: unknown): CustomEl[] {
       loopMs: num(r["loopMs"], 1200, 200, 10000),
       keys: cleanKeys(r["keys"]),
       kfLoop: r["kfLoop"] === true,
+      field: str(r["field"], "", 30),
     };
   });
 }
+
+// ---- Starter templates. Elements with a `field` can be filled in by the crew from the live panel.
+const RED = "#a00714";
+const NAVY = "#112b43";
+const BLUE = "#164a70";
+const SLANT = 54;
+
+function strapTemplate(): CustomEl[] {
+  const side = (name: string, x: number, w: number, fill: string, delay: number, over: Partial<CustomEl> = {}) =>
+    makeEl("rect", { name, x, y: 850, w, h: 136, fill, slant: SLANT, anim: "left", animMs: 450, delay, ...over });
+  return [
+    makeEl("rect", { name: "Frame", x: 115, y: 850, w: 1498, h: 150, fill: NAVY, anim: "wipe", animMs: 500 }),
+    makeEl("rect", { name: "Bar", x: 288, y: 850, w: 1256, h: 136, fill: "#ffffff", slant: SLANT, anim: "wipe", animMs: 500, delay: 150 }),
+    side("Stripe white (left)", 184, 63, "#ffffff", 100),
+    side("Stripe red (left)", 198, 67, RED, 150),
+    side("Logo panel", 211, 234, BLUE, 200),
+    makeEl("image", { name: "Logo", field: "Logo", x: 245, y: 860, w: 150, h: 116, anim: "fade", delay: 450 }),
+    side("Stripe red (right)", 1490, 67, RED, 150, { anim: "right" }),
+    side("Stripe white (right)", 1503, 63, "#ffffff", 100, { anim: "right" }),
+    makeEl("text", { name: "Title", field: "Title", x: 480, y: 856, w: 1000, h: 64, text: "Inclusive and Sustainable Community Development", fontSize: 52, weight: 700, color: "#0b0b0b", anim: "up", animMs: 450, delay: 400 }),
+    makeEl("text", { name: "Subtitle", field: "Subtitle", x: 480, y: 918, w: 1000, h: 50, text: "Inclusive and Sustainable Community Development", fontSize: 40, weight: 400, color: "#0b0b0b", anim: "up", animMs: 450, delay: 480 }),
+    makeEl("rect", { name: "Tag shape", x: 198, y: 798, w: 269, h: 48, fill: RED, slant: 17, anim: "down", animMs: 400, delay: 500 }),
+    makeEl("text", { name: "Tag", field: "Tag", x: 198, y: 798, w: 269, h: 48, text: "BARAZA LA MTAA", fontSize: 30, weight: 600, align: "center", upper: true, anim: "fade", delay: 700 }),
+  ];
+}
+
+function nameBarTemplate(): CustomEl[] {
+  return [
+    makeEl("rect", { name: "Accent", x: 140, y: 860, w: 14, h: 120, fill: "#e5322d", anim: "left", animMs: 400 }),
+    makeEl("rect", { name: "Panel", x: 154, y: 860, w: 900, h: 120, fill: "#0b1220", fill2: "#1a2744", angle: 90, anim: "wipe", animMs: 500, delay: 100 }),
+    makeEl("text", { name: "Name", field: "Name", x: 190, y: 868, w: 840, h: 64, text: "Guest Name", fontSize: 52, weight: 700, anim: "up", animMs: 450, delay: 350 }),
+    makeEl("text", { name: "Title / role", field: "Title / role", x: 190, y: 928, w: 840, h: 44, text: "Title / Role", fontSize: 32, weight: 400, color: "#c9d3e6", anim: "up", animMs: 450, delay: 430 }),
+  ];
+}
+
+function liveTemplate(): CustomEl[] {
+  return [
+    makeEl("rect", { name: "Badge", x: 1560, y: 60, w: 250, h: 76, fill: "#e5322d", radius: 10, anim: "down", animMs: 400 }),
+    makeEl("ellipse", { name: "Dot", x: 1582, y: 86, w: 24, h: 24, fill: "#ffffff", anim: "scale", delay: 300, loop: "blink", loopMs: 1000 }),
+    makeEl("text", { name: "Label", field: "Label", x: 1622, y: 60, w: 170, h: 76, text: "LIVE", fontSize: 44, weight: 700, upper: true, anim: "fade", delay: 300 }),
+  ];
+}
+
+export const CUSTOM_TEMPLATES: { id: string; label: string; build: () => CustomEl[] }[] = [
+  { id: "strap", label: "Channel strap (logo + tag)", build: strapTemplate },
+  { id: "namebar", label: "Name bar", build: nameBarTemplate },
+  { id: "live", label: "LIVE badge", build: liveTemplate },
+];
