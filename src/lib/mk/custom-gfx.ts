@@ -1,6 +1,6 @@
 // Custom graphic editor: element factory + sanitizer (imported designs are untrusted).
 import { safeImage } from "./graphics";
-import { CUSTOM_ANIMS, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType } from "./types";
+import { CUSTOM_ANIMS, CUSTOM_EASES, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType, type CustomKey } from "./types";
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/;
 const hex = (v: unknown, d: string) => (typeof v === "string" && HEX.test(v) ? v : d);
@@ -54,8 +54,30 @@ export function makeEl(type: CustomElType, over: Partial<CustomEl> = {}): Custom
     outDelay: 0,
     loop: "none",
     loopMs: 1200,
+    keys: [],
+    kfLoop: false,
     ...over,
   };
+}
+
+export function cleanKeys(v: unknown): CustomKey[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .slice(0, 16)
+    .map((raw) => {
+      const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+      return {
+        id: str(r["id"], newElId(), 24).replace(/[^a-zA-Z0-9_-]/g, "") || newElId(),
+        t: num(r["t"], 0, 0, 60000),
+        dx: num(r["dx"], 0, -3000, 3000),
+        dy: num(r["dy"], 0, -3000, 3000),
+        scale: num(r["scale"], 100, 0, 500),
+        rot: num(r["rot"], 0, -720, 720),
+        opacity: num(r["opacity"], 100, 0, 100),
+        ease: oneOf(r["ease"], CUSTOM_EASES, "inout"),
+      };
+    })
+    .sort((a, b) => a.t - b.t);
 }
 
 export function cleanCustomEls(v: unknown): CustomEl[] {
@@ -101,6 +123,8 @@ export function cleanCustomEls(v: unknown): CustomEl[] {
       outDelay: num(r["outDelay"], 0, 0, 10000),
       loop: oneOf(r["loop"], CUSTOM_LOOPS, "none"),
       loopMs: num(r["loopMs"], 1200, 200, 10000),
+      keys: cleanKeys(r["keys"]),
+      kfLoop: r["kfLoop"] === true,
     };
   });
 }

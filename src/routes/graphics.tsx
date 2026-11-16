@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Copy, Download, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CustomCanvas, CustomInspector } from "@/components/mk/custom-gfx-editor";
+import { CustomInspector, CustomStage } from "@/components/mk/custom-gfx-editor";
 import { DesignLibrary } from "@/components/mk/design-library";
 import { GfxRundown } from "@/components/mk/gfx-rundown";
 import { NewsDesk } from "@/components/mk/news-desk";
@@ -212,6 +212,8 @@ function GraphicsPage() {
   const [active, setActive] = useState<GfxId>("lower");
   const [backdrop, setBackdrop] = useState<Backdrop>("video");
   const [selEl, setSelEl] = useState<string | null>(null);
+  const [selKey, setSelKey] = useState<string | null>(null);
+  const [timeAt, setTimeAt] = useState<number | null>(null);
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [incoming, setIncoming] = useState<ReturnType<typeof parsePack> | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -389,21 +391,27 @@ function GraphicsPage() {
                 {state.gfxActive[active] ? "On air — take off" : "Take to air"}
               </button>
             </div>
-            <div className="flex aspect-video w-full items-center justify-center fit:aspect-auto fit:min-h-0 fit:flex-1" style={{ containerType: "size" }}>
-              <div style={{ width: "min(100cqw, calc(100cqh * 16 / 9))" }}>
-                {active === "custom" ? (
-                  <CustomCanvas
-                    elements={draft.custom.elements}
-                    onChange={(elements) => edit("custom", { elements })}
-                    sel={selEl}
-                    setSel={setSelEl}
-                    backdropClass={BACKDROP[backdrop]}
-                  />
-                ) : (
-                  <Preview id={active} g={draft} backdrop={backdrop} />
-                )}
+            {active === "custom" ? (
+              <div className="min-h-0 w-full overflow-y-auto fit:flex-1">
+                <CustomStage
+                  elements={draft.custom.elements}
+                  onChange={(elements) => edit("custom", { elements })}
+                  sel={selEl}
+                  setSel={setSelEl}
+                  backdropClass={BACKDROP[backdrop]}
+                  time={timeAt}
+                  setTime={setTimeAt}
+                  selKey={selKey}
+                  setSelKey={setSelKey}
+                />
               </div>
-            </div>
+            ) : (
+              <div className="flex aspect-video w-full items-center justify-center fit:aspect-auto fit:min-h-0 fit:flex-1" style={{ containerType: "size" }}>
+                <div style={{ width: "min(100cqw, calc(100cqh * 16 / 9))" }}>
+                  <Preview id={active} g={draft} backdrop={backdrop} />
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="mk-panel grid shrink-0 gap-1.5 rounded-md p-1.5 lg:grid-cols-[1fr_auto]">
@@ -643,7 +651,7 @@ function GraphicsPage() {
               )}
 
               {active === "custom" && (
-                <CustomInspector elements={draft.custom.elements} onChange={(elements) => edit("custom", { elements })} sel={selEl} setSel={setSelEl} say={say} />
+                <CustomInspector elements={draft.custom.elements} onChange={(elements) => edit("custom", { elements })} sel={selEl} setSel={setSelEl} say={say} time={timeAt} selKey={selKey} setSelKey={setSelKey} />
               )}
 
               {active === "ticker" && (

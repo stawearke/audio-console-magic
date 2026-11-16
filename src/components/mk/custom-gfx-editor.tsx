@@ -1,10 +1,10 @@
 // Custom graphic editor: shapes, text and images on a 1920 x 1080 canvas, each with its own entrance.
-import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Lock, LockOpen, Play, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Lock, LockOpen, Pause, Play, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { makeEl, newElId } from "@/lib/mk/custom-gfx";
-import { BARLOW_IMPORT_CSS, CUSTOM_KEYFRAMES, customElHtml, fileToLogo } from "@/lib/mk/graphics";
-import { CUSTOM_ANIMS, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType } from "@/lib/mk/types";
+import { BARLOW_IMPORT_CSS, CUSTOM_KEYFRAMES, customElHtml, customPoseAt, fileToLogo, NEUTRAL_POSE } from "@/lib/mk/graphics";
+import { CUSTOM_ANIMS, CUSTOM_EASES, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType, type CustomKey } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 const field = "mk-field h-8 w-full min-w-0 rounded-[3px] px-2 text-xs";
@@ -65,12 +65,17 @@ export function CustomCanvas({
   sel,
   setSel,
   backdropClass,
+  scrub,
+  onLive,
 }: {
   elements: CustomEl[];
   onChange: (els: CustomEl[]) => void;
   sel: string | null;
   setSel: (id: string | null) => void;
   backdropClass: string;
+  /** Time (ms) the timeline is parked at; null = play normally. */
+  scrub: number | null;
+  onLive: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [run, setRun] = useState(0);
@@ -80,7 +85,7 @@ export function CustomCanvas({
   els.current = elements;
 
   const html =
-    `<style>${BARLOW_IMPORT_CSS}${CUSTOM_KEYFRAMES}</style>` + elements.map((e) => customElHtml(e, (px) => `${(px / 19.2).toFixed(3)}cqw`, mode)).join("");
+    `<style>${BARLOW_IMPORT_CSS}${CUSTOM_KEYFRAMES}</style>` + elements.map((e) => customElHtml(e, (px) => `${(px / 19.2).toFixed(3)}cqw`, scrub ?? mode)).join("");
 
   const snap = (v: number, targets: number[]) => {
     for (const t of targets) if (Math.abs(v - t) < SNAP) return t;
@@ -141,13 +146,14 @@ export function CustomCanvas({
   return (
     <div className="grid gap-1">
       <div className="flex flex-wrap items-center gap-1">
-        <span className="mk-label mr-auto text-[9px]">Drag to move · corners to resize · arrows nudge · Delete removes</span>
+        <span className="mk-label mr-auto text-[9px]">{scrub === null ? "Drag to move · corners to resize · arrows nudge · Delete removes" : `Timeline preview at ${(scrub / 1000).toFixed(2)} s — press Live to edit on the canvas`}</span>
         <button
           type="button"
           className="mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px]"
           onClick={() => {
             setMode("in");
             setRun((n) => n + 1);
+            onLive();
           }}
         >
           <Play className="h-3 w-3" /> Replay entrance
@@ -158,6 +164,7 @@ export function CustomCanvas({
           onClick={() => {
             setMode("out");
             setRun((n) => n + 1);
+            onLive();
           }}
         >
           <Play className="h-3 w-3" /> Preview exit
@@ -174,7 +181,8 @@ export function CustomCanvas({
         style={{ containerType: "inline-size" }}
       >
         <div key={run} className="pointer-events-none absolute inset-0" dangerouslySetInnerHTML={{ __html: html }} />
-        {elements.map((el) => {
+        {scrub === null &&
+          elements.map((el) => {
           if (!el.visible) return null;
           const on = el.id === sel;
           return (
@@ -221,12 +229,18 @@ export function CustomInspector({
   sel,
   setSel,
   say,
+  time,
+  selKey,
+  setSelKey,
 }: {
   elements: CustomEl[];
   onChange: (els: CustomEl[]) => void;
   sel: string | null;
   setSel: (id: string | null) => void;
   say: (m: string) => void;
+  time: number | null;
+  selKey: string | null;
+  setSelKey: (id: string | null) => void;
 }) {
   const el = elements.find((q) => q.id === sel) ?? null;
   const edit: Edit = (id, patch) => onChange(elements.map((q) => (q.id === id ? { ...q, ...patch } : q)));
@@ -447,6 +461,8 @@ export function CustomInspector({
             <Slide label="Delay" value={el.delay} min={0} max={5000} step={50} unit="ms" onChange={(delay) => edit(el.id, { delay })} />
           </div>
 
+          <KeyframePanel el={el} onChange={(patch) => edit(el.id, patch)} time={time} selKey={selKey} setSelKey={setSelKey} />
+
           <div className="col-span-2 mk-label pt-1 text-[9px]">Exit animation (when taken off air)</div>
           <Row label="Goes off with">
             <select className={field} value={el.out} onChange={(e) => edit(el.id, { out: e.target.value as CustomEl["out"] })}>
@@ -478,5 +494,255 @@ export function CustomInspector({
         <span className="text-[10px] text-muted-foreground">Select an element on the canvas or in the list to edit it.</span>
       )}
     </div>
+  );
+}
+
+const newKey = (t: number, pose: Partial<CustomKey> = {}): CustomKey => ({ id: newElId(), t, ...NEUTRAL_POSE, ease: "inout", ...pose });
+const byTime = (a: CustomKey, b: CustomKey) => a.t - b.t;
+
+/** Canvas + timeline together. Time and the selected keyframe live in the page so the inspector can use them. */
+export function CustomStage({
+  elements,
+  onChange,
+  sel,
+  setSel,
+  backdropClass,
+  time,
+  setTime,
+  selKey,
+  setSelKey,
+}: {
+  elements: CustomEl[];
+  onChange: (els: CustomEl[]) => void;
+  sel: string | null;
+  setSel: (id: string | null) => void;
+  backdropClass: string;
+  time: number | null;
+  setTime: (t: number | null) => void;
+  selKey: string | null;
+  setSelKey: (id: string | null) => void;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const els = useRef(elements);
+  els.current = elements;
+  const drag = useRef<{ el: string; key: string } | null>(null);
+
+  const total = Math.max(
+    3000,
+    Math.ceil(Math.max(...elements.map((e) => Math.max(e.delay + e.animMs, ...e.keys.map((k) => k.t))), 0) / 500) * 500 + 500,
+  );
+
+  // Preview playback: walk the playhead from 0 to the end.
+  useEffect(() => {
+    if (!playing) return;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = now - t0;
+      if (t >= total) {
+        setTime(total);
+        setPlaying(false);
+        return;
+      }
+      setTime(t);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, total, setTime]);
+
+  const timeAt = (clientX: number) => {
+    const r = trackRef.current?.getBoundingClientRect();
+    if (!r || r.width <= 0) return 0;
+    return Math.min(total, Math.max(0, Math.round(((clientX - r.left) / r.width) * total / 10) * 10));
+  };
+  const setKeys = (elId: string, fn: (k: CustomKey[]) => CustomKey[]) =>
+    onChange(els.current.map((e) => (e.id === elId ? { ...e, keys: fn(e.keys).sort(byTime) } : e)));
+
+  const ticks: number[] = [];
+  for (let t = 0; t <= total; t += total > 8000 ? 1000 : 500) ticks.push(t);
+  const pct = (t: number) => `${(t / total) * 100}%`;
+
+  return (
+    <div className="grid gap-1.5">
+      <CustomCanvas elements={elements} onChange={onChange} sel={sel} setSel={setSel} backdropClass={backdropClass} scrub={time} onLive={() => { setTime(null); setPlaying(false); }} />
+
+      <div className="grid gap-1 rounded-[3px] border border-white/10 p-1.5">
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="mk-label mr-auto text-[9px]">Timeline · double-click a row to add a keyframe · drag diamonds to retime</span>
+          <button
+            type="button"
+            className="mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px]"
+            onClick={() => {
+              if (playing) setPlaying(false);
+              else {
+                setTime(0);
+                setPlaying(true);
+              }
+            }}
+          >
+            {playing ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />} {playing ? "Stop" : "Play"}
+          </button>
+          <button type="button" className={cn("mk-button h-6 rounded-[3px] px-2 text-[9px]", time === null && "mk-lit-amber")} onClick={() => { setTime(null); setPlaying(false); }}>
+            Live
+          </button>
+        </div>
+
+        <div className="grid grid-cols-[6.5rem_1fr] gap-x-1 gap-y-0.5">
+          <span />
+          <div
+            ref={trackRef}
+            className="relative h-5 cursor-col-resize rounded-[2px] bg-black/30"
+            onPointerDown={(e) => {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              setPlaying(false);
+              setTime(timeAt(e.clientX));
+            }}
+            onPointerMove={(e) => {
+              if (e.buttons === 1 && !drag.current) setTime(timeAt(e.clientX));
+            }}
+          >
+            {ticks.map((t) => (
+              <span key={t} className="pointer-events-none absolute top-0 h-full border-l border-white/15 pl-0.5 font-mono text-[8px] text-muted-foreground" style={{ left: pct(t) }}>
+                {t / 1000}s
+              </span>
+            ))}
+            {time !== null && <span className="pointer-events-none absolute top-0 z-10 h-full w-0.5 bg-amber-400" style={{ left: pct(time) }} />}
+          </div>
+
+          {[...elements].reverse().map((el) => (
+            <div key={el.id} className="contents">
+              <button type="button" onClick={() => { setSel(el.id); setSelKey(null); }} className={cn("truncate rounded-[2px] px-1 text-left text-[10px]", el.id === sel && "bg-amber-400/15")}>
+                {el.type === "text" ? `“${el.text.slice(0, 14)}”` : el.name}
+              </button>
+              <div
+                className={cn("relative h-[22px] rounded-[2px] bg-white/[0.04]", el.id === sel && "bg-amber-400/10")}
+                onPointerDown={() => { setSel(el.id); }}
+                onDoubleClick={(e) => {
+                  if (el.locked) return;
+                  const t = timeAt(e.clientX);
+                  const k = newKey(t, customPoseAt(el.keys, t) ?? {});
+                  setKeys(el.id, (ks) => [...ks, k]);
+                  setSel(el.id);
+                  setSelKey(k.id);
+                }}
+              >
+                {el.anim !== "none" && <span className="pointer-events-none absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-sky-400/60" style={{ left: pct(el.delay), width: pct(el.animMs) }} />}
+                {el.keys.length > 1 && <span className="pointer-events-none absolute top-1/2 h-px bg-amber-300/50" style={{ left: pct(el.keys[0]!.t), width: pct(el.keys[el.keys.length - 1]!.t - el.keys[0]!.t) }} />}
+                {el.keys.map((k) => (
+                  <span
+                    key={k.id}
+                    title={`${(k.t / 1000).toFixed(2)} s`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      setSel(el.id);
+                      setSelKey(k.id);
+                      if (el.locked) return;
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                      drag.current = { el: el.id, key: k.id };
+                    }}
+                    onPointerMove={(e) => {
+                      const d = drag.current;
+                      if (!d || d.key !== k.id) return;
+                      const t = timeAt(e.clientX);
+                      setKeys(d.el, (ks) => ks.map((q) => (q.id === d.key ? { ...q, t } : q)));
+                      if (time !== null) setTime(t);
+                    }}
+                    onPointerUp={() => { drag.current = null; }}
+                    className={cn("absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-ew-resize border border-black", k.id === selKey ? "bg-amber-300" : "bg-white/80")}
+                    style={{ left: pct(k.t) }}
+                  />
+                ))}
+                {time !== null && <span className="pointer-events-none absolute top-0 h-full w-px bg-amber-400/70" style={{ left: pct(time) }} />}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Keyframe controls for the selected element (lives in the inspector). */
+export function KeyframePanel({
+  el,
+  onChange,
+  time,
+  selKey,
+  setSelKey,
+}: {
+  el: CustomEl;
+  onChange: (patch: Partial<CustomEl>) => void;
+  time: number | null;
+  selKey: string | null;
+  setSelKey: (id: string | null) => void;
+}) {
+  const key = el.keys.find((k) => k.id === selKey) ?? null;
+  const setKeys = (keys: CustomKey[]) => onChange({ keys: [...keys].sort(byTime) });
+  const editKey = (patch: Partial<CustomKey>) => key && setKeys(el.keys.map((k) => (k.id === key.id ? { ...k, ...patch } : k)));
+  const btn = "mk-button h-8 rounded-[3px] px-2 text-[10px]";
+  return (
+    <>
+      <div className="col-span-2 mk-label pt-1 text-[9px]">Keyframes (move, scale, rotate, fade over time)</div>
+      <div className="col-span-2 flex flex-wrap gap-1">
+        <button
+          type="button"
+          className={btn}
+          disabled={el.keys.length >= 16}
+          onClick={() => {
+            const t = time ?? (el.keys.length ? el.keys[el.keys.length - 1]!.t + 500 : 0);
+            const k = newKey(t, customPoseAt(el.keys, t) ?? {});
+            setKeys([...el.keys, k]);
+            setSelKey(k.id);
+          }}
+        >
+          + Key {time !== null ? `at ${(time / 1000).toFixed(2)} s` : "at end"}
+        </button>
+        <button type="button" className={cn(btn, el.kfLoop && "mk-lit-amber")} onClick={() => onChange({ kfLoop: !el.kfLoop })}>
+          {el.kfLoop ? "Looping" : "Plays once"}
+        </button>
+        {el.keys.length > 0 && (
+          <button type="button" className={btn} onClick={() => { setKeys([]); setSelKey(null); }}>
+            Clear keys
+          </button>
+        )}
+      </div>
+      {key ? (
+        <>
+          <Num label="Time (ms)" value={key.t} min={0} max={60000} step={50} onChange={(t) => editKey({ t })} />
+          <Row label="Then moves with">
+            <select className={field} value={key.ease} onChange={(e) => editKey({ ease: e.target.value as CustomKey["ease"] })}>
+              {CUSTOM_EASES.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </Row>
+          <Num label="Move X (px)" value={key.dx} onChange={(dx) => editKey({ dx })} />
+          <Num label="Move Y (px)" value={key.dy} onChange={(dy) => editKey({ dy })} />
+          <Slide label="Scale" value={key.scale} min={0} max={300} unit="%" onChange={(scale) => editKey({ scale })} />
+          <Slide label="Rotate" value={key.rot} min={-360} max={360} unit="°" onChange={(rot) => editKey({ rot })} />
+          <Slide label="Opacity" value={key.opacity} min={0} max={100} unit="%" onChange={(opacity) => editKey({ opacity })} />
+          <div className="col-span-2">
+            <button
+              type="button"
+              className={btn}
+              onClick={() => {
+                setKeys(el.keys.filter((k) => k.id !== key.id));
+                setSelKey(null);
+              }}
+            >
+              Delete this keyframe
+            </button>
+          </div>
+        </>
+      ) : (
+        <span className="col-span-2 text-[10px] text-muted-foreground">
+          {el.keys.length ? "Click a diamond on the timeline to edit it." : "No keyframes. Park the playhead, then + Key. Each key is a pose; the graphic glides between them."}
+        </span>
+      )}
+    </>
   );
 }

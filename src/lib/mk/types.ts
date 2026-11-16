@@ -163,6 +163,30 @@ export const CUSTOM_LOOPS: { id: CustomLoop; label: string }[] = [
   { id: "spin", label: "Spin" },
   { id: "wobble", label: "Wobble" },
 ];
+export type CustomEase = "linear" | "in" | "out" | "inout" | "back" | "hold";
+export const CUSTOM_EASES: { id: CustomEase; label: string }[] = [
+  { id: "inout", label: "Smooth (ease in-out)" },
+  { id: "out", label: "Ease out" },
+  { id: "in", label: "Ease in" },
+  { id: "linear", label: "Linear" },
+  { id: "back", label: "Overshoot" },
+  { id: "hold", label: "Hold (jump)" },
+];
+/** One keyframe: a pose relative to the element's own box, at a time since going on air. */
+export interface CustomKey {
+  id: string;
+  /** ms since the graphic went on air. */
+  t: number;
+  dx: number;
+  dy: number;
+  /** percent, 100 = normal */
+  scale: number;
+  rot: number;
+  /** percent, 100 = normal */
+  opacity: number;
+  /** How it moves on to the next keyframe. */
+  ease: CustomEase;
+}
 export interface CustomEl {
   id: string;
   name: string;
@@ -210,6 +234,9 @@ export interface CustomEl {
   /** Endless effect that starts once the entrance is done. */
   loop: CustomLoop;
   loopMs: number;
+  /** Keyframes (sorted by time). */
+  keys: CustomKey[];
+  kfLoop: boolean;
 }
 
 export interface GraphicsConfig {

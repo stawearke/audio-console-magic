@@ -2,7 +2,7 @@
 // embedded in a data: URL — nothing to host or upload. Layers live in the
 // "MK Graphics" scene and are switched on/off independently of the DSKs.
 import type { PlacePos } from "./fx";
-import { GFX_ANIMS, type Corner, type CustomEl, type GfxAnim, type GfxFont, type GfxId, type GraphicsConfig } from "./types";
+import { GFX_ANIMS, type Corner, type CustomEase, type CustomEl, type CustomKey, type GfxAnim, type GfxFont, type GfxId, type GraphicsConfig } from "./types";
 
 export const GFX_SCENE = "MK Graphics";
 
@@ -607,11 +607,121 @@ export function customOutMs(g: GraphicsConfig): number {
   return els.reduce((m, e) => (e.visible && e.out !== "none" ? Math.max(m, num(e.outDelay, 0, 0, 10000) + num(e.outMs, 400, 50, 5000)) : m), 0);
 }
 
+const CSS_EASE: Record<CustomEase, string> = {
+  linear: "linear",
+  in: "cubic-bezier(.42,0,1,1)",
+  out: "cubic-bezier(0,0,.58,1)",
+  inout: "cubic-bezier(.42,0,.58,1)",
+  back: "cubic-bezier(.34,1.56,.64,1)",
+  hold: "steps(1,end)",
+};
+const BEZ: Record<CustomEase, [number, number, number, number] | null> = {
+  linear: null,
+  in: [0.42, 0, 1, 1],
+  out: [0, 0, 0.58, 1],
+  inout: [0.42, 0, 0.58, 1],
+  back: [0.34, 1.56, 0.64, 1],
+  hold: null,
+};
+
+/** Same maths as CSS cubic-bezier(), so a scrubbed preview matches what OBS plays. */
+function bezier(x1: number, y1: number, x2: number, y2: number, x: number) {
+  const cx = 3 * x1;
+  const bx = 3 * (x2 - x1) - cx;
+  const ax = 1 - cx - bx;
+  const cy = 3 * y1;
+  const by = 3 * (y2 - y1) - cy;
+  const ay = 1 - cy - by;
+  let t = x;
+  for (let i = 0; i < 12; i++) {
+    const e = ((ax * t + bx) * t + cx) * t - x;
+    const d = (3 * ax * t + 2 * bx) * t + cx;
+    if (Math.abs(e) < 1e-5 || Math.abs(d) < 1e-6) break;
+    t -= e / d;
+  }
+  t = Math.min(1, Math.max(0, t));
+  return ((ay * t + by) * t + cy) * t;
+}
+const easeAt = (e: CustomEase, p: number) => {
+  if (e === "hold") return p < 1 ? 0 : 1;
+  const b = BEZ[e];
+  return b ? bezier(b[0], b[1], b[2], b[3], Math.min(1, Math.max(0, p))) : p;
+};
+
+export type CustomPose = Pick<CustomKey, "dx" | "dy" | "scale" | "rot" | "opacity">;
+export const NEUTRAL_POSE: CustomPose = { dx: 0, dy: 0, scale: 100, rot: 0, opacity: 100 };
+
+/** The element's keyframe pose at time t (ms); null when it has no keyframes. */
+export function customPoseAt(keys: CustomKey[], t: number): CustomPose | null {
+  if (!keys.length) return null;
+  const k = [...keys].sort((a, b) => a.t - b.t);
+  const first = k[0]!;
+  const last = k[k.length - 1]!;
+  if (t <= first.t) return first;
+  if (t >= last.t) return last;
+  let i = 0;
+  while (i < k.length - 2 && t >= k[i + 1]!.t) i++;
+  const a = k[i]!;
+  const b = k[i + 1]!;
+  const q = easeAt(a.ease, (t - a.t) / Math.max(1, b.t - a.t));
+  const l = (x: number, y: number) => x + (y - x) * q;
+  return { dx: l(a.dx, b.dx), dy: l(a.dy, b.dy), scale: l(a.scale, b.scale), rot: l(a.rot, b.rot), opacity: l(a.opacity, b.opacity) };
+}
+
+const poseCss = (p: CustomPose, u: (px: number) => string) =>
+  `transform:translate(${u(p.dx)},${u(p.dy)}) scale(${(p.scale / 100).toFixed(4)}) rotate(${p.rot.toFixed(2)}deg);opacity:${(p.opacity / 100).toFixed(4)}`;
+
+/** The entrance animation frozen at time t (used by the timeline scrubber). */
+function entranceAt(e: CustomEl, t: number) {
+  if (e.anim === "none") return "";
+  const p = bezier(0.2, 0.8, 0.2, 1, Math.min(1, Math.max(0, (t - e.delay) / Math.max(50, e.animMs))));
+  const q = 1 - p;
+  switch (e.anim) {
+    case "fade":
+      return `opacity:${p}`;
+    case "left":
+      return `transform:translateX(${-120 * q}%);opacity:${p}`;
+    case "right":
+      return `transform:translateX(${120 * q}%);opacity:${p}`;
+    case "up":
+      return `transform:translateY(${120 * q}%);opacity:${p}`;
+    case "down":
+      return `transform:translateY(${-120 * q}%);opacity:${p}`;
+    case "scale":
+      return `transform:scale(${0.4 + 0.6 * p});opacity:${p}`;
+    case "wipe":
+      return `clip-path:inset(0 ${q * 100}% 0 0)`;
+    case "rotate":
+      return `transform:rotate(${-90 * q}deg) scale(${0.5 + 0.5 * p});opacity:${p}`;
+    default:
+      return "";
+  }
+}
+
 /** One custom element as HTML. `u` turns design pixels (1920 wide) into a CSS length. */
-export function customElHtml(e: CustomEl, u: (px: number) => string, mode: "in" | "out" = "in"): string {
+export function customElHtml(e: CustomEl, u: (px: number) => string, mode: "in" | "out" | number = "in"): string {
   if (!e.visible) return "";
   const f = (n: number) => n.toFixed(3);
   const pos = `left:${f(e.x / 19.2)}%;top:${f(e.y / 10.8)}%;width:${f(e.w / 19.2)}%;height:${f(e.h / 10.8)}%;transform:rotate(${num(e.rot, 0, -360, 360)}deg);opacity:${num(e.opacity, 100, 0, 100) / 100}`;
+  const frozen = typeof mode === "number";
+  const keys = Array.isArray(e.keys) ? [...e.keys].sort((a, b) => a.t - b.t) : [];
+  const kid = `k${e.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  let keyStyle = "";
+  let keyAnim = "";
+  if (frozen) {
+    const p = customPoseAt(keys, mode);
+    keyStyle = p ? poseCss(p, u) : "";
+  } else if (mode === "in" && keys.length) {
+    const lastT = keys[keys.length - 1]!.t;
+    if (keys.length === 1 || lastT <= 0) {
+      keyStyle = poseCss(keys[keys.length - 1]!, u);
+    } else {
+      const frame = (k: CustomKey, at: number) => `${at.toFixed(3)}%{${poseCss(k, u)};animation-timing-function:${CSS_EASE[k.ease]}}`;
+      const frames = (keys[0]!.t > 0 ? frame(keys[0]!, 0) : "") + keys.map((k) => frame(k, (k.t / lastT) * 100)).join("");
+      keyStyle = `<style>@keyframes ${kid}{${frames}}</style>`;
+      keyAnim = `animation:${kid} ${lastT}ms linear 0ms ${e.kfLoop ? "infinite" : "1"} forwards;`;
+    }
+  }
   const ent = num(e.delay, 0, 0, 10000) + num(e.animMs, 600, 50, 5000);
   const looped =
     mode === "in" && e.loop && e.loop !== "none"
@@ -619,7 +729,7 @@ export function customElHtml(e: CustomEl, u: (px: number) => string, mode: "in" 
       : "";
   const outAnim =
     mode === "out" && e.out && e.out !== "none" ? `animation:o${e.out} ${num(e.outMs, 400, 50, 5000)}ms cubic-bezier(.5,0,.8,.5) ${num(e.outDelay, 0, 0, 10000)}ms forwards;` : "";
-  const anim = mode === "out" ? outAnim : e.anim === "none" ? "" : `animation:c${e.anim} ${num(e.animMs, 600, 50, 5000)}ms cubic-bezier(.2,.8,.2,1) ${num(e.delay, 0, 0, 10000)}ms both;`;
+  const anim = frozen ? entranceAt(e, mode) + ";" : mode === "out" ? outAnim : e.anim === "none" ? "" : `animation:c${e.anim} ${num(e.animMs, 600, 50, 5000)}ms cubic-bezier(.2,.8,.2,1) ${num(e.delay, 0, 0, 10000)}ms both;`;
   const sh = e.shadow > 0 ? `filter:drop-shadow(0 ${u(e.shadow / 3)} ${u(e.shadow)} rgba(0,0,0,.55));` : "";
   let vis = "";
   let inner = "";
@@ -639,7 +749,9 @@ export function customElHtml(e: CustomEl, u: (px: number) => string, mode: "in" 
     const bd = e.strokeW > 0 ? `border:${u(e.strokeW)} solid ${color(e.stroke, "#ffffff")};` : "";
     vis = `background:${bg};border-radius:${rad};box-sizing:border-box;${bd}${clip}`;
   }
-  return `<div style="position:absolute;${pos}"><div style="width:100%;height:100%;${looped}"><div style="width:100%;height:100%;${anim}${sh}"><div style="width:100%;height:100%;${vis}">${inner}</div></div></div></div>`;
+  const styleTag = keyStyle.startsWith("<style>") ? keyStyle : "";
+  const keyInline = keyStyle.startsWith("<style>") ? "" : keyStyle ? `${keyStyle};` : "";
+  return `${styleTag}<div style="position:absolute;${pos}"><div style="width:100%;height:100%;${looped}"><div style="width:100%;height:100%;${keyInline}${keyAnim}"><div style="width:100%;height:100%;${anim}${sh}"><div style="width:100%;height:100%;${vis}">${inner}</div></div></div></div></div>`;
 }
 
 function customLayer(g: GraphicsConfig, out = false) {
