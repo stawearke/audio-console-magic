@@ -15,7 +15,7 @@ export const cloudConfigured = () => URL !== "" && KEY !== "";
 
 /** Pages that control the show need a login. Output / camera pages open inside OBS or on phones stay open. */
 // /set-password is open because the invite / reset email link lands there before anyone is signed in.
-const OPEN_PAGES = ["/login", "/set-password", "/prompter", "/cam"];
+const OPEN_PAGES = ["/login", "/set-password", "/prompter", "/cam", "/field"];
 /** Running inside MK VISION Studio (the built-in engine published its details at /mk-config.json). */
 export const isEmbedded = () =>
   typeof window !== "undefined" &&
