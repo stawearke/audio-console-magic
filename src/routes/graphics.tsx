@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Copy, Download, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CustomInspector, CustomStage } from "@/components/mk/custom-gfx-editor";
+import { CustomInspector, CustomStage, useCustomHistory } from "@/components/mk/custom-gfx-editor";
 import { DesignLibrary } from "@/components/mk/design-library";
 import { GfxRundown } from "@/components/mk/gfx-rundown";
 import { NewsDesk } from "@/components/mk/news-desk";
@@ -211,7 +211,7 @@ function GraphicsPage() {
   const [mode, setMode] = useState<"design" | "rundown" | "news" | "live">("design");
   const [active, setActive] = useState<GfxId>("lower");
   const [backdrop, setBackdrop] = useState<Backdrop>("video");
-  const [selEl, setSelEl] = useState<string | null>(null);
+  const [selIds, setSelIds] = useState<string[]>([]);
   const [selKey, setSelKey] = useState<string | null>(null);
   const [timeAt, setTimeAt] = useState<number | null>(null);
   const [loadedId, setLoadedId] = useState<string | null>(null);
@@ -255,6 +255,8 @@ function GraphicsPage() {
 
   const edit = <K extends GfxId>(id: K, patch: Partial<GraphicsConfig[K]>) =>
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...patch } }));
+
+  const customHist = useCustomHistory(draft.custom.elements, (elements) => edit("custom", { elements }));
 
   const scenes = state.scenes.filter((s) => s !== GFX_SCENE);
   const sceneOptions = scene && !scenes.includes(scene) ? [...scenes, scene] : scenes;
@@ -395,9 +397,11 @@ function GraphicsPage() {
               <div className="min-h-0 w-full overflow-y-auto fit:flex-1">
                 <CustomStage
                   elements={draft.custom.elements}
-                  onChange={(elements) => edit("custom", { elements })}
-                  sel={selEl}
-                  setSel={setSelEl}
+                  onChange={customHist.change}
+                  selIds={selIds}
+                  setSelIds={setSelIds}
+                  hist={customHist}
+                  say={say}
                   backdropClass={BACKDROP[backdrop]}
                   time={timeAt}
                   setTime={setTimeAt}
@@ -651,7 +655,7 @@ function GraphicsPage() {
               )}
 
               {active === "custom" && (
-                <CustomInspector elements={draft.custom.elements} onChange={(elements) => edit("custom", { elements })} sel={selEl} setSel={setSelEl} say={say} time={timeAt} selKey={selKey} setSelKey={setSelKey} />
+                <CustomInspector elements={draft.custom.elements} onChange={customHist.change} selIds={selIds} setSelIds={setSelIds} say={say} time={timeAt} selKey={selKey} setSelKey={setSelKey} />
               )}
 
               {active === "ticker" && (

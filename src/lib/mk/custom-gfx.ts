@@ -57,6 +57,7 @@ export function makeEl(type: CustomElType, over: Partial<CustomEl> = {}): Custom
     keys: [],
     kfLoop: false,
     field: "",
+    group: "",
     ...over,
   };
 }
@@ -127,6 +128,7 @@ export function cleanCustomEls(v: unknown): CustomEl[] {
       keys: cleanKeys(r["keys"]),
       kfLoop: r["kfLoop"] === true,
       field: str(r["field"], "", 30),
+      group: str(r["group"], "", 24).replace(/[^a-zA-Z0-9_-]/g, ""),
     };
   });
 }
@@ -178,3 +180,83 @@ export const CUSTOM_TEMPLATES: { id: string; label: string; build: () => CustomE
   { id: "namebar", label: "Name bar", build: nameBarTemplate },
   { id: "live", label: "LIVE badge", build: liveTemplate },
 ];
+
+// ---- Editing helpers (pure): clipboard, align, distribute, groups.
+const clip: { els: CustomEl[]; n: number } = { els: [], n: 0 };
+
+export function copyEls(all: CustomEl[], ids: string[]): number {
+  clip.els = all.filter((e) => ids.includes(e.id)).map((e) => ({ ...e, keys: e.keys.map((k) => ({ ...k })) }));
+  clip.n = 0;
+  return clip.els.length;
+}
+
+/** Pastes the copied elements (offset a little each time) on top; null when empty or over the 60 limit. */
+export function pasteEls(all: CustomEl[]): { els: CustomEl[]; ids: string[] } | null {
+  if (!clip.els.length || all.length + clip.els.length > 60) return null;
+  clip.n++;
+  const groups = new Map<string, string>();
+  const made = clip.els.map((e) => {
+    let group = e.group;
+    if (group) {
+      if (!groups.has(group)) groups.set(group, newElId());
+      group = groups.get(group)!;
+    }
+    return { ...e, id: newElId(), group, x: e.x + 30 * clip.n, y: e.y + 30 * clip.n, keys: e.keys.map((k) => ({ ...k, id: newElId() })) };
+  });
+  return { els: [...all, ...made], ids: made.map((m) => m.id) };
+}
+
+export type AlignHow = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom";
+
+/** One element aligns to the canvas; several align to their own bounds. */
+export function alignEls(all: CustomEl[], ids: string[], how: AlignHow): CustomEl[] {
+  const sel = all.filter((e) => ids.includes(e.id) && !e.locked);
+  if (!sel.length) return all;
+  const box =
+    ids.length === 1
+      ? { x0: 0, y0: 0, x1: 1920, y1: 1080 }
+      : { x0: Math.min(...sel.map((e) => e.x)), y0: Math.min(...sel.map((e) => e.y)), x1: Math.max(...sel.map((e) => e.x + e.w)), y1: Math.max(...sel.map((e) => e.y + e.h)) };
+  return all.map((e) => {
+    if (!ids.includes(e.id) || e.locked) return e;
+    switch (how) {
+      case "left":
+        return { ...e, x: Math.round(box.x0) };
+      case "hcenter":
+        return { ...e, x: Math.round((box.x0 + box.x1 - e.w) / 2) };
+      case "right":
+        return { ...e, x: Math.round(box.x1 - e.w) };
+      case "top":
+        return { ...e, y: Math.round(box.y0) };
+      case "vcenter":
+        return { ...e, y: Math.round((box.y0 + box.y1 - e.h) / 2) };
+      default:
+        return { ...e, y: Math.round(box.y1 - e.h) };
+    }
+  });
+}
+
+/** Equal gaps between three or more elements, keeping the outer two where they are. */
+export function distributeEls(all: CustomEl[], ids: string[], axis: "h" | "v"): CustomEl[] {
+  const sel = all.filter((e) => ids.includes(e.id) && !e.locked);
+  if (sel.length < 3) return all;
+  const pos = (e: CustomEl) => (axis === "h" ? e.x : e.y);
+  const size = (e: CustomEl) => (axis === "h" ? e.w : e.h);
+  const sorted = [...sel].sort((a, b) => pos(a) - pos(b));
+  const first = sorted[0]!;
+  const last = sorted[sorted.length - 1]!;
+  const span = pos(last) + size(last) - pos(first);
+  const gap = (span - sorted.reduce((s, e) => s + size(e), 0)) / (sorted.length - 1);
+  const at = new Map<string, number>();
+  let cur = pos(first);
+  for (const e of sorted) {
+    at.set(e.id, Math.round(cur));
+    cur += size(e) + gap;
+  }
+  return all.map((e) => (at.has(e.id) ? (axis === "h" ? { ...e, x: at.get(e.id)! } : { ...e, y: at.get(e.id)! }) : e));
+}
+
+/** Everything in the same group as the given elements. */
+export function withGroups(all: CustomEl[], ids: string[]): string[] {
+  const groups = new Set(all.filter((e) => ids.includes(e.id) && e.group).map((e) => e.group));
+  return all.filter((e) => ids.includes(e.id) || (e.group && groups.has(e.group))).map((e) => e.id);
+}

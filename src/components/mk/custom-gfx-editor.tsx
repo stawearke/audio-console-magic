@@ -1,9 +1,34 @@
 // Custom graphic editor: shapes, text and images on a 1920 x 1080 canvas, each with its own entrance.
-import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Lock, LockOpen, Pause, Play, Trash2, Upload } from "lucide-react";
+import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalSpaceBetween,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalSpaceBetween,
+  ArrowDown,
+  ArrowUp,
+  ClipboardPaste,
+  Copy,
+  Eye,
+  EyeOff,
+  Group,
+  Lock,
+  LockOpen,
+  Pause,
+  Play,
+  Redo2,
+  Trash2,
+  Undo2,
+  Ungroup,
+  Upload,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { CustomFields } from "@/components/mk/custom-fields";
-import { CUSTOM_TEMPLATES, makeEl, newElId } from "@/lib/mk/custom-gfx";
+import { alignEls, copyEls, CUSTOM_TEMPLATES, distributeEls, makeEl, newElId, pasteEls, withGroups, type AlignHow } from "@/lib/mk/custom-gfx";
 import { BARLOW_IMPORT_CSS, CUSTOM_KEYFRAMES, customElHtml, customPoseAt, fileToLogo, NEUTRAL_POSE } from "@/lib/mk/graphics";
 import { CUSTOM_ANIMS, CUSTOM_EASES, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType, type CustomKey } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -59,29 +84,88 @@ function Slide({ label, value, min, max, step = 1, unit = "", onChange }: { labe
 
 type Edit = (id: string, patch: Partial<CustomEl>) => void;
 
+export interface Hist {
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+/**
+ * Undo / redo for the custom graphic. Quick edits in a row (a drag, typing) merge into one step;
+ * adding or deleting elements is always its own step. Loading a saved design starts a fresh history.
+ */
+export function useCustomHistory(elements: CustomEl[], apply: (els: CustomEl[]) => void): Hist & { change: (els: CustomEl[]) => void } {
+  const past = useRef<CustomEl[][]>([]);
+  const future = useRef<CustomEl[][]>([]);
+  const cur = useRef(elements);
+  const lastAt = useRef(0);
+  const [, tick] = useState(0);
+  if (elements !== cur.current) {
+    // changed from outside (library load, template): the old steps no longer apply
+    past.current = [];
+    future.current = [];
+    cur.current = elements;
+  }
+  const change = (next: CustomEl[]) => {
+    const now = Date.now();
+    if (!past.current.length || now - lastAt.current > 600 || next.length !== cur.current.length) {
+      past.current.push(cur.current);
+      if (past.current.length > 100) past.current.shift();
+    }
+    lastAt.current = now;
+    future.current = [];
+    cur.current = next;
+    apply(next);
+    tick((n) => n + 1);
+  };
+  const undo = () => {
+    const p = past.current.pop();
+    if (!p) return;
+    future.current.push(cur.current);
+    cur.current = p;
+    lastAt.current = 0;
+    apply(p);
+    tick((n) => n + 1);
+  };
+  const redo = () => {
+    const f = future.current.pop();
+    if (!f) return;
+    past.current.push(cur.current);
+    cur.current = f;
+    lastAt.current = 0;
+    apply(f);
+    tick((n) => n + 1);
+  };
+  return { change, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
+}
+
 /** The canvas: renders the real output HTML, with drag / resize handles on top. */
 export function CustomCanvas({
   elements,
   onChange,
-  sel,
-  setSel,
+  selIds,
+  setSelIds,
   backdropClass,
   scrub,
   onLive,
+  hist,
 }: {
   elements: CustomEl[];
   onChange: (els: CustomEl[]) => void;
-  sel: string | null;
-  setSel: (id: string | null) => void;
+  selIds: string[];
+  setSelIds: (ids: string[]) => void;
   backdropClass: string;
   /** Time (ms) the timeline is parked at; null = play normally. */
   scrub: number | null;
   onLive: () => void;
+  hist: Hist;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [run, setRun] = useState(0);
   const [mode, setMode] = useState<"in" | "out">("in");
-  const drag = useRef<{ id: string; mode: string; sx: number; sy: number; o: CustomEl; k: number } | null>(null);
+  const [guides, setGuides] = useState(false);
+  const drag = useRef<{ mode: string; sx: number; sy: number; k: number; orig: CustomEl[] } | null>(null);
   const els = useRef(elements);
   els.current = elements;
 
@@ -93,64 +177,80 @@ export function CustomCanvas({
     return v;
   };
 
-  const down = (e: React.PointerEvent, el: CustomEl, mode: string) => {
+  const down = (e: React.PointerEvent, el: CustomEl, m: string) => {
     e.stopPropagation();
-    setSel(el.id);
-    if (el.locked) return;
+    const grp = withGroups(els.current, [el.id]);
+    if (e.shiftKey && m === "move") {
+      // shift-click adds to / removes from the selection
+      const has = grp.every((i) => selIds.includes(i));
+      setSelIds(has ? selIds.filter((i) => !grp.includes(i)) : [...new Set([...selIds, ...grp])]);
+      return;
+    }
+    const ids = selIds.includes(el.id) ? selIds : grp;
+    setSelIds(ids);
+    const orig = els.current.filter((q) => ids.includes(q.id) && !q.locked);
+    if (!orig.length) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const r = box.current!.getBoundingClientRect();
-    drag.current = { id: el.id, mode, sx: e.clientX, sy: e.clientY, o: { ...el }, k: CW / r.width };
+    drag.current = { mode: m, sx: e.clientX, sy: e.clientY, k: CW / r.width, orig: orig.map((q) => ({ ...q })) };
   };
   const move = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
     const dx = (e.clientX - d.sx) * d.k;
     const dy = (e.clientY - d.sy) * d.k;
-    let { x, y, w, h } = d.o;
     if (d.mode === "move") {
-      x = snap(d.o.x + dx, [0, (CW - w) / 2, CW - w]);
-      y = snap(d.o.y + dy, [0, (CH - h) / 2, CH - h]);
-    } else {
-      if (d.mode.includes("e")) w = Math.max(10, d.o.w + dx);
-      if (d.mode.includes("s")) h = Math.max(10, d.o.h + dy);
-      if (d.mode.includes("w")) {
-        w = Math.max(10, d.o.w - dx);
-        x = d.o.x + d.o.w - w;
-      }
-      if (d.mode.includes("n")) {
-        h = Math.max(10, d.o.h - dy);
-        y = d.o.y + d.o.h - h;
-      }
+      const x0 = Math.min(...d.orig.map((o) => o.x));
+      const y0 = Math.min(...d.orig.map((o) => o.y));
+      const bw = Math.max(...d.orig.map((o) => o.x + o.w)) - x0;
+      const bh = Math.max(...d.orig.map((o) => o.y + o.h)) - y0;
+      const ddx = snap(x0 + dx, [0, (CW - bw) / 2, CW - bw]) - x0;
+      const ddy = snap(y0 + dy, [0, (CH - bh) / 2, CH - bh]) - y0;
+      onChange(
+        els.current.map((q) => {
+          const o = d.orig.find((z) => z.id === q.id);
+          return o ? { ...q, x: Math.round(o.x + ddx), y: Math.round(o.y + ddy) } : q;
+        }),
+      );
+      return;
     }
-    onChange(els.current.map((q) => (q.id === d.id ? { ...q, x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) } : q)));
+    const o = d.orig[0]!;
+    let { x, y, w, h } = o;
+    if (d.mode.includes("e")) w = Math.max(10, o.w + dx);
+    if (d.mode.includes("s")) h = Math.max(10, o.h + dy);
+    if (d.mode.includes("w")) {
+      w = Math.max(10, o.w - dx);
+      x = o.x + o.w - w;
+    }
+    if (d.mode.includes("n")) {
+      h = Math.max(10, o.h - dy);
+      y = o.y + o.h - h;
+    }
+    onChange(els.current.map((q) => (q.id === o.id ? { ...q, x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) } : q)));
   };
   const up = () => {
     drag.current = null;
   };
 
-  const key = (e: React.KeyboardEvent) => {
-    const el = elements.find((q) => q.id === sel);
-    if (!el || (e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
-    const s = e.shiftKey ? 10 : 1;
-    const patch: Partial<CustomEl> | null =
-      e.key === "ArrowLeft" ? { x: el.x - s } : e.key === "ArrowRight" ? { x: el.x + s } : e.key === "ArrowUp" ? { y: el.y - s } : e.key === "ArrowDown" ? { y: el.y + s } : null;
-    if (patch && !el.locked) {
-      e.preventDefault();
-      onChange(elements.map((q) => (q.id === el.id ? { ...q, ...patch } : q)));
-    } else if (e.key === "Delete" || e.key === "Backspace") {
-      e.preventDefault();
-      onChange(elements.filter((q) => q.id !== el.id));
-      setSel(null);
-    }
-  };
-
+  const tb = "mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px] disabled:opacity-40";
   return (
     <div className="grid gap-1">
       <div className="flex flex-wrap items-center gap-1">
-        <span className="mk-label mr-auto text-[9px]">{scrub === null ? "Drag to move · corners to resize · arrows nudge · Delete removes" : `Timeline preview at ${(scrub / 1000).toFixed(2)} s — press Live to edit on the canvas`}</span>
+        <span className="mk-label mr-auto text-[9px]">
+          {scrub === null ? "Drag to move · Shift-click adds · arrows nudge · Ctrl+Z undo · Ctrl+C / V copy" : `Timeline preview at ${(scrub / 1000).toFixed(2)} s — press Live to edit on the canvas`}
+        </span>
+        <button type="button" className={tb} disabled={!hist.canUndo} onClick={hist.undo} title="Undo (Ctrl+Z)">
+          <Undo2 className="h-3 w-3" />
+        </button>
+        <button type="button" className={tb} disabled={!hist.canRedo} onClick={hist.redo} title="Redo (Ctrl+Shift+Z)">
+          <Redo2 className="h-3 w-3" />
+        </button>
+        <button type="button" className={cn(tb, guides && "mk-lit-amber")} onClick={() => setGuides((g) => !g)} title="Show the TV safe areas and centre lines">
+          Guides
+        </button>
         <button
           type="button"
-          className="mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px]"
+          className={tb}
           onClick={() => {
             setMode("in");
             setRun((n) => n + 1);
@@ -161,7 +261,7 @@ export function CustomCanvas({
         </button>
         <button
           type="button"
-          className="mk-button flex h-6 items-center gap-1 rounded-[3px] px-2 text-[9px]"
+          className={tb}
           onClick={() => {
             setMode("out");
             setRun((n) => n + 1);
@@ -173,51 +273,59 @@ export function CustomCanvas({
       </div>
       <div
         ref={box}
-        tabIndex={0}
-        onKeyDown={key}
         onPointerMove={move}
         onPointerUp={up}
-        onPointerDown={() => setSel(null)}
+        onPointerDown={(e) => {
+          if (!e.shiftKey) setSelIds([]);
+        }}
         className={cn("relative aspect-video w-full select-none overflow-hidden rounded-[3px] border border-white/10 outline-none", backdropClass)}
         style={{ containerType: "inline-size" }}
       >
         <div key={run} className="pointer-events-none absolute inset-0" dangerouslySetInnerHTML={{ __html: html }} />
+        {guides && (
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute border border-dashed border-sky-300/70" style={{ inset: "3.5%" }} title="Action safe" />
+            <div className="absolute border border-dashed border-amber-300/70" style={{ inset: "5%" }} title="Title safe" />
+            <div className="absolute left-1/2 top-0 h-full w-px bg-white/30" />
+            <div className="absolute left-0 top-1/2 h-px w-full bg-white/30" />
+          </div>
+        )}
         {scrub === null &&
           elements.map((el) => {
-          if (!el.visible) return null;
-          const on = el.id === sel;
-          return (
-            <div
-              key={el.id}
-              onPointerDown={(e) => down(e, el, "move")}
-              className={cn("absolute", on ? "outline outline-2 outline-amber-400" : "hover:outline hover:outline-1 hover:outline-white/40", el.locked ? "cursor-not-allowed" : "cursor-move")}
-              style={{
-                left: `${(el.x / CW) * 100}%`,
-                top: `${(el.y / CH) * 100}%`,
-                width: `${(el.w / CW) * 100}%`,
-                height: `${(el.h / CH) * 100}%`,
-                transform: `rotate(${el.rot}deg)`,
-              }}
-            >
-              {on &&
-                !el.locked &&
-                (["nw", "ne", "sw", "se"] as const).map((m) => (
-                  <span
-                    key={m}
-                    onPointerDown={(e) => down(e, el, m)}
-                    className="absolute h-2.5 w-2.5 rounded-[2px] border border-black bg-amber-300"
-                    style={{
-                      left: m.includes("w") ? -5 : undefined,
-                      right: m.includes("e") ? -5 : undefined,
-                      top: m.includes("n") ? -5 : undefined,
-                      bottom: m.includes("s") ? -5 : undefined,
-                      cursor: m === "nw" || m === "se" ? "nwse-resize" : "nesw-resize",
-                    }}
-                  />
-                ))}
-            </div>
-          );
-        })}
+            if (!el.visible) return null;
+            const on = selIds.includes(el.id);
+            const handles = on && selIds.length === 1 && !el.locked;
+            return (
+              <div
+                key={el.id}
+                onPointerDown={(e) => down(e, el, "move")}
+                className={cn("absolute", on ? "outline outline-2 outline-amber-400" : "hover:outline hover:outline-1 hover:outline-white/40", el.locked ? "cursor-not-allowed" : "cursor-move")}
+                style={{
+                  left: `${(el.x / CW) * 100}%`,
+                  top: `${(el.y / CH) * 100}%`,
+                  width: `${(el.w / CW) * 100}%`,
+                  height: `${(el.h / CH) * 100}%`,
+                  transform: `rotate(${el.rot}deg)`,
+                }}
+              >
+                {handles &&
+                  (["nw", "ne", "sw", "se"] as const).map((m) => (
+                    <span
+                      key={m}
+                      onPointerDown={(e) => down(e, el, m)}
+                      className="absolute h-2.5 w-2.5 rounded-[2px] border border-black bg-amber-300"
+                      style={{
+                        left: m.includes("w") ? -5 : undefined,
+                        right: m.includes("e") ? -5 : undefined,
+                        top: m.includes("n") ? -5 : undefined,
+                        bottom: m.includes("s") ? -5 : undefined,
+                        cursor: m === "nw" || m === "se" ? "nwse-resize" : "nesw-resize",
+                      }}
+                    />
+                  ))}
+              </div>
+            );
+          })}
       </div>
     </div>
   );
@@ -227,8 +335,8 @@ export function CustomCanvas({
 export function CustomInspector({
   elements,
   onChange,
-  sel,
-  setSel,
+  selIds,
+  setSelIds,
   say,
   time,
   selKey,
@@ -236,14 +344,24 @@ export function CustomInspector({
 }: {
   elements: CustomEl[];
   onChange: (els: CustomEl[]) => void;
-  sel: string | null;
-  setSel: (id: string | null) => void;
+  selIds: string[];
+  setSelIds: (ids: string[]) => void;
   say: (m: string) => void;
   time: number | null;
   selKey: string | null;
   setSelKey: (id: string | null) => void;
 }) {
+  const sel = selIds.length === 1 ? selIds[0]! : null;
+  const setSel = (id: string | null) => setSelIds(id ? [id] : []);
   const el = elements.find((q) => q.id === sel) ?? null;
+  const picked = elements.filter((q) => selIds.includes(q.id));
+  const doPaste = () => {
+    const r = pasteEls(elements);
+    if (!r) return say(elements.length ? "Nothing copied, or 60 elements is the limit" : "Nothing copied yet");
+    onChange(r.els);
+    setSelIds(r.ids);
+  };
+  const doAlign = (how: AlignHow) => onChange(alignEls(elements, selIds, how));
   const edit: Edit = (id, patch) => onChange(elements.map((q) => (q.id === id ? { ...q, ...patch } : q)));
   const add = (type: CustomElType, over: Partial<CustomEl> = {}) => {
     if (elements.length >= 60) return say("60 elements is the limit");
@@ -334,14 +452,68 @@ export function CustomInspector({
         </span>
       </div>
 
+      {picked.length > 0 && (
+        <div className="grid gap-1 rounded-[3px] border border-white/10 p-1">
+          <span className="mk-label text-[9px]">{picked.length === 1 ? "Selected" : `${picked.length} selected`}</span>
+          <div className="flex flex-wrap gap-1">
+            {(
+              [
+                ["left", AlignStartVertical, "Align left"],
+                ["hcenter", AlignCenterVertical, "Centre horizontally"],
+                ["right", AlignEndVertical, "Align right"],
+                ["top", AlignStartHorizontal, "Align top"],
+                ["vcenter", AlignCenterHorizontal, "Centre vertically"],
+                ["bottom", AlignEndHorizontal, "Align bottom"],
+              ] as const
+            ).map(([how, Icon, label]) => (
+              <button key={how} type="button" title={`${label}${picked.length === 1 ? " (on the canvas)" : " (to the selection)"}`} className={icon} onClick={() => doAlign(how)}>
+                <Icon className="h-3 w-3" />
+              </button>
+            ))}
+            <button type="button" title="Space evenly across (3 or more)" className={icon} disabled={picked.length < 3} onClick={() => onChange(distributeEls(elements, selIds, "h"))}>
+              <AlignHorizontalSpaceBetween className="h-3 w-3" />
+            </button>
+            <button type="button" title="Space evenly down (3 or more)" className={icon} disabled={picked.length < 3} onClick={() => onChange(distributeEls(elements, selIds, "v"))}>
+              <AlignVerticalSpaceBetween className="h-3 w-3" />
+            </button>
+            <span className="mx-1 w-px bg-white/15" />
+            <button type="button" title="Group (select together, move together)" className={icon} disabled={picked.length < 2} onClick={() => { const g = newElId(); onChange(elements.map((q) => (selIds.includes(q.id) ? { ...q, group: g } : q))); }}>
+              <Group className="h-3 w-3" />
+            </button>
+            <button type="button" title="Ungroup" className={icon} disabled={!picked.some((q) => q.group)} onClick={() => onChange(elements.map((q) => (selIds.includes(q.id) ? { ...q, group: "" } : q)))}>
+              <Ungroup className="h-3 w-3" />
+            </button>
+            <span className="mx-1 w-px bg-white/15" />
+            <button type="button" title="Copy (Ctrl+C)" className={icon} onClick={() => copyEls(elements, selIds)}>
+              <Copy className="h-3 w-3" />
+            </button>
+            <button type="button" title="Paste (Ctrl+V)" className={icon} onClick={doPaste}>
+              <ClipboardPaste className="h-3 w-3" />
+            </button>
+            <button type="button" title="Delete selected" className={icon} onClick={() => { onChange(elements.filter((q) => !selIds.includes(q.id))); setSelIds([]); }}>
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid max-h-40 gap-0.5 overflow-y-auto rounded-[3px] border border-white/10 p-1">
         {elements.length === 0 && <span className="p-2 text-[10px] text-muted-foreground">Empty. Add a shape or text above.</span>}
         {elements
           .map((e, i) => ({ e, i }))
           .reverse()
           .map(({ e, i }) => (
-            <div key={e.id} className={cn("flex items-center gap-1 rounded-[3px] px-1", e.id === sel && "bg-amber-400/15")}>
-              <button type="button" className="min-w-0 flex-1 truncate py-1 text-left text-[11px]" onClick={() => setSel(e.id)}>
+            <div key={e.id} className={cn("flex items-center gap-1 rounded-[3px] px-1", selIds.includes(e.id) && "bg-amber-400/15")}>
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate py-1 text-left text-[11px]"
+                onClick={(ev) => {
+                  const grp = withGroups(elements, [e.id]);
+                  if (ev.shiftKey) setSelIds(grp.every((i) => selIds.includes(i)) ? selIds.filter((i) => !grp.includes(i)) : [...new Set([...selIds, ...grp])]);
+                  else setSelIds(grp);
+                }}
+              >
+                {e.group && <span className="mr-1 text-[9px] opacity-60">▣</span>}
                 {e.type === "text" ? `“${e.text.slice(0, 22)}”` : e.name}
               </button>
               <button type="button" title={e.visible ? "Hide" : "Show"} className={icon} onClick={() => edit(e.id, { visible: !e.visible })}>
@@ -535,7 +707,9 @@ export function CustomInspector({
           {el.loop !== "none" && <Num label="One cycle (ms)" value={el.loopMs} min={200} max={10000} step={100} onChange={(loopMs) => edit(el.id, { loopMs })} />}
         </div>
       ) : (
-        <span className="text-[10px] text-muted-foreground">Select an element on the canvas or in the list to edit it.</span>
+        <span className="text-[10px] text-muted-foreground">
+          {picked.length > 1 ? "Several selected: align, group, copy or delete them above, or pick one to edit its properties." : "Select an element on the canvas or in the list to edit it."}
+        </span>
       )}
     </div>
   );
@@ -548,8 +722,10 @@ const byTime = (a: CustomKey, b: CustomKey) => a.t - b.t;
 export function CustomStage({
   elements,
   onChange,
-  sel,
-  setSel,
+  selIds,
+  setSelIds,
+  hist,
+  say,
   backdropClass,
   time,
   setTime,
@@ -558,8 +734,10 @@ export function CustomStage({
 }: {
   elements: CustomEl[];
   onChange: (els: CustomEl[]) => void;
-  sel: string | null;
-  setSel: (id: string | null) => void;
+  selIds: string[];
+  setSelIds: (ids: string[]) => void;
+  hist: Hist;
+  say: (m: string) => void;
   backdropClass: string;
   time: number | null;
   setTime: (t: number | null) => void;
@@ -571,6 +749,61 @@ export function CustomStage({
   const els = useRef(elements);
   els.current = elements;
   const drag = useRef<{ el: string; key: string } | null>(null);
+  const sel = selIds.length === 1 ? selIds[0]! : null;
+  const setSel = (id: string | null) => setSelIds(id ? [id] : []);
+
+  // Keyboard: undo / redo, copy / paste, select all, nudge, delete (never while typing in a field).
+  const kb = useRef<(e: KeyboardEvent) => void>(() => {});
+  kb.current = (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+    const all = els.current;
+    const mod = e.ctrlKey || e.metaKey;
+    const k = e.key.toLowerCase();
+    if (mod && k === "z") {
+      e.preventDefault();
+      if (e.shiftKey) hist.redo();
+      else hist.undo();
+    } else if (mod && k === "y") {
+      e.preventDefault();
+      hist.redo();
+    } else if (mod && k === "a") {
+      e.preventDefault();
+      setSelIds(all.map((q) => q.id));
+    } else if (mod && k === "c" && selIds.length) {
+      e.preventDefault();
+      copyEls(all, selIds);
+    } else if (mod && k === "v") {
+      e.preventDefault();
+      const r = pasteEls(all);
+      if (!r) return say("Nothing copied, or 60 elements is the limit");
+      onChange(r.els);
+      setSelIds(r.ids);
+    } else if (mod && k === "d" && selIds.length) {
+      e.preventDefault();
+      copyEls(all, selIds);
+      const r = pasteEls(all);
+      if (r) {
+        onChange(r.els);
+        setSelIds(r.ids);
+      }
+    } else if ((k === "delete" || k === "backspace") && selIds.length) {
+      e.preventDefault();
+      onChange(all.filter((q) => !selIds.includes(q.id)));
+      setSelIds([]);
+    } else if (selIds.length && ["arrowleft", "arrowright", "arrowup", "arrowdown"].includes(k)) {
+      e.preventDefault();
+      const s = e.shiftKey ? 10 : 1;
+      const dx = k === "arrowleft" ? -s : k === "arrowright" ? s : 0;
+      const dy = k === "arrowup" ? -s : k === "arrowdown" ? s : 0;
+      onChange(all.map((q) => (selIds.includes(q.id) && !q.locked ? { ...q, x: q.x + dx, y: q.y + dy } : q)));
+    }
+  };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => kb.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   const total = Math.max(
     3000,
@@ -610,7 +843,7 @@ export function CustomStage({
 
   return (
     <div className="grid gap-1.5">
-      <CustomCanvas elements={elements} onChange={onChange} sel={sel} setSel={setSel} backdropClass={backdropClass} scrub={time} onLive={() => { setTime(null); setPlaying(false); }} />
+      <CustomCanvas elements={elements} onChange={onChange} selIds={selIds} setSelIds={setSelIds} hist={hist} backdropClass={backdropClass} scrub={time} onLive={() => { setTime(null); setPlaying(false); }} />
 
       <div className="grid gap-1 rounded-[3px] border border-white/10 p-1.5">
         <div className="flex flex-wrap items-center gap-1">

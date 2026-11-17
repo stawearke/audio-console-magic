@@ -239,6 +239,8 @@ export interface CustomEl {
   kfLoop: boolean;
   /** Fill-in label. When set, the crew can edit this text / image from the live panel without opening the editor. */
   field: string;
+  /** Elements sharing a group id select and move together. */
+  group: string;
 }
 
 export interface GraphicsConfig {
