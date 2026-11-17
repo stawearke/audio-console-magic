@@ -185,6 +185,11 @@ export interface Transport {
   setFieldUrl?(n: number, url: string): Promise<void>;
   /** The address the browser source of field unit n currently loads, or null if there is none. */
   getFieldUrl?(n: number): Promise<string | null>;
+  /**
+   * Keep the audio of field feed n on the mix while its camera is off air: the feed is placed (off-canvas, invisible)
+   * in every other scene, so OBS always counts it as active. `on = false` removes those items again.
+   */
+  setFieldAudioEverywhere?(n: number, on: boolean): Promise<void>;
   /** Re-emit authoritative program / preview scenes. */
   resync(): Promise<void>;
   /** Shared setup between desks, kept in OBS itself (one slot per key). Absent on Demo Mode. */

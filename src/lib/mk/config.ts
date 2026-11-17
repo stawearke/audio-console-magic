@@ -318,6 +318,9 @@ export function loadConfig(): MkConfig {
       hiddenAudio: Array.isArray(parsed.hiddenAudio)
         ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string")
         : [],
+      fieldAudioAlways: Array.isArray(parsed.fieldAudioAlways)
+        ? parsed.fieldAudioAlways.filter((n): n is string => typeof n === "string")
+        : [],
       limiter: {
         on: typeof parsed.limiter?.on === "boolean" ? parsed.limiter.on : DEFAULT_LIMITER.on,
         threshold:

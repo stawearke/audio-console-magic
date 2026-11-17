@@ -450,6 +450,30 @@ export class SwitcherEngine {
     await t.sharedSet("fieldRoom", { rev: Date.now(), by: deskId(), value: room });
   }
 
+  /** Keep field unit n's audio on the mix even when its camera is not on air (or let audio-follow-video mute it again). */
+  async setFieldAudioAlways(n: number, on: boolean): Promise<void> {
+    const name = `FIELD ${n} feed`;
+    const list = this.state.config.fieldAudioAlways.filter((x) => x !== name);
+    this.updateConfig({ fieldAudioAlways: on ? [...list, name] : list });
+    await this.transport?.setFieldAudioEverywhere?.(n, on);
+    if (on) {
+      // AFV may have muted it earlier: bring it back once, after that the fader and mute button are the operator's.
+      const ch = this.state.audio.find((c) => c.name === name);
+      if (ch?.muted) {
+        this.onTransportEvent({ type: "audioChannel", name, muted: false });
+        await this.transport?.setInputMute(name, false).catch(() => {});
+      }
+    } else this.applyAfv();
+  }
+
+  /** Re-apply "always on" to every field feed that has it, e.g. after new scenes were added in OBS. */
+  async syncFieldAudio(): Promise<void> {
+    for (const name of this.state.config.fieldAudioAlways) {
+      const n = Number(/^FIELD (\d+) feed$/.exec(name)?.[1]);
+      if (n) await this.transport?.setFieldAudioEverywhere?.(n, true);
+    }
+  }
+
   async getFieldUrl(n: number): Promise<string | null> {
     return (await this.transport?.getFieldUrl?.(n)) ?? null;
   }
@@ -1187,6 +1211,8 @@ export class SwitcherEngine {
     for (const channel of this.state.audio) {
       const cam = this.audioCam(channel.name);
       if (cam === null) continue;
+      // A field feed set to "always on" is never muted by audio-follow-video.
+      if (this.state.config.fieldAudioAlways.includes(channel.name)) continue;
       const shouldMute = cam !== program;
       if (channel.muted !== shouldMute) {
         this.onTransportEvent({ type: "audioChannel", name: channel.name, muted: shouldMute });

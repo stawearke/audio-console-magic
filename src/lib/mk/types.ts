@@ -613,6 +613,8 @@ export interface MkConfig {
   limiter: LimiterConfig;
   /** Audio inputs the operator hid from the mixer (they stay in OBS and on the mix). */
   hiddenAudio: string[];
+  /** Field feeds whose audio stays on the mix even when their camera is not on air (input names, e.g. "FIELD 1 feed"). */
+  fieldAudioAlways: string[];
   /** Pre-planned run of show (titles + planned lengths) shown in the Tools panel. */
   rundown: RundownItem[];
   /** Squeeze / PiP / Merge settings. */
@@ -719,6 +721,7 @@ export const DEFAULT_CONFIG: MkConfig = {
   listenIce: "",
   limiter: DEFAULT_LIMITER,
   hiddenAudio: [],
+  fieldAudioAlways: [],
   rundown: [],
   fx: DEFAULT_FX,
   pips: DEFAULT_PIPS,

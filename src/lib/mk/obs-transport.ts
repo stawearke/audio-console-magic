@@ -1528,6 +1528,41 @@ export class ObsTransport implements Transport {
     });
   }
 
+  async setFieldAudioEverywhere(n: number, on: boolean) {
+    const input = `FIELD ${n} feed`;
+    const scenes = await this.getScenes();
+    const own = scenes.find((s) => new RegExp(`^FIELD ${n}\\b`, "i").test(s));
+    for (const sceneName of scenes) {
+      if (sceneName === own || sceneName === GFX_SCENE) continue;
+      try {
+        let id: number | null = null;
+        try {
+          id = (await this.obs.call("GetSceneItemId", { sceneName, sourceName: input })).sceneItemId;
+        } catch {
+          /* not in this scene yet */
+        }
+        if (!on) {
+          if (id !== null) await this.obs.call("RemoveSceneItem", { sceneName, sceneItemId: id });
+          continue;
+        }
+        if (id === null) {
+          id = (await this.obs.call("CreateSceneItem", { sceneName, sourceName: input, sceneItemEnabled: true })).sceneItemId;
+          // Far outside the canvas: never seen on air, but OBS still counts the input as active, so its audio keeps flowing.
+          await this.obs.call("SetSceneItemTransform", {
+            sceneName,
+            sceneItemId: id,
+            sceneItemTransform: { positionX: -6000, positionY: -6000 },
+          });
+          await this.obs.call("SetSceneItemLocked", { sceneName, sceneItemId: id, sceneItemLocked: true }).catch(() => {});
+        } else {
+          await this.obs.call("SetSceneItemEnabled", { sceneName, sceneItemId: id, sceneItemEnabled: true });
+        }
+      } catch {
+        /* a scene we cannot edit (e.g. being removed): skip it */
+      }
+    }
+  }
+
   async getFieldUrl(n: number) {
     try {
       const r = await this.obs.call("GetInputSettings", { inputName: `FIELD ${n} feed` });
