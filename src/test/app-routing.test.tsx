@@ -9,7 +9,7 @@ import { routeTree } from "@/routeTree.gen";
 describe("Route table", () => {
   const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
 
-  it.each(["/", "/cam", "/graphics", "/playout", "/prompter", "/rundown", "/settings", "/sounds", "/audio"])(
+  it.each(["/", "/cam", "/graphics", "/playout", "/prompter", "/rundown", "/settings", "/sounds", "/audio", "/field"])(
     "matches a page for %s",
     (path) => {
       expect(router.matchRoutes(path).at(-1)?.routeId).not.toBe(rootRouteId);
