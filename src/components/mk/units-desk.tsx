@@ -2,8 +2,8 @@ import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FIELD_QUALITY, reporterUrl, viewerUrl } from "@/lib/mk/field-link";
-import { FIELD_FIRST_SLOT, fieldUnits, useFieldUnits, useFieldViewer, type FieldUnitInfo } from "@/lib/mk/field-units";
+import { DEFAULT_FIELD_FPS, DEFAULT_FIELD_ORIENT, DEFAULT_FIELD_QUALITY, fieldKbps, FIELD_FPS, FIELD_KBPS, FIELD_QUALITY, reporterUrl, viewerUrl, type FieldSetup } from "@/lib/mk/field-link";
+import { FIELD_FIRST_SLOT, fieldUnits, setupOf, useFieldUnits, useFieldViewer, type FieldUnitInfo } from "@/lib/mk/field-units";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { camLabel } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -206,12 +206,27 @@ function UnitCard({
   onQr: () => void;
 }) {
   const [watch, setWatch] = useState(false);
-  const { state, stream, setQuality } = useFieldViewer(room, u.n, watch, u.quality);
+  const { state, stream, setSetup } = useFieldViewer(room, u.n, watch, setupOf(u));
   const sw = useSwitcher();
   const inputName = `FIELD ${u.n} feed`;
   const always = sw.config.fieldAudioAlways.includes(inputName);
   const strip = sw.audio.find((c) => c.name === inputName);
-  const shownQuality = u.quality ?? (state.quality || "");
+  // What the director has chosen (portrait, 1080p HQ, 30 fps, automatic bitrate until changed).
+  const wantOrient = u.orient ?? DEFAULT_FIELD_ORIENT;
+  const wantRes = u.quality ?? DEFAULT_FIELD_QUALITY;
+  const wantFps = u.fps ?? DEFAULT_FIELD_FPS;
+  const wantKbps = u.kbps ?? 0;
+  const pick = (patch: Partial<FieldSetup>) => {
+    fieldUnits.update(u.n, {
+      ...(patch.res !== undefined ? { quality: patch.res } : {}),
+      ...(patch.fps !== undefined ? { fps: patch.fps } : {}),
+      ...(patch.orient !== undefined ? { orient: patch.orient } : {}),
+      ...(patch.kbps !== undefined ? { kbps: patch.kbps } : {}),
+    });
+    setSetup(patch);
+  };
+  const online = state.link !== "offline" && state.link !== "connecting";
+  const sendingShort = FIELD_QUALITY.find((x) => x.id === state.quality)?.short ?? state.quality;
   const video = useRef<HTMLVideoElement>(null);
   const [copied, setCopied] = useState(false);
   const [obsUrl, setObsUrl] = useState<string | null | undefined>(undefined);
@@ -327,30 +342,74 @@ function UnitCard({
         )}
       </div>
 
-      <div className="grid gap-2 rounded-[3px] border border-white/10 p-2 sm:grid-cols-2">
-        <label className="grid gap-1">
-          <span className="mk-label text-[9px]">CAMERA RESOLUTION (director controls the reporter's phone)</span>
-          <select
-            value={shownQuality}
-            onChange={(e) => {
-              fieldUnits.update(u.n, { quality: e.target.value });
-              setQuality(e.target.value);
-            }}
-            className={cn(input, "w-full")}
-          >
-            {!shownQuality && <option value="">Reporter's own setting</option>}
-            {FIELD_QUALITY.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.label}
-              </option>
-            ))}
-          </select>
-          {state.link !== "offline" && state.quality && (
-            <span className="font-mono text-[10px] text-muted-foreground">
-              Reporter sending: {FIELD_QUALITY.find((x) => x.id === state.quality)?.short ?? state.quality}
-            </span>
-          )}
-        </label>
+      <div className="grid gap-2 rounded-[3px] border border-white/10 p-2">
+        <span className="mk-label text-[9px]">PICTURE (the director controls the reporter's phone)</span>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ["portrait", "PORTRAIT 9:16", "Phone default"],
+              ["landscape", "LANDSCAPE 16:9", "Forces the phone sideways"],
+            ] as const
+          ).map(([id, label, hint]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={wantOrient === id}
+              className={cn("mk-button flex h-12 flex-col items-center justify-center rounded-[3px] px-2 text-[11px]", wantOrient === id && "mk-lit-preview")}
+              onClick={() => pick({ orient: id })}
+            >
+              <span className="font-bold tracking-[0.1em]">{label}</span>
+              <span className="font-mono text-[9px] opacity-70">{hint}</span>
+            </button>
+          ))}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="mk-label text-[9px]">RESOLUTION</span>
+            <select value={wantRes} onChange={(e) => pick({ res: e.target.value })} className={cn(input, "w-full")}>
+              {FIELD_QUALITY.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1">
+            <span className="mk-label text-[9px]">FRAME RATE</span>
+            <select value={wantFps} onChange={(e) => pick({ fps: Number(e.target.value) })} className={cn(input, "w-full")}>
+              {FIELD_FPS.map((f) => (
+                <option key={f} value={f}>
+                  {f} fps
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1">
+            <span className="mk-label text-[9px]">BITRATE</span>
+            <select value={wantKbps} onChange={(e) => pick({ kbps: Number(e.target.value) })} className={cn(input, "w-full")}>
+              {FIELD_KBPS.map((k) => (
+                <option key={k} value={k}>
+                  {k === 0 ? `Auto · ${(fieldKbps(wantRes, wantFps) / 1000).toFixed(1)} Mbps` : `${k / 1000} Mbps`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {online && state.quality && (
+          <span className="font-mono text-[10px] text-muted-foreground">
+            Reporter sending: {sendingShort}
+            {state.fps > 0 ? ` · ${state.fps} fps` : ""}
+            {state.kbps > 0 ? ` · ${(state.kbps / 1000).toFixed(1)} Mbps` : ""} · {state.orient === "portrait" ? "portrait" : "landscape"}
+          </span>
+        )}
+        {online && state.held && state.held !== state.orient && (
+          <span className="font-mono text-[10px] text-amber-400">
+            The phone is held {state.held === "portrait" ? "upright" : "sideways"}. The reporter has been asked to {state.orient === "landscape" ? "turn it sideways" : "hold it upright"}.
+          </span>
+        )}
+      </div>
+
+      <div className="grid gap-2 rounded-[3px] border border-white/10 p-2">
         <div className="grid gap-1">
           <span className="mk-label text-[9px]">AUDIO</span>
           <button

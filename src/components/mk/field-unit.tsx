@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { DEFAULT_FIELD_QUALITY, FIELD_QUALITY, FieldReporter, type FieldOrient } from "@/lib/mk/field-link";
+import {
+  captureSize,
+  DEFAULT_FIELD_FPS,
+  DEFAULT_FIELD_ORIENT,
+  DEFAULT_FIELD_QUALITY,
+  fieldKbps,
+  FIELD_FPS,
+  FIELD_KBPS,
+  FIELD_QUALITY,
+  FieldReporter,
+  type FieldOrient,
+  type FieldSetup,
+} from "@/lib/mk/field-link";
 import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
 import { cn } from "@/lib/utils";
 
@@ -11,11 +23,12 @@ const QUALITY = FIELD_QUALITY;
 type Dev = { id: string; label: string };
 
 const ORIENT = [
-  { id: "auto", label: "Auto (follows how the phone is held)" },
-  { id: "landscape", label: "Landscape · wide 16:9" },
-  { id: "portrait", label: "Portrait · tall 9:16" },
+  { id: "portrait", label: "Portrait · tall 9:16 (phone default)" },
+  { id: "landscape", label: "Landscape · wide 16:9 (turns the phone sideways)" },
 ] as const;
-type OrientChoice = (typeof ORIENT)[number]["id"];
+
+/** Phone controls are real phones only: a laptop webcam is always wide and must not be nagged to turn. */
+const isPhone = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
 
 /** Reporter page: pick camera + mic (laptop webcam, capture card, phone camera), go live to the relay. */
 export function FieldUnit() {
@@ -44,8 +57,12 @@ export function FieldUnit() {
   const [cam, setCam] = useState("");
   const [mic, setMic] = useState("");
   const [quality, setQuality] = useState<string>(DEFAULT_FIELD_QUALITY);
-  const [orientChoice, setOrientChoice] = useState<OrientChoice>("auto");
-  const [deviceTall, setDeviceTall] = useState(false);
+  const [orient, setOrient] = useState<FieldOrient>(DEFAULT_FIELD_ORIENT);
+  const [fps, setFps] = useState<number>(DEFAULT_FIELD_FPS);
+  const [kbpsPick, setKbpsPick] = useState(0);
+  const [deviceTall, setDeviceTall] = useState(true);
+  const [ignoreTurn, setIgnoreTurn] = useState(false);
+  const [lockNote, setLockNote] = useState("");
   const qualityRef = useRef(quality);
   qualityRef.current = quality;
   const [live, setLive] = useState(false);
@@ -62,17 +79,16 @@ export function FieldUnit() {
   const last = useRef({ bytes: 0, at: 0 });
 
   const secure = typeof window === "undefined" || window.isSecureContext;
-  const qual = QUALITY.find((x) => x.id === quality) ?? QUALITY[0];
-  const orient: FieldOrient =
-    orientChoice === "auto" ? (deviceTall ? "portrait" : "landscape") : orientChoice;
   const portrait = orient === "portrait";
-  // Portrait = the same picture turned on its side: 1080x1920 instead of 1920x1080.
-  const capW = portrait ? qual.h : qual.w;
-  const capH = portrait ? qual.w : qual.h;
-  const orientRef = useRef<FieldOrient>(orient);
-  orientRef.current = orient;
+  // Portrait = the same picture standing up: 1080 x 1920 instead of 1920 x 1080.
+  const { w: capW, h: capH } = captureSize(quality, orient);
+  const kbpsEff = fieldKbps(quality, fps, kbpsPick);
+  const held: FieldOrient = deviceTall ? "portrait" : "landscape";
+  const needTurn = isPhone() && held !== orient && !ignoreTurn;
+  const metaRef = useRef({ orient, fps, kbps: kbpsEff, held });
+  metaRef.current = { orient, fps, kbps: kbpsEff, held };
 
-  // Auto: follow the phone when it is turned.
+  // How the phone is held right now (the director sees it, and we ask for a turn if it does not match).
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const mq = window.matchMedia("(orientation: portrait)");
@@ -82,6 +98,28 @@ export function FieldUnit() {
     return () => mq.removeEventListener("change", on);
   }, []);
 
+  // Lock the screen to the way the director wants it. Browsers only allow this full screen and after a tap,
+  // so GO LIVE and the FULL SCREEN button ask for it; where it is refused (iPhone) the big "turn your phone" notice stays.
+  const lockPhone = useCallback(async (o: FieldOrient, gesture: boolean) => {
+    try {
+      if (gesture && !document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+    } catch {
+      /* refused: carry on, the lock below may still work */
+    }
+    try {
+      const so = (typeof screen !== "undefined" ? screen.orientation : undefined) as (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | undefined;
+      if (!so?.lock) throw new Error("unsupported");
+      await so.lock(o);
+      setLockNote("");
+    } catch {
+      setLockNote("This phone will not lock its screen. Turn it by hand when asked.");
+    }
+  }, []);
+  useEffect(() => {
+    if (isPhone()) void lockPhone(orient, false);
+    setIgnoreTurn(false);
+  }, [orient, lockPhone]);
+
   const open = useCallback(async () => {
     stream.current?.getTracks().forEach((t) => t.stop());
     const s = await navigator.mediaDevices.getUserMedia({
@@ -90,7 +128,7 @@ export function FieldUnit() {
         width: { ideal: capW },
         height: { ideal: capH },
         aspectRatio: { ideal: capW / capH },
-        frameRate: { ideal: 30 },
+        frameRate: { ideal: fps },
       },
       audio: {
         ...(mic ? { deviceId: { exact: mic } } : {}),
@@ -111,7 +149,7 @@ export function FieldUnit() {
     setCams(dev("videoinput"));
     setMics(dev("audioinput"));
     return s;
-  }, [cam, mic, capW, capH]);
+  }, [cam, mic, capW, capH, fps]);
 
   // preview + mic meter
   useEffect(() => {
@@ -154,7 +192,7 @@ export function FieldUnit() {
     const sender = p.getSenders().find((x) => x.track?.kind === "video");
     if (sender) {
       const prm = sender.getParameters();
-      prm.encodings = [{ ...(prm.encodings?.[0] ?? {}), maxBitrate: qual.kbps * 1000 }];
+      prm.encodings = [{ ...(prm.encodings?.[0] ?? {}), maxBitrate: kbpsEff * 1000, maxFramerate: fps }];
       await sender.setParameters(prm).catch(() => {});
     }
     p.onconnectionstatechange = () => {
@@ -170,22 +208,27 @@ export function FieldUnit() {
       }
     };
     session.current = await whipStart(p, target);
-  }, [target, qual.kbps]);
+  }, [target, kbpsEff, fps]);
 
   useEffect(() => {
     if (!p2p) return;
     const r = new FieldReporter(
       room,
       unit,
-      () => ({ name: unitName, loc: unitLoc, orient: orientRef.current }),
+      () => ({ name: unitName, loc: unitLoc, ...metaRef.current }),
       () => stream.current,
       (st) => {
         setRegistered(st.registered);
         setViewers(st.viewers);
         if (st.error) setError(st.error);
       },
-      // The director picked a quality: follow it (camera is re-opened at that size, bitrate follows).
-      (id) => setQuality(id),
+      // The director changed the picture: follow it (the camera is re-opened at that size, bitrate follows).
+      (s: Partial<FieldSetup>) => {
+        if (s.res) setQuality(s.res);
+        if (s.fps) setFps(s.fps);
+        if (s.orient) setOrient(s.orient);
+        if (s.kbps !== undefined) setKbpsPick(s.kbps);
+      },
       () => qualityRef.current,
     );
     reporter.current = r;
@@ -196,15 +239,15 @@ export function FieldUnit() {
     };
   }, [p2p, room, unit, unitName, unitLoc]);
 
-  // Quality changed (by the director or here): tell the studio and apply the new bitrate to running calls.
+  // Quality / frame rate changed (by the director or here): tell the studio and apply it to running calls.
   useEffect(() => {
-    reporter.current?.setQuality(qual.kbps);
-  }, [qual.kbps, quality]);
+    reporter.current?.setQuality(kbpsEff, fps);
+  }, [kbpsEff, fps, quality]);
 
-  // Tell the studio (and OBS monitor) the moment the orientation changes.
+  // Tell the studio (and OBS monitor) the moment the shape changes or the phone is turned.
   useEffect(() => {
     reporter.current?.announce();
-  }, [orient]);
+  }, [orient, held]);
 
   // Keep the screen awake while live (a sleeping phone stops the stream).
   useEffect(() => {
@@ -221,8 +264,9 @@ export function FieldUnit() {
       want.current = true;
       if (p2p) {
         if (!stream.current) await open();
-        reporter.current?.setLive(true, qual.kbps);
+        reporter.current?.setLive(true, kbpsEff);
       } else await connect();
+      if (isPhone()) void lockPhone(orient, true);
       setLive(true);
     } catch (e) {
       want.current = false;
@@ -232,7 +276,7 @@ export function FieldUnit() {
   const stopLive = async () => {
     want.current = false;
     setLive(false);
-    reporter.current?.setLive(false, qual.kbps);
+    reporter.current?.setLive(false, kbpsEff);
     await whipStop(session.current, target);
     pc.current?.close();
     pc.current = null;
@@ -250,7 +294,7 @@ export function FieldUnit() {
         .find((x) => x.track?.kind === t.kind)
         ?.replaceTrack(t)
         .catch(() => {});
-  }, [live, cam, mic, quality]);
+  }, [live, cam, mic, quality, orient, fps]);
 
   useEffect(() => {
     if (!live) return;
@@ -300,6 +344,22 @@ export function FieldUnit() {
         <p className="rounded-sm border border-border p-2 font-mono text-[11px] text-foreground">
           The camera only works on an https:// page. Open this link from the https address.
         </p>
+      )}
+      {needTurn && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/90 p-6 text-center text-white">
+          <div className={cn("h-24 w-14 rounded-xl border-4 border-white transition-transform", orient === "landscape" ? "rotate-90" : "rotate-0")} />
+          <div className="text-xl font-bold tracking-[0.1em]">{orient === "landscape" ? "TURN YOUR PHONE SIDEWAYS" : "HOLD YOUR PHONE UPRIGHT"}</div>
+          <p className="max-w-xs text-sm text-white/70">
+            The studio wants this shot {orient === "landscape" ? "wide (landscape)" : "tall (portrait)"}.
+          </p>
+          <button type="button" className="mk-button h-11 rounded-sm px-5 text-sm" onClick={() => void lockPhone(orient, true)}>
+            FULL SCREEN · LOCK
+          </button>
+          <button type="button" className="text-xs text-white/50 underline" onClick={() => setIgnoreTurn(true)}>
+            Keep going this way
+          </button>
+          {lockNote && <p className="max-w-xs text-[11px] text-white/50">{lockNote}</p>}
+        </div>
       )}
       <div className="relative overflow-hidden rounded-md bg-black">
         <video
@@ -380,12 +440,8 @@ export function FieldUnit() {
         </select>
       </label>
       <label className="grid gap-1">
-        <span className="mk-label text-[9px]">VIDEO SHAPE</span>
-        <select
-          value={orientChoice}
-          onChange={(e) => setOrientChoice(e.target.value as OrientChoice)}
-          className={field}
-        >
+        <span className="mk-label text-[9px]">VIDEO SHAPE{p2p ? " (set by the director)" : ""}</span>
+        <select value={orient} onChange={(e) => setOrient(e.target.value as FieldOrient)} disabled={p2p} className={field}>
           {ORIENT.map((x) => (
             <option key={x.id} value={x.id}>
               {x.label}
@@ -395,12 +451,7 @@ export function FieldUnit() {
       </label>
       <label className="grid gap-1">
         <span className="mk-label text-[9px]">QUALITY{p2p ? " (set by the director)" : ""}</span>
-        <select
-          value={quality}
-          onChange={(e) => setQuality(e.target.value)}
-          disabled={live || p2p}
-          className={field}
-        >
+        <select value={quality} onChange={(e) => setQuality(e.target.value)} disabled={live || p2p} className={field}>
           {QUALITY.map((x) => (
             <option key={x.id} value={x.id}>
               {x.label}
@@ -408,6 +459,33 @@ export function FieldUnit() {
           ))}
         </select>
       </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="grid gap-1">
+          <span className="mk-label text-[9px]">FRAME RATE{p2p ? " (director)" : ""}</span>
+          <select value={fps} onChange={(e) => setFps(Number(e.target.value))} disabled={live || p2p} className={field}>
+            {FIELD_FPS.map((f) => (
+              <option key={f} value={f}>
+                {f} fps
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1">
+          <span className="mk-label text-[9px]">BITRATE{p2p ? " (director)" : ""}</span>
+          <select value={kbpsPick} onChange={(e) => setKbpsPick(Number(e.target.value))} disabled={live || p2p} className={field}>
+            {FIELD_KBPS.map((k) => (
+              <option key={k} value={k}>
+                {k === 0 ? `Auto · ${(fieldKbps(quality, fps) / 1000).toFixed(1)} Mbps` : `${k / 1000} Mbps`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {isPhone() && (
+        <button type="button" className={field} onClick={() => void lockPhone(orient, true)}>
+          FULL SCREEN · LOCK ROTATION
+        </button>
+      )}
 
       {!linked && !p2p && (
         <div className="mk-panel grid gap-2 rounded-md p-3">

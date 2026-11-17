@@ -17,15 +17,68 @@ export type FieldOrient = "landscape" | "portrait";
 
 export type FieldLink = "connecting" | "offline" | "standby" | "live";
 
-/** Picture quality the director can pick for a field unit (the reporter's phone then follows). */
+/** Picture sizes the director can pick for a field unit (the reporter's phone then follows). Sizes are the landscape ones; portrait stands the same picture up. */
 export const FIELD_QUALITY = [
+  { id: "2160", label: "4K · 3840×2160 · 20 Mbps (5G / strong Wi-Fi only)", short: "4K", w: 3840, h: 2160, kbps: 20000 },
+  { id: "1440", label: "1440p · 2560×1440 · 12 Mbps", short: "1440p", w: 2560, h: 1440, kbps: 12000 },
   { id: "1080hi", label: "1080p · 8 Mbps (best picture)", short: "1080p HQ", w: 1920, h: 1080, kbps: 8000 },
   { id: "1080", label: "1080p · 4.5 Mbps", short: "1080p", w: 1920, h: 1080, kbps: 4500 },
   { id: "720", label: "720p · 2.5 Mbps (safe on mobile data)", short: "720p", w: 1280, h: 720, kbps: 2500 },
+  { id: "540", label: "540p · 1.5 Mbps", short: "540p", w: 960, h: 540, kbps: 1500 },
   { id: "480", label: "480p · 1 Mbps (weak signal)", short: "480p", w: 854, h: 480, kbps: 1000 },
+  { id: "360", label: "360p · 0.6 Mbps (very weak signal)", short: "360p", w: 640, h: 360, kbps: 600 },
 ] as const;
 export const DEFAULT_FIELD_QUALITY = "1080hi";
 export const isFieldQuality = (id: unknown): id is string => FIELD_QUALITY.some((q) => q.id === id);
+
+/** Frame rates the director can pick. */
+export const FIELD_FPS = [24, 25, 30, 50, 60] as const;
+export const DEFAULT_FIELD_FPS = 30;
+export const isFieldFps = (n: unknown): n is number => FIELD_FPS.some((f) => f === n);
+
+/** Bitrates the director can force instead of the automatic one (kbps; 0 = automatic). */
+export const FIELD_KBPS = [0, 500, 1000, 2000, 3000, 4500, 6000, 8000, 12000, 20000] as const;
+export const isFieldKbps = (n: unknown): n is number => FIELD_KBPS.some((k) => k === n);
+
+/** Portrait is the phone's natural way. Landscape makes the phone turn sideways. */
+export const DEFAULT_FIELD_ORIENT: FieldOrient = "portrait";
+export const isFieldOrient = (o: unknown): o is FieldOrient => o === "portrait" || o === "landscape";
+
+/** Everything the director decides about a unit's picture. */
+export interface FieldSetup {
+  /** Picture size id (FIELD_QUALITY). */
+  res: string;
+  fps: number;
+  orient: FieldOrient;
+  /** Forced bitrate in kbps, 0 = automatic. */
+  kbps: number;
+}
+export const DEFAULT_FIELD_SETUP: FieldSetup = { res: DEFAULT_FIELD_QUALITY, fps: DEFAULT_FIELD_FPS, orient: DEFAULT_FIELD_ORIENT, kbps: 0 };
+
+/** Keeps only valid parts of a setup (it arrives over the network). */
+export function cleanFieldSetup(m: unknown): Partial<FieldSetup> {
+  const r = (m && typeof m === "object" ? m : {}) as Record<string, unknown>;
+  const out: Partial<FieldSetup> = {};
+  if (isFieldQuality(r["res"])) out.res = r["res"];
+  if (isFieldFps(r["fps"])) out.fps = r["fps"];
+  if (isFieldOrient(r["orient"])) out.orient = r["orient"];
+  if (isFieldKbps(r["kbps"])) out.kbps = r["kbps"];
+  return out;
+}
+
+/** Bitrate actually sent, in kbps: the director's own pick, or the size's usual one scaled for the frame rate. */
+export function fieldKbps(res: string, fps: number, override = 0): number {
+  if (override > 0) return override;
+  const q = FIELD_QUALITY.find((x) => x.id === res) ?? FIELD_QUALITY.find((x) => x.id === DEFAULT_FIELD_QUALITY)!;
+  const scale = fps >= 50 ? 1.6 : fps <= 25 ? 0.85 : 1;
+  return Math.round((q.kbps * scale) / 50) * 50;
+}
+
+/** Camera size to ask for. Portrait is the same picture standing up (1080p becomes 1080 × 1920). */
+export function captureSize(res: string, orient: FieldOrient): { w: number; h: number } {
+  const q = FIELD_QUALITY.find((x) => x.id === res) ?? FIELD_QUALITY.find((x) => x.id === DEFAULT_FIELD_QUALITY)!;
+  return orient === "portrait" ? { w: q.h, h: q.w } : { w: q.w, h: q.h };
+}
 
 export interface FieldState {
   link: FieldLink;
@@ -35,13 +88,18 @@ export interface FieldState {
   loc: string;
   /** Which way the reporter is filming: the picture arrives 16:9 (landscape) or 9:16 (portrait). */
   orient: FieldOrient;
+  /** Frame rate and bitrate (kbps) the reporter is sending at right now (0 = not known yet). */
+  fps: number;
+  kbps: number;
+  /** How the phone is physically held right now ("" = not known). Differs from `orient` while the reporter has not turned it yet. */
+  held: FieldOrient | "";
   /** Soft problem to show (e.g. network). */
   error: string | null;
 }
 
-type ToViewer = { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient };
-/** Director -> reporter. */
-type ToReporter = { t: "quality"; id: string };
+type ToViewer = { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient };
+/** Director -> reporter. `quality` is the older single-setting message, still understood. */
+type ToReporter = { t: "quality"; id: string } | ({ t: "setup" } & Partial<FieldSetup>);
 
 const RETRY_MS = 3000;
 const NO_PICTURE_MS = 12000;
@@ -93,7 +151,7 @@ function placeholderStream(): MediaStream {
 
 /** Watches one field unit: its status, and (when `video`) its picture. */
 export class FieldViewer {
-  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: "landscape", error: null };
+  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null };
   /** The incoming picture (null until the unit is live and the call is up). */
   stream: MediaStream | null = null;
   private peer: Peer | null = null;
@@ -108,27 +166,30 @@ export class FieldViewer {
   constructor(
     private room: string,
     private unit: number,
-    opts: { video: boolean; quality?: string },
+    opts: { video: boolean; setup?: Partial<FieldSetup> },
     private onChange: () => void,
   ) {
     this.video = opts.video;
-    this.wantQuality = opts.quality && isFieldQuality(opts.quality) ? opts.quality : null;
+    this.wantSetup = cleanFieldSetup(opts.setup);
   }
 
-  private wantQuality: string | null;
+  private wantSetup: Partial<FieldSetup>;
 
-  /** Director picks the reporter's picture quality. Sent now if the unit is online, and again whenever it reconnects. */
+  /** Director picks the picture (size, frame rate, shape, bitrate). Sent now if the unit is online, and again whenever it reconnects. */
+  setSetup(patch: Partial<FieldSetup>) {
+    this.wantSetup = { ...this.wantSetup, ...cleanFieldSetup(patch) };
+    this.sendSetup();
+  }
+
   setQuality(id: string) {
-    if (!isFieldQuality(id)) return;
-    this.wantQuality = id;
-    this.sendQuality();
+    this.setSetup({ res: id });
   }
 
-  private sendQuality() {
+  private sendSetup() {
     const c = this.conn;
-    if (!this.wantQuality || !c?.open) return;
+    if (!Object.keys(this.wantSetup).length || !c?.open) return;
     try {
-      c.send({ t: "quality", id: this.wantQuality } satisfies ToReporter);
+      c.send({ t: "setup", ...this.wantSetup } satisfies ToReporter);
     } catch {
       /* sent again on reconnect */
     }
@@ -191,7 +252,7 @@ export class FieldViewer {
     }
     const conn = peer.connect(fieldPeerId(this.room, this.unit), { reliable: true });
     this.conn = conn;
-    conn.on("open", () => this.sendQuality());
+    conn.on("open", () => this.sendSetup());
     conn.on("data", (d) => {
       const m = d as ToViewer;
       if (m?.t !== "state") return;
@@ -200,7 +261,10 @@ export class FieldViewer {
         name: m.name,
         loc: m.loc,
         quality: m.quality ?? "",
-        orient: m.orient === "portrait" ? "portrait" : "landscape",
+        orient: isFieldOrient(m.orient) ? m.orient : DEFAULT_FIELD_ORIENT,
+        fps: isFieldFps(m.fps) ? m.fps : 0,
+        kbps: typeof m.kbps === "number" && m.kbps >= 0 && m.kbps <= 100000 ? Math.round(m.kbps) : 0,
+        held: isFieldOrient(m.held) ? m.held : "",
         error: null,
       });
       if (m.live && this.video) this.startCall();
@@ -291,16 +355,18 @@ export class FieldReporter {
   private calls = new Set<MediaConnection>();
   private live = false;
   private kbps = 2500;
+  private fps = DEFAULT_FIELD_FPS;
   private dead = false;
   private retry: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private room: string,
     private unit: number,
-    private meta: () => { name: string; loc: string; orient: FieldOrient },
+    private meta: () => { name: string; loc: string; orient: FieldOrient; fps: number; kbps: number; held: FieldOrient | "" },
     private getStream: () => MediaStream | null,
     private onStatus: (s: { registered: boolean; viewers: number; error: string | null }) => void,
-    private onQuality: (id: string) => void = () => {},
+    /** The director changed the picture setup: the phone follows. */
+    private onSetup: (s: Partial<FieldSetup>) => void = () => {},
     private currentQuality: () => string = () => DEFAULT_FIELD_QUALITY,
   ) {}
 
@@ -320,7 +386,11 @@ export class FieldReporter {
       c.on("open", () => this.send(c));
       c.on("data", (d) => {
         const m = d as ToReporter;
-        if (m?.t === "quality" && isFieldQuality(m.id)) this.onQuality(m.id);
+        if (m?.t === "quality" && isFieldQuality(m.id)) this.onSetup({ res: m.id });
+        else if (m?.t === "setup") {
+          const s = cleanFieldSetup(m);
+          if (Object.keys(s).length) this.onSetup(s);
+        }
       });
       c.on("close", () => this.conns.delete(c));
       c.on("error", () => this.conns.delete(c));
@@ -363,7 +433,7 @@ export class FieldReporter {
 
   private send(c: DataConnection) {
     const m = this.meta();
-    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient };
+    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: m.kbps, ...(m.held ? { held: m.held } : {}) };
     try {
       if (c.open) c.send(msg);
     } catch {
@@ -375,9 +445,10 @@ export class FieldReporter {
     this.conns.forEach((c) => this.send(c));
   }
 
-  /** Tell every viewer the quality changed, and apply the new bitrate to calls already running. */
-  setQuality(kbps: number) {
+  /** Tell every viewer the quality changed, and apply the new bitrate and frame rate to calls already running. */
+  setQuality(kbps: number, fps: number = this.fps) {
     this.kbps = kbps;
+    this.fps = fps;
     this.applyBitrate();
     this.broadcast();
   }
@@ -415,7 +486,7 @@ export class FieldReporter {
       const sender = call.peerConnection.getSenders().find((x) => x.track?.kind === "video");
       if (!sender) continue;
       const prm = sender.getParameters();
-      prm.encodings = [{ ...(prm.encodings?.[0] ?? {}), maxBitrate: this.kbps * 1000, maxFramerate: 30 }];
+      prm.encodings = [{ ...(prm.encodings?.[0] ?? {}), maxBitrate: this.kbps * 1000, maxFramerate: this.fps }];
       // Under a weak signal drop frames, not sharpness.
       (prm as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = "maintain-resolution";
       void sender.setParameters(prm).catch(() => {});

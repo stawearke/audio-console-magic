@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { FieldViewer, isFieldQuality, newFieldRoom, type FieldState } from "./field-link";
+import { DEFAULT_FIELD_ORIENT, FieldViewer, isFieldFps, isFieldKbps, isFieldOrient, isFieldQuality, newFieldRoom, type FieldOrient, type FieldSetup, type FieldState } from "./field-link";
 
 /** First CAM slot (0-based) a field unit may take: CAM 9. Studio cameras CAM 1-8 stay untouched. */
 export const FIELD_FIRST_SLOT = 8;
 
 export interface FieldUnitInfo {
-  /** Picture quality the director chose for this unit (see FIELD_QUALITY). */
+  /** What the director chose for this unit's picture. Missing = the default (portrait, 1080p HQ, 30 fps, automatic bitrate). */
   quality?: string;
+  fps?: number;
+  orient?: FieldOrient;
+  /** Forced bitrate in kbps; 0 or missing = automatic. */
+  kbps?: number;
   /** Unit number: 1, 2, 3… Also the reporter's connection id. */
   n: number;
   name: string;
@@ -34,7 +38,11 @@ const read = (): Saved => {
       units: Array.isArray(p.units)
         ? p.units
             .filter((u): u is FieldUnitInfo => !!u && typeof u.n === "number")
-            .map((u) => ({ n: u.n, name: String(u.name ?? ""), loc: String(u.loc ?? ""), ...(isFieldQuality(u.quality) ? { quality: u.quality } : {}) }))
+            .map((u) => ({ n: u.n, name: String(u.name ?? ""), loc: String(u.loc ?? ""), ...(isFieldQuality(u.quality) ? { quality: u.quality } : {}),
+              ...(isFieldFps(u.fps) ? { fps: u.fps } : {}),
+              ...(isFieldOrient(u.orient) ? { orient: u.orient } : {}),
+              ...(isFieldKbps(u.kbps) ? { kbps: u.kbps } : {}),
+            }))
         : [],
     };
   } catch {
@@ -84,7 +92,7 @@ export const fieldUnits = {
     write({ ...state, units: [...state.units, unit] });
     return unit;
   },
-  update(n: number, patch: Partial<Pick<FieldUnitInfo, "name" | "loc" | "quality">>) {
+  update(n: number, patch: Partial<Pick<FieldUnitInfo, "name" | "loc" | "quality" | "fps" | "orient" | "kbps">>) {
     write({ ...state, units: state.units.map((u) => (u.n === n ? { ...u, ...patch } : u)) });
   },
   remove(n: number) {
@@ -109,24 +117,35 @@ export const useFieldUnits = () => {
   return s;
 };
 
-/** Live status (and optionally the picture) of one unit. */
-export function useFieldViewer(room: string, unit: number, video: boolean, quality?: string) {
+/** The setup the director chose for a unit, in the form the reporter's phone understands. */
+export function setupOf(u: Pick<FieldUnitInfo, "quality" | "fps" | "orient" | "kbps">): Partial<FieldSetup> {
+  return {
+    ...(u.quality ? { res: u.quality } : {}),
+    ...(u.fps ? { fps: u.fps } : {}),
+    ...(u.orient ? { orient: u.orient } : {}),
+    ...(u.kbps !== undefined ? { kbps: u.kbps } : {}),
+  };
+}
+
+/** Live status (and optionally the picture) of one unit. `setup` is what the director wants the phone to do. */
+export function useFieldViewer(room: string, unit: number, video: boolean, setup?: Partial<FieldSetup>) {
   const [, tick] = useState(0);
   const ref = useRef<FieldViewer | null>(null);
   const wantVideo = useRef(video);
   wantVideo.current = video;
-  const wantQuality = useRef(quality);
-  wantQuality.current = quality;
+  const wantSetup = useRef(setup);
+  wantSetup.current = setup;
 
   useEffect(() => {
     if (!room) return;
-    const v = new FieldViewer(room, unit, { video: wantVideo.current, ...(wantQuality.current ? { quality: wantQuality.current } : {}) }, () => tick((x) => x + 1));
+    const v = new FieldViewer(room, unit, { video: wantVideo.current, ...(wantSetup.current ? { setup: wantSetup.current } : {}) }, () => tick((x) => x + 1));
     ref.current = v;
     void v.start();
     return () => {
       v.stop();
       ref.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room, unit]);
 
   useEffect(() => {
@@ -134,6 +153,11 @@ export function useFieldViewer(room: string, unit: number, video: boolean, quali
   }, [video]);
 
   const v = ref.current;
-  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: "landscape", error: null };
-  return { state, stream: v?.stream ?? null, setQuality: (id: string) => v?.setQuality(id) };
+  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null };
+  return {
+    state,
+    stream: v?.stream ?? null,
+    setSetup: (p: Partial<FieldSetup>) => v?.setSetup(p),
+    setQuality: (id: string) => v?.setQuality(id),
+  };
 }
