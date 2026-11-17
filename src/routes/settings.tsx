@@ -5,6 +5,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { FieldAdd } from "@/components/mk/field-add";
 import { LiveFxSettings } from "@/components/mk/live-fx-settings";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { GFX_SCENE } from "@/lib/mk/graphics";
@@ -345,9 +346,10 @@ function SettingsPage() {
               className="mk-button h-9 rounded-sm px-3 text-xs"
               onClick={() => engine.autoMapScenes()}
             >
-              Auto map first 8 scenes
+              Auto map first {CAM_COUNT} scenes
             </button>
           </div>
+          <FieldAdd />
           <div className="grid gap-2 sm:grid-cols-2">
             {Array.from({ length: CAM_COUNT }, (_, index) => (
               <label key={index} className="flex items-center gap-2">

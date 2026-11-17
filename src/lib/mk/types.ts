@@ -6,7 +6,8 @@ import { DEFAULT_MERGE, type MergePreset } from "./merge";
 import { DEFAULT_TAGS, type TagConfig } from "./tags";
 import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type AdPreset, type DskPlace, type FxConfig, type FxLayoutKind, type PipSlot, type PlacePos } from "./fx";
 
-export const CAM_COUNT = 8;
+/** Studio cameras and field feeds share these slots; empty ones are hidden on the source bus. */
+export const CAM_COUNT = 12;
 export const DSK_COUNT = 2;
 
 export type CamIndex = number; // 0..7 -> CAM 1..CAM 8
