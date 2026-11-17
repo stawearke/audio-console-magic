@@ -1503,7 +1503,9 @@ export class ObsTransport implements Transport {
     await this.obs.call("CreateScene", { sceneName: scene });
     const inputSettings =
       mode === "web"
-        ? { url, width: 1920, height: 1080, fps: 30, fps_custom: true, reroute_audio: false, shutdown: false }
+        ? // reroute_audio ON: the feed's sound goes through OBS itself, so it gets its OWN fader strip and meter
+          // (off = the sound only plays out of the PC speakers and never shows up in the OBS mixer).
+          { url, width: 1920, height: 1080, fps: 30, fps_custom: true, reroute_audio: true, shutdown: false }
         : { input: url, is_local_file: false, close_when_inactive: false, restart_on_activate: false, hw_decode: true };
     try {
       await this.obs.call("CreateInput", {

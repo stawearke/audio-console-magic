@@ -5,11 +5,17 @@ import {
   DEFAULT_FIELD_FPS,
   DEFAULT_FIELD_ORIENT,
   DEFAULT_FIELD_QUALITY,
+  fieldCapsOf,
+  fieldCtlOf,
   fieldKbps,
   FIELD_FPS,
   FIELD_KBPS,
   FIELD_QUALITY,
   FieldReporter,
+  videoConstraintsOf,
+  type FieldCaps,
+  type FieldCtl,
+  type FieldFacing,
   type FieldOrient,
   type FieldSetup,
 } from "@/lib/mk/field-link";
@@ -17,6 +23,7 @@ import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
 import { cn } from "@/lib/utils";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const asRecord = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 const field = "mk-button h-10 w-full rounded-sm px-2 text-sm text-foreground";
 const QUALITY = FIELD_QUALITY;
 
@@ -65,6 +72,14 @@ export function FieldUnit() {
   const [lockNote, setLockNote] = useState("");
   const qualityRef = useRef(quality);
   qualityRef.current = quality;
+  // Camera + mic the director can drive remotely (zoom, torch, focus, exposure, white balance, front/back, sound processing).
+  const [facing, setFacing] = useState<FieldFacing>("environment");
+  const facingRef = useRef(facing);
+  facingRef.current = facing;
+  const [caps, setCaps] = useState<FieldCaps | null>(null);
+  const [ctl, setCtl] = useState<FieldCtl>({});
+  // Sound is sent raw (no processing) until the director asks for it.
+  const ctlRef = useRef<FieldCtl>({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
   const [live, setLive] = useState(false);
   const [state, setState] = useState("");
   const [error, setError] = useState("");
@@ -85,8 +100,8 @@ export function FieldUnit() {
   const kbpsEff = fieldKbps(quality, fps, kbpsPick);
   const held: FieldOrient = deviceTall ? "portrait" : "landscape";
   const needTurn = isPhone() && held !== orient && !ignoreTurn;
-  const metaRef = useRef({ orient, fps, kbps: kbpsEff, held });
-  metaRef.current = { orient, fps, kbps: kbpsEff, held };
+  const metaRef = useRef<{ orient: FieldOrient; fps: number; kbps: number; held: FieldOrient; caps?: FieldCaps; ctl: FieldCtl }>({ orient, fps, kbps: kbpsEff, held, ctl });
+  metaRef.current = { orient, fps, kbps: kbpsEff, held, ...(caps ? { caps } : {}), ctl };
 
   // How the phone is held right now (the director sees it, and we ask for a turn if it does not match).
   useEffect(() => {
@@ -120,11 +135,57 @@ export function FieldUnit() {
     setIgnoreTurn(false);
   }, [orient, lockPhone]);
 
+  /** Read what the camera and mic can do, and what they are doing now, and tell the studio. */
+  const readControls = useCallback((s: MediaStream) => {
+    const vt = s.getVideoTracks()[0];
+    const at = s.getAudioTracks()[0];
+    const vCaps = asRecord(vt?.getCapabilities?.());
+    const aCaps = asRecord(at?.getCapabilities?.());
+    const aSet = asRecord(at?.getSettings?.());
+    setCaps(fieldCapsOf(vCaps, aCaps, aSet, isPhone()));
+    setCtl(fieldCtlOf(asRecord(vt?.getSettings?.()), aSet, facingRef.current));
+  }, []);
+
+  /** The director moved something: zoom, torch, focus, exposure, white balance, front/back camera, sound processing. */
+  const applyCtl = useCallback(
+    async (patch: FieldCtl) => {
+      let next: FieldCtl = { ...ctlRef.current, ...patch };
+      if (patch.facing && patch.facing !== facingRef.current) {
+        // A different camera has different abilities: drop what belonged to the old one, the studio sees the new list.
+        next = {
+          facing: patch.facing,
+          ...(next.echoCancellation !== undefined ? { echoCancellation: next.echoCancellation } : {}),
+          ...(next.noiseSuppression !== undefined ? { noiseSuppression: next.noiseSuppression } : {}),
+          ...(next.autoGainControl !== undefined ? { autoGainControl: next.autoGainControl } : {}),
+        };
+        facingRef.current = patch.facing;
+        setFacing(patch.facing);
+        setCam("");
+      }
+      ctlRef.current = next;
+      const s = stream.current;
+      const vt = s?.getVideoTracks()[0];
+      const at = s?.getAudioTracks()[0];
+      const sets = videoConstraintsOf(next);
+      if (vt && sets.length) await vt.applyConstraints({ advanced: sets }).catch(() => {});
+      if (at && (patch.echoCancellation !== undefined || patch.noiseSuppression !== undefined || patch.autoGainControl !== undefined))
+        await at
+          .applyConstraints({
+            echoCancellation: next.echoCancellation ?? false,
+            noiseSuppression: next.noiseSuppression ?? false,
+            autoGainControl: next.autoGainControl ?? false,
+          })
+          .catch(() => {});
+      if (s) setCtl(fieldCtlOf(asRecord(vt?.getSettings?.()), asRecord(at?.getSettings?.()), facingRef.current));
+    },
+    [],
+  );
+
   const open = useCallback(async () => {
     stream.current?.getTracks().forEach((t) => t.stop());
     const s = await navigator.mediaDevices.getUserMedia({
       video: {
-        ...(cam ? { deviceId: { exact: cam } } : { facingMode: "environment" }),
+        ...(cam ? { deviceId: { exact: cam } } : { facingMode: facing }),
         width: { ideal: capW },
         height: { ideal: capH },
         aspectRatio: { ideal: capW / capH },
@@ -132,14 +193,18 @@ export function FieldUnit() {
       },
       audio: {
         ...(mic ? { deviceId: { exact: mic } } : {}),
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
+        echoCancellation: ctlRef.current.echoCancellation ?? false,
+        noiseSuppression: ctlRef.current.noiseSuppression ?? false,
+        autoGainControl: ctlRef.current.autoGainControl ?? false,
       },
     });
     // Keep the picture sharp and smooth rather than letting the encoder trade it away.
     for (const t of s.getVideoTracks()) if ("contentHint" in t) t.contentHint = "motion";
+    // The camera was just (re)opened: put back whatever the director had set (zoom, focus …).
+    const again = videoConstraintsOf(ctlRef.current);
+    if (again.length) await s.getVideoTracks()[0]?.applyConstraints({ advanced: again }).catch(() => {});
     stream.current = s;
+    readControls(s);
     if (video.current) video.current.srcObject = s;
     const list = await navigator.mediaDevices.enumerateDevices();
     const dev = (k: string) =>
@@ -149,7 +214,7 @@ export function FieldUnit() {
     setCams(dev("videoinput"));
     setMics(dev("audioinput"));
     return s;
-  }, [cam, mic, capW, capH, fps]);
+  }, [cam, mic, capW, capH, fps, facing, readControls]);
 
   // preview + mic meter
   useEffect(() => {
@@ -230,6 +295,7 @@ export function FieldUnit() {
         if (s.kbps !== undefined) setKbpsPick(s.kbps);
       },
       () => qualityRef.current,
+      (c: FieldCtl) => void applyCtl(c),
     );
     reporter.current = r;
     void r.start();
@@ -237,17 +303,17 @@ export function FieldUnit() {
       r.stop();
       reporter.current = null;
     };
-  }, [p2p, room, unit, unitName, unitLoc]);
+  }, [p2p, room, unit, unitName, unitLoc, applyCtl]);
 
   // Quality / frame rate changed (by the director or here): tell the studio and apply it to running calls.
   useEffect(() => {
     reporter.current?.setQuality(kbpsEff, fps);
   }, [kbpsEff, fps, quality]);
 
-  // Tell the studio (and OBS monitor) the moment the shape changes or the phone is turned.
+  // Tell the studio (and OBS monitor) the moment the shape changes, the phone is turned, or the camera / mic changed.
   useEffect(() => {
     reporter.current?.announce();
-  }, [orient, held]);
+  }, [orient, held, caps, ctl]);
 
   // Keep the screen awake while live (a sleeping phone stops the stream).
   useEffect(() => {

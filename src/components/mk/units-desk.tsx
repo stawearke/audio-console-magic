@@ -1,9 +1,10 @@
 import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 
+import { FieldCameraPanel } from "@/components/mk/field-camera-panel";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DEFAULT_FIELD_FPS, DEFAULT_FIELD_ORIENT, DEFAULT_FIELD_QUALITY, fieldKbps, FIELD_FPS, FIELD_KBPS, FIELD_QUALITY, reporterUrl, viewerUrl, type FieldSetup } from "@/lib/mk/field-link";
-import { FIELD_FIRST_SLOT, fieldUnits, setupOf, useFieldUnits, useFieldViewer, type FieldUnitInfo } from "@/lib/mk/field-units";
+import { DEFAULT_FIELD_FPS, DEFAULT_FIELD_ORIENT, DEFAULT_FIELD_QUALITY, fieldKbps, FIELD_FPS, FIELD_KBPS, FIELD_QUALITY, reporterUrl, viewerUrl, type FieldCtl, type FieldSetup } from "@/lib/mk/field-link";
+import { FIELD_FIRST_SLOT, fieldUnits, setupOf, useFieldUnits, useFieldViewer, useThrottledCtl, type FieldUnitInfo } from "@/lib/mk/field-units";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { camLabel } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -81,7 +82,9 @@ export function UnitsDesk() {
         label: u.name || u.loc,
         fromSlot: FIELD_FIRST_SLOT,
       });
-      // Sound is GLOBAL by default (OBS Desktop Audio): nothing is added to your other scenes.
+      // Every field gets its OWN fader in the audio mixer (and OBS). The feed is kept active in your other
+      // scenes (far off canvas, never seen) so its sound keeps flowing whichever scene is on air.
+      await engine.setFieldAudioAlways(u.n, true);
       setNote("");
     } catch (e) {
       setNote(`FIELD ${u.n}: ${msg(e)}`);
@@ -93,6 +96,16 @@ export function UnitsDesk() {
     try {
       await engine.makeAllFieldAudioGlobal(units.map((x) => x.n));
       setNote("Done. The field feeds are only in their own FIELD scenes now.");
+    } catch (e) {
+      setNote(msg(e));
+    }
+  };
+
+  // Units added by an older version were set to GLOBAL (no strip of their own): switch them all to own faders.
+  const ownFaders = async () => {
+    try {
+      for (const x of units) if (camOf(x.n) >= 0) await engine.setFieldAudioAlways(x.n, true);
+      setNote("Done. Every field unit now has its own fader in the Audio mixer.");
     } catch (e) {
       setNote(msg(e));
     }
@@ -127,9 +140,14 @@ export function UnitsDesk() {
       </div>
 
       {units.length > 0 && (
-        <button type="button" disabled={!connected} className="mk-button h-9 rounded-[3px] px-4 text-xs" onClick={() => void cleanScenes()}>
-          REMOVE FIELD FEEDS FROM ALL OTHER SCENES · GLOBAL AUDIO
-        </button>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button type="button" disabled={!connected} className="mk-button h-9 rounded-[3px] px-4 text-xs" onClick={() => void ownFaders()}>
+            GIVE EVERY FIELD ITS OWN FADER
+          </button>
+          <button type="button" disabled={!connected} className="mk-button h-9 rounded-[3px] px-4 text-xs" onClick={() => void cleanScenes()}>
+            ALL FIELD SOUND GLOBAL (DESKTOP AUDIO)
+          </button>
+        </div>
       )}
 
       {units.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No field units yet. Add the first one above.</p>}
@@ -206,7 +224,10 @@ function UnitCard({
   onQr: () => void;
 }) {
   const [watch, setWatch] = useState(false);
-  const { state, stream, setSetup } = useFieldViewer(room, u.n, watch, setupOf(u));
+  // The torch is never remembered: a light that switches itself on at the next session would surprise the reporter.
+  const { torch: _torch, ...rememberedCtl } = u.ctl ?? {};
+  const { state, stream, setSetup, setCtl } = useFieldViewer(room, u.n, watch, setupOf(u), rememberedCtl);
+  const sendCtl = useThrottledCtl(setCtl);
   const sw = useSwitcher();
   const inputName = `FIELD ${u.n} feed`;
   const always = sw.config.fieldAudioAlways.includes(inputName);
@@ -226,6 +247,19 @@ function UnitCard({
     setSetup(patch);
   };
   const online = state.link !== "offline" && state.link !== "connecting";
+  // What the director set wins (so a dragged slider never jumps back); otherwise what the phone reports.
+  const [torch, setTorch] = useState<boolean | undefined>(undefined);
+  const ctlNow: FieldCtl = { ...state.ctl, ...rememberedCtl, ...((torch ?? state.ctl.torch) !== undefined ? { torch: (torch ?? state.ctl.torch) as boolean } : {}) };
+  const pickCtl = (patch: FieldCtl) => {
+    const { torch: t, ...keep } = patch;
+    if (t !== undefined) setTorch(t);
+    // A new camera has its own zoom / focus / light: forget the old camera's values.
+    const switching = patch.facing && patch.facing !== (u.ctl?.facing ?? "environment");
+    if (switching) setTorch(false);
+    const base = switching ? {} : (u.ctl ?? {});
+    fieldUnits.update(u.n, { ctl: { ...base, ...keep } });
+    sendCtl(patch);
+  };
   const sendingShort = FIELD_QUALITY.find((x) => x.id === state.quality)?.short ?? state.quality;
   const video = useRef<HTMLVideoElement>(null);
   const [copied, setCopied] = useState(false);
@@ -409,6 +443,8 @@ function UnitCard({
         )}
       </div>
 
+      <FieldCameraPanel caps={state.caps} ctl={ctlNow} online={online} onChange={pickCtl} />
+
       <div className="grid gap-2 rounded-[3px] border border-white/10 p-2">
         <div className="grid gap-1">
           <span className="mk-label text-[9px]">AUDIO</span>
@@ -417,9 +453,9 @@ function UnitCard({
             disabled={!connected || cam < 0}
             className={cn(btn, "w-full", always && "mk-lit-preview")}
             onClick={() => void engine.setFieldAudioAlways(u.n, !always)}
-            title="GLOBAL: sound plays through the PC and OBS Desktop Audio in every scene, no scene items. FADER: own OBS fader strip, but the feed is parked in every scene."
+            title="OWN FADER: this unit has its own strip in the Audio mixer and in OBS (the feed is kept active in every scene, off canvas). GLOBAL: sound plays out of the PC and is only heard through Desktop Audio, with no fader of its own."
           >
-            {always ? "FADER · own strip, parked in all scenes" : "GLOBAL · Desktop Audio, in no extra scenes"}
+            {always ? "OWN FADER · own strip in the Audio mixer" : "GLOBAL · no fader of its own (tap for own fader)"}
           </button>
           {strip && (
             <div className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">

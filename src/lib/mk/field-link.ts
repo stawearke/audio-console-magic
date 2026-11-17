@@ -66,6 +66,168 @@ export function cleanFieldSetup(m: unknown): Partial<FieldSetup> {
   return out;
 }
 
+// ------------------------------------------------------------------------- remote camera + mic controls
+
+export type FieldFacing = "environment" | "user";
+const FOCUS_MODES = ["continuous", "single-shot", "manual"] as const;
+const EXPOSURE_MODES = ["continuous", "single-shot", "manual"] as const;
+const WB_MODES = ["continuous", "single-shot", "manual"] as const;
+
+/** A numeric control the phone offers (zoom, exposure, colour temperature). */
+export interface FieldRange {
+  min: number;
+  max: number;
+  step: number;
+}
+
+/** What the reporter's real camera and mic can do. Read from the device, so the director only sees controls that work. */
+export interface FieldCaps {
+  zoom?: FieldRange;
+  torch?: boolean;
+  /** Supported modes, e.g. ["continuous", "manual"]. */
+  focus?: string[];
+  exposure?: string[];
+  exposureComp?: FieldRange;
+  wb?: string[];
+  colorTemp?: FieldRange;
+  /** The phone can swap between its back and front camera. */
+  flip?: boolean;
+  /** Which sound-processing switches this mic accepts. */
+  mic?: { echoCancellation?: boolean; noiseSuppression?: boolean; autoGainControl?: boolean };
+}
+
+/** What the director decides about the camera and mic. Every field is optional: only what changed is sent. */
+export interface FieldCtl {
+  zoom?: number;
+  torch?: boolean;
+  focus?: string;
+  exposure?: string;
+  exposureComp?: number;
+  wb?: string;
+  colorTemp?: number;
+  facing?: FieldFacing;
+  echoCancellation?: boolean;
+  noiseSuppression?: boolean;
+  autoGainControl?: boolean;
+}
+
+const num = (v: unknown, lo: number, hi: number): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : undefined;
+const mode = (v: unknown, allowed: readonly string[]): string | undefined => (typeof v === "string" && allowed.includes(v) ? v : undefined);
+
+/** Keeps only valid parts of a camera / mic command (it arrives over the network). */
+export function cleanFieldCtl(m: unknown): FieldCtl {
+  const r = (m && typeof m === "object" ? m : {}) as Record<string, unknown>;
+  const out: FieldCtl = {};
+  const zoom = num(r["zoom"], 0, 100);
+  if (zoom !== undefined) out.zoom = zoom;
+  if (typeof r["torch"] === "boolean") out.torch = r["torch"];
+  const focus = mode(r["focus"], FOCUS_MODES);
+  if (focus) out.focus = focus;
+  const exposure = mode(r["exposure"], EXPOSURE_MODES);
+  if (exposure) out.exposure = exposure;
+  const ev = num(r["exposureComp"], -20, 20);
+  if (ev !== undefined) out.exposureComp = ev;
+  const wb = mode(r["wb"], WB_MODES);
+  if (wb) out.wb = wb;
+  const k = num(r["colorTemp"], 1000, 20000);
+  if (k !== undefined) out.colorTemp = k;
+  if (r["facing"] === "environment" || r["facing"] === "user") out.facing = r["facing"];
+  for (const key of ["echoCancellation", "noiseSuppression", "autoGainControl"] as const) if (typeof r[key] === "boolean") out[key] = r[key];
+  return out;
+}
+
+const range = (v: unknown): FieldRange | undefined => {
+  const r = (v && typeof v === "object" ? v : null) as Record<string, unknown> | null;
+  const min = num(r?.["min"], -1e6, 1e6);
+  const max = num(r?.["max"], -1e6, 1e6);
+  if (min === undefined || max === undefined || max <= min) return undefined;
+  const step = num(r?.["step"], 0, 1e6);
+  return { min, max, step: step && step > 0 ? step : (max - min) / 100 };
+};
+const modes = (v: unknown, allowed: readonly string[]): string[] | undefined => {
+  const list = Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && allowed.includes(x)) : [];
+  return list.length ? list : undefined;
+};
+
+/** Keeps only valid parts of the capability list a reporter announces. */
+export function cleanFieldCaps(m: unknown): FieldCaps | null {
+  const r = (m && typeof m === "object" ? m : null) as Record<string, unknown> | null;
+  if (!r) return null;
+  const out: FieldCaps = {};
+  const zoom = range(r["zoom"]);
+  if (zoom) out.zoom = zoom;
+  if (r["torch"] === true) out.torch = true;
+  const focus = modes(r["focus"], FOCUS_MODES);
+  if (focus) out.focus = focus;
+  const exposure = modes(r["exposure"], EXPOSURE_MODES);
+  if (exposure) out.exposure = exposure;
+  const ev = range(r["exposureComp"]);
+  if (ev) out.exposureComp = ev;
+  const wb = modes(r["wb"], WB_MODES);
+  if (wb) out.wb = wb;
+  const k = range(r["colorTemp"]);
+  if (k) out.colorTemp = k;
+  if (r["flip"] === true) out.flip = true;
+  const mic = (r["mic"] && typeof r["mic"] === "object" ? r["mic"] : {}) as Record<string, unknown>;
+  const micOut: NonNullable<FieldCaps["mic"]> = {};
+  for (const key of ["echoCancellation", "noiseSuppression", "autoGainControl"] as const) if (mic[key] === true) micOut[key] = true;
+  if (Object.keys(micOut).length) out.mic = micOut;
+  return out;
+}
+
+/** What a camera track and a mic track report (getCapabilities / getSettings), turned into the list the director sees. */
+export function fieldCapsOf(video: Record<string, unknown>, audio: Record<string, unknown>, audioSettings: Record<string, unknown>, flip: boolean): FieldCaps {
+  const micKey = (k: string) => k in audio || k in audioSettings;
+  return (
+    cleanFieldCaps({
+      zoom: video["zoom"],
+      torch: video["torch"] === true,
+      focus: video["focusMode"],
+      exposure: video["exposureMode"],
+      exposureComp: video["exposureCompensation"],
+      wb: video["whiteBalanceMode"],
+      colorTemp: video["colorTemperature"],
+      flip,
+      mic: { echoCancellation: micKey("echoCancellation"), noiseSuppression: micKey("noiseSuppression"), autoGainControl: micKey("autoGainControl") },
+    }) ?? {}
+  );
+}
+
+/** The settings a camera track and a mic track are using right now, in the director's terms. */
+export function fieldCtlOf(video: Record<string, unknown>, audio: Record<string, unknown>, facing: FieldFacing): FieldCtl {
+  return cleanFieldCtl({
+    zoom: video["zoom"],
+    torch: video["torch"],
+    focus: video["focusMode"],
+    exposure: video["exposureMode"],
+    exposureComp: video["exposureCompensation"],
+    wb: video["whiteBalanceMode"],
+    colorTemp: video["colorTemperature"],
+    facing,
+    echoCancellation: audio["echoCancellation"],
+    noiseSuppression: audio["noiseSuppression"],
+    autoGainControl: audio["autoGainControl"],
+  });
+}
+
+/**
+ * The camera part of a command as separate "advanced" constraint sets. Each setting stands alone, so a phone that
+ * cannot do one of them (say, manual focus) still applies all the others.
+ */
+export function videoConstraintsOf(c: FieldCtl): MediaTrackConstraintSet[] {
+  const set = (o: Record<string, unknown>) => o as MediaTrackConstraintSet;
+  const out: MediaTrackConstraintSet[] = [];
+  if (c.focus) out.push(set({ focusMode: c.focus }));
+  if (c.exposure) out.push(set({ exposureMode: c.exposure }));
+  if (c.wb) out.push(set({ whiteBalanceMode: c.wb }));
+  if (c.zoom !== undefined) out.push(set({ zoom: c.zoom }));
+  if (c.exposureComp !== undefined) out.push(set({ exposureCompensation: c.exposureComp }));
+  if (c.colorTemp !== undefined) out.push(set({ colorTemperature: c.colorTemp }));
+  if (c.torch !== undefined) out.push(set({ torch: c.torch }));
+  return out;
+}
+
 /** Bitrate actually sent, in kbps: the director's own pick, or the size's usual one scaled for the frame rate. */
 export function fieldKbps(res: string, fps: number, override = 0): number {
   if (override > 0) return override;
@@ -95,11 +257,15 @@ export interface FieldState {
   held: FieldOrient | "";
   /** Soft problem to show (e.g. network). */
   error: string | null;
+  /** What the reporter's camera and mic can do (null = not known yet). */
+  caps: FieldCaps | null;
+  /** The camera / mic settings the reporter is using right now. */
+  ctl: FieldCtl;
 }
 
-type ToViewer = { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient };
-/** Director -> reporter. `quality` is the older single-setting message, still understood. */
-type ToReporter = { t: "quality"; id: string } | ({ t: "setup" } & Partial<FieldSetup>);
+type ToViewer = { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl };
+/** Director -> reporter. `quality` is the older single-setting message, still understood. `ctl` = camera + mic controls. */
+type ToReporter = { t: "quality"; id: string } | ({ t: "setup" } & Partial<FieldSetup>) | ({ t: "ctl" } & FieldCtl);
 
 const RETRY_MS = 3000;
 const NO_PICTURE_MS = 12000;
@@ -151,7 +317,7 @@ function placeholderStream(): MediaStream {
 
 /** Watches one field unit: its status, and (when `video`) its picture. */
 export class FieldViewer {
-  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null };
+  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {} };
   /** The incoming picture (null until the unit is live and the call is up). */
   stream: MediaStream | null = null;
   private peer: Peer | null = null;
@@ -166,14 +332,32 @@ export class FieldViewer {
   constructor(
     private room: string,
     private unit: number,
-    opts: { video: boolean; setup?: Partial<FieldSetup> },
+    opts: { video: boolean; setup?: Partial<FieldSetup>; ctl?: FieldCtl },
     private onChange: () => void,
   ) {
     this.video = opts.video;
     this.wantSetup = cleanFieldSetup(opts.setup);
+    this.wantCtl = cleanFieldCtl(opts.ctl);
   }
 
   private wantSetup: Partial<FieldSetup>;
+  private wantCtl: FieldCtl;
+
+  /** Director moves the camera or mic (zoom, torch, focus, exposure, white balance, front/back, sound processing). Sent now, and again after a reconnect. */
+  setCtl(patch: FieldCtl) {
+    this.wantCtl = { ...this.wantCtl, ...cleanFieldCtl(patch) };
+    this.sendCtl(cleanFieldCtl(patch));
+  }
+
+  private sendCtl(c: FieldCtl) {
+    const conn = this.conn;
+    if (!Object.keys(c).length || !conn?.open) return;
+    try {
+      conn.send({ t: "ctl", ...c } satisfies ToReporter);
+    } catch {
+      /* sent again on reconnect */
+    }
+  }
 
   /** Director picks the picture (size, frame rate, shape, bitrate). Sent now if the unit is online, and again whenever it reconnects. */
   setSetup(patch: Partial<FieldSetup>) {
@@ -252,7 +436,10 @@ export class FieldViewer {
     }
     const conn = peer.connect(fieldPeerId(this.room, this.unit), { reliable: true });
     this.conn = conn;
-    conn.on("open", () => this.sendSetup());
+    conn.on("open", () => {
+      this.sendSetup();
+      this.sendCtl(this.wantCtl);
+    });
     conn.on("data", (d) => {
       const m = d as ToViewer;
       if (m?.t !== "state") return;
@@ -266,6 +453,8 @@ export class FieldViewer {
         kbps: typeof m.kbps === "number" && m.kbps >= 0 && m.kbps <= 100000 ? Math.round(m.kbps) : 0,
         held: isFieldOrient(m.held) ? m.held : "",
         error: null,
+        caps: cleanFieldCaps(m.caps),
+        ctl: cleanFieldCtl(m.ctl),
       });
       if (m.live && this.video) this.startCall();
       if (!m.live) this.dropCall();
@@ -362,12 +551,14 @@ export class FieldReporter {
   constructor(
     private room: string,
     private unit: number,
-    private meta: () => { name: string; loc: string; orient: FieldOrient; fps: number; kbps: number; held: FieldOrient | "" },
+    private meta: () => { name: string; loc: string; orient: FieldOrient; fps: number; kbps: number; held: FieldOrient | ""; caps?: FieldCaps; ctl?: FieldCtl },
     private getStream: () => MediaStream | null,
     private onStatus: (s: { registered: boolean; viewers: number; error: string | null }) => void,
     /** The director changed the picture setup: the phone follows. */
     private onSetup: (s: Partial<FieldSetup>) => void = () => {},
     private currentQuality: () => string = () => DEFAULT_FIELD_QUALITY,
+    /** The director moved the camera or mic: the phone follows. */
+    private onCtl: (c: FieldCtl) => void = () => {},
   ) {}
 
   private report(error: string | null = null) {
@@ -390,6 +581,9 @@ export class FieldReporter {
         else if (m?.t === "setup") {
           const s = cleanFieldSetup(m);
           if (Object.keys(s).length) this.onSetup(s);
+        } else if (m?.t === "ctl") {
+          const c = cleanFieldCtl(m);
+          if (Object.keys(c).length) this.onCtl(c);
         }
       });
       c.on("close", () => this.conns.delete(c));
@@ -433,7 +627,7 @@ export class FieldReporter {
 
   private send(c: DataConnection) {
     const m = this.meta();
-    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: m.kbps, ...(m.held ? { held: m.held } : {}) };
+    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: m.kbps, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}) };
     try {
       if (c.open) c.send(msg);
     } catch {
