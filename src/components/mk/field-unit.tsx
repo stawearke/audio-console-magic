@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { FieldReporter } from "@/lib/mk/field-link";
 import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,15 @@ export function FieldUnit() {
     pass: q.get("pass") ?? "",
   });
   const linked = !!(q.get("server") && q.get("path"));
+  // Director link (no server of your own): ?room=…&unit=N&name=…&loc=…
+  const room = q.get("room") ?? "";
+  const unit = Math.max(0, Number(q.get("unit")) || 0);
+  const p2p = !!(room && unit);
+  const unitName = q.get("name") ?? "";
+  const unitLoc = q.get("loc") ?? "";
+  const [viewers, setViewers] = useState(0);
+  const [registered, setRegistered] = useState(false);
+  const reporter = useRef<FieldReporter | null>(null);
   const [cams, setCams] = useState<Dev[]>([]);
   const [mics, setMics] = useState<Dev[]>([]);
   const [cam, setCam] = useState("");
@@ -82,6 +92,7 @@ export function FieldUnit() {
     let ctx: AudioContext | null = null;
     open()
       .then((s) => {
+        reporter.current?.swapTracks(s);
         if (stop || s.getAudioTracks().length === 0) return;
         ctx = new AudioContext();
         const an = ctx.createAnalyser();
@@ -133,11 +144,44 @@ export function FieldUnit() {
     session.current = await whipStart(p, target);
   }, [target, qual.kbps]);
 
+  useEffect(() => {
+    if (!p2p) return;
+    const r = new FieldReporter(
+      room,
+      unit,
+      () => ({ name: unitName, loc: unitLoc }),
+      () => stream.current,
+      (st) => {
+        setRegistered(st.registered);
+        setViewers(st.viewers);
+        if (st.error) setError(st.error);
+      },
+    );
+    reporter.current = r;
+    void r.start();
+    return () => {
+      r.stop();
+      reporter.current = null;
+    };
+  }, [p2p, room, unit, unitName, unitLoc]);
+
+  // Keep the screen awake while live (a sleeping phone stops the stream).
+  useEffect(() => {
+    if (!live) return;
+    let lock: { release(): Promise<void> } | null = null;
+    const nav = navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<{ release(): Promise<void> }> } };
+    nav.wakeLock?.request("screen").then((l) => (lock = l), () => {});
+    return () => void lock?.release().catch(() => {});
+  }, [live]);
+
   const goLive = async () => {
     setError("");
     try {
       want.current = true;
-      await connect();
+      if (p2p) {
+        if (!stream.current) await open();
+        reporter.current?.setLive(true, qual.kbps);
+      } else await connect();
       setLive(true);
     } catch (e) {
       want.current = false;
@@ -147,6 +191,7 @@ export function FieldUnit() {
   const stopLive = async () => {
     want.current = false;
     setLive(false);
+    reporter.current?.setLive(false, qual.kbps);
     await whipStop(session.current, target);
     pc.current?.close();
     pc.current = null;
@@ -169,7 +214,7 @@ export function FieldUnit() {
   useEffect(() => {
     if (!live) return;
     const id = setInterval(async () => {
-      const p = pc.current;
+      const p = pc.current ?? reporter.current?.statsPc() ?? null;
       if (!p) return;
       const r = await p.getStats();
       r.forEach((x) => {
@@ -193,10 +238,23 @@ export function FieldUnit() {
     return () => clearInterval(id);
   }, [live]);
 
-  const ready = !!(target.server && target.path);
+  const ready = p2p || !!(target.server && target.path);
 
   return (
     <div className="mx-auto grid max-w-xl gap-3 p-3">
+      {p2p && (
+        <div className="mk-panel rounded-md p-3 text-center">
+          <div className="text-lg tracking-[0.15em] text-foreground">
+            FIELD {unit}
+            {unitName ? ` · ${unitName}` : ""}
+          </div>
+          {unitLoc && <div className="font-mono text-[11px] text-muted-foreground">{unitLoc}</div>}
+          <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+            {registered ? "Connected to the studio link" : "Connecting to the studio link…"}
+            {live && viewers > 0 ? ` · ${viewers} watching` : ""}
+          </div>
+        </div>
+      )}
       {!secure && (
         <p className="rounded-sm border border-border p-2 font-mono text-[11px] text-foreground">
           The camera only works on an https:// page. Open this link from the https address.
@@ -217,9 +275,13 @@ export function FieldUnit() {
           )}
         >
           {live
-            ? state === "connected"
-              ? "LIVE"
-              : state.toUpperCase() || "CONNECTING"
+            ? p2p
+              ? viewers > 0
+                ? "LIVE"
+                : "WAITING FOR STUDIO"
+              : state === "connected"
+                ? "LIVE"
+                : state.toUpperCase() || "CONNECTING"
             : "OFF AIR"}
         </span>
         <div
@@ -289,7 +351,7 @@ export function FieldUnit() {
         </select>
       </label>
 
-      {!linked && (
+      {!linked && !p2p && (
         <div className="mk-panel grid gap-2 rounded-md p-3">
           <div className="mk-label text-[9px]">RELAY (normally filled by your link)</div>
           {(["server", "path", "user", "pass"] as const).map((k) => (

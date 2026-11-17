@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AudioRouteImport } from './routes/audio'
 import { Route as CamRouteImport } from './routes/cam'
+import { Route as FieldRouteImport } from './routes/field'
+import { Route as FieldViewRouteImport } from './routes/field-view'
 import { Route as GraphicsRouteImport } from './routes/graphics'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FieldRouteImport } from './routes/field'
@@ -26,6 +28,7 @@ import { Route as SoundsRouteImport } from './routes/sounds'
 import { Route as StreamingRouteImport } from './routes/streaming'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as SystemRouteImport } from './routes/system'
+import { Route as UnitsRouteImport } from './routes/units'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +43,16 @@ const AudioRoute = AudioRouteImport.update({
 const CamRoute = CamRouteImport.update({
   id: '/cam',
   path: '/cam',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FieldRoute = FieldRouteImport.update({
+  id: '/field',
+  path: '/field',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FieldViewRoute = FieldViewRouteImport.update({
+  id: '/field-view',
+  path: '/field-view',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GraphicsRoute = GraphicsRouteImport.update({
@@ -112,11 +125,18 @@ const SystemRoute = SystemRouteImport.update({
   path: '/system',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UnitsRoute = UnitsRouteImport.update({
+  id: '/units',
+  path: '/units',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/audio': typeof AudioRoute
   '/cam': typeof CamRoute
+  '/field': typeof FieldRoute
+  '/field-view': typeof FieldViewRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
   '/field': typeof FieldRoute
@@ -131,11 +151,14 @@ export interface FileRoutesByFullPath {
   '/streaming': typeof StreamingRoute
   '/studio': typeof StudioRoute
   '/system': typeof SystemRoute
+  '/units': typeof UnitsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/audio': typeof AudioRoute
   '/cam': typeof CamRoute
+  '/field': typeof FieldRoute
+  '/field-view': typeof FieldViewRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
   '/field': typeof FieldRoute
@@ -150,12 +173,15 @@ export interface FileRoutesByTo {
   '/streaming': typeof StreamingRoute
   '/studio': typeof StudioRoute
   '/system': typeof SystemRoute
+  '/units': typeof UnitsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/audio': typeof AudioRoute
   '/cam': typeof CamRoute
+  '/field': typeof FieldRoute
+  '/field-view': typeof FieldViewRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
   '/field': typeof FieldRoute
@@ -170,6 +196,7 @@ export interface FileRoutesById {
   '/streaming': typeof StreamingRoute
   '/studio': typeof StudioRoute
   '/system': typeof SystemRoute
+  '/units': typeof UnitsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -177,6 +204,8 @@ export interface FileRouteTypes {
     | '/'
     | '/audio'
     | '/cam'
+    | '/field'
+    | '/field-view'
     | '/graphics'
     | '/login'
     | '/field'
@@ -191,11 +220,14 @@ export interface FileRouteTypes {
     | '/streaming'
     | '/studio'
     | '/system'
+    | '/units'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/audio'
     | '/cam'
+    | '/field'
+    | '/field-view'
     | '/graphics'
     | '/login'
     | '/field'
@@ -210,11 +242,14 @@ export interface FileRouteTypes {
     | '/streaming'
     | '/studio'
     | '/system'
+    | '/units'
   id:
     | '__root__'
     | '/'
     | '/audio'
     | '/cam'
+    | '/field'
+    | '/field-view'
     | '/graphics'
     | '/login'
     | '/field'
@@ -229,12 +264,15 @@ export interface FileRouteTypes {
     | '/streaming'
     | '/studio'
     | '/system'
+    | '/units'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AudioRoute: typeof AudioRoute
   CamRoute: typeof CamRoute
+  FieldRoute: typeof FieldRoute
+  FieldViewRoute: typeof FieldViewRoute
   GraphicsRoute: typeof GraphicsRoute
   LoginRoute: typeof LoginRoute
   FieldRoute: typeof FieldRoute
@@ -249,6 +287,7 @@ export interface RootRouteChildren {
   StreamingRoute: typeof StreamingRoute
   StudioRoute: typeof StudioRoute
   SystemRoute: typeof SystemRoute
+  UnitsRoute: typeof UnitsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -272,6 +311,20 @@ declare module '@tanstack/react-router' {
       path: '/cam'
       fullPath: '/cam'
       preLoaderRoute: typeof CamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/field': {
+      id: '/field'
+      path: '/field'
+      fullPath: '/field'
+      preLoaderRoute: typeof FieldRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/field-view': {
+      id: '/field-view'
+      path: '/field-view'
+      fullPath: '/field-view'
+      preLoaderRoute: typeof FieldViewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/graphics': {
@@ -372,6 +425,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SystemRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/units': {
+      id: '/units'
+      path: '/units'
+      fullPath: '/units'
+      preLoaderRoute: typeof UnitsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -379,6 +439,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AudioRoute: AudioRoute,
   CamRoute: CamRoute,
+  FieldRoute: FieldRoute,
+  FieldViewRoute: FieldViewRoute,
   GraphicsRoute: GraphicsRoute,
   LoginRoute: LoginRoute,
   FieldRoute: FieldRoute,
@@ -393,6 +455,7 @@ const rootRouteChildren: RootRouteChildren = {
   StreamingRoute: StreamingRoute,
   StudioRoute: StudioRoute,
   SystemRoute: SystemRoute,
+  UnitsRoute: UnitsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

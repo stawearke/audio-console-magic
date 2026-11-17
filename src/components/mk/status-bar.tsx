@@ -79,6 +79,15 @@ export function StatusBar({ status, statusMessage, demo, menus, listen, role }: 
             Audio
           </a>
         )}
+        {route("/units") && (
+          <Link
+            to="/units"
+            className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]"
+            aria-label="Field units"
+          >
+            Field
+          </Link>
+        )}
         {route("/playout") && (
           <Link
             to="/playout"

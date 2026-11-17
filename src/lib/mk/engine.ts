@@ -407,17 +407,30 @@ export class SwitcherEngine {
     });
   }
 
-  /** Add a field feed (scene FIELD n) and put it on the first free CAM slot. Studio cameras are not touched. */
-  async addFieldSource(mode: "media" | "web", url: string): Promise<string> {
+  /**
+   * Add a field feed (scene "FIELD n", or "FIELD n - label") and put it on a free CAM slot.
+   * Studio cameras are not touched. `fromSlot` (0-based) is where the search for a free slot starts,
+   * so field units can start at CAM 5. With a fixed `n` the call is safe to repeat: an existing scene is reused.
+   */
+  async addFieldSource(
+    mode: "media" | "web",
+    url: string,
+    opts: { n?: number; label?: string; fromSlot?: number } = {},
+  ): Promise<string> {
     const t = this.transport;
     if (!t?.addFieldSource) throw new Error("Connect to OBS first.");
-    const used = this.state.scenes
-      .map((n) => /^FIELD (\d+)$/i.exec(n)?.[1])
-      .filter(Boolean)
-      .map(Number);
-    const n = used.length ? Math.max(...used) + 1 : 1;
-    const scene = await t.addFieldSource(n, mode, url.trim());
-    const slot = this.state.config.camScenes.findIndex((s) => !s);
+    const fieldNo = (name: string) => /^FIELD (\d+)\b/i.exec(name)?.[1];
+    let scene: string | undefined;
+    if (opts.n != null) scene = this.state.scenes.find((x) => fieldNo(x) === String(opts.n));
+    if (!scene) {
+      const used = this.state.scenes.map(fieldNo).filter(Boolean).map(Number);
+      const n = opts.n ?? (used.length ? Math.max(...used) + 1 : 1);
+      scene = await t.addFieldSource(n, mode, url.trim(), opts.label);
+    }
+    const mapped = this.state.config.camScenes.indexOf(scene);
+    if (mapped !== -1) return scene;
+    const free = this.state.config.camScenes.map((s, i) => (s ? -1 : i)).filter((i) => i !== -1);
+    const slot = free.find((i) => i >= (opts.fromSlot ?? 0)) ?? free[0] ?? -1;
     if (slot === -1) throw new Error(`${scene} was created, but all ${CAM_COUNT} CAM slots are in use.`);
     this.mapCam(slot, scene);
     return scene;

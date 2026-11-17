@@ -180,7 +180,7 @@ export interface Transport {
    * Field feed: create scene "FIELD n" holding input "FIELD n feed" (media source for srt/rtmp/http urls,
    * browser source for a web page). Returns the scene name.
    */
-  addFieldSource?(n: number, mode: "media" | "web", url: string): Promise<string>;
+  addFieldSource?(n: number, mode: "media" | "web", url: string, label?: string): Promise<string>;
   /** Re-emit authoritative program / preview scenes. */
   resync(): Promise<void>;
   /** Shared setup between desks, kept in OBS itself (one slot per key). Absent on Demo Mode. */

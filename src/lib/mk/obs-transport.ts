@@ -1496,8 +1496,9 @@ export class ObsTransport implements Transport {
     if (bad) throw new Error(bad.requestStatus?.comment || `OBS rejected ${bad.requestType}`);
   }
 
-  async addFieldSource(n: number, mode: "media" | "web", url: string) {
-    const scene = `FIELD ${n}`;
+  async addFieldSource(n: number, mode: "media" | "web", url: string, label?: string) {
+    const tag = label?.trim().replace(/\s+/g, " ").slice(0, 40);
+    const scene = tag ? `FIELD ${n} - ${tag}` : `FIELD ${n}`;
     const inputName = `FIELD ${n} feed`;
     await this.obs.call("CreateScene", { sceneName: scene });
     const inputSettings =
