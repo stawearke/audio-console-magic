@@ -16,7 +16,6 @@ import { Route as FieldRouteImport } from './routes/field'
 import { Route as FieldViewRouteImport } from './routes/field-view'
 import { Route as GraphicsRouteImport } from './routes/graphics'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as FieldRouteImport } from './routes/field'
 import { Route as MultistreamRouteImport } from './routes/multistream'
 import { Route as OwnerRouteImport } from './routes/owner'
 import { Route as PlayoutRouteImport } from './routes/playout'
@@ -63,11 +62,6 @@ const GraphicsRoute = GraphicsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FieldRoute = FieldRouteImport.update({
-  id: '/field',
-  path: '/field',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MultistreamRoute = MultistreamRouteImport.update({
@@ -139,7 +133,6 @@ export interface FileRoutesByFullPath {
   '/field-view': typeof FieldViewRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
-  '/field': typeof FieldRoute
   '/multistream': typeof MultistreamRoute
   '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
@@ -161,7 +154,6 @@ export interface FileRoutesByTo {
   '/field-view': typeof FieldViewRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
-  '/field': typeof FieldRoute
   '/multistream': typeof MultistreamRoute
   '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
@@ -184,7 +176,6 @@ export interface FileRoutesById {
   '/field-view': typeof FieldViewRoute
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
-  '/field': typeof FieldRoute
   '/multistream': typeof MultistreamRoute
   '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
@@ -208,7 +199,6 @@ export interface FileRouteTypes {
     | '/field-view'
     | '/graphics'
     | '/login'
-    | '/field'
     | '/multistream'
     | '/owner'
     | '/playout'
@@ -230,7 +220,6 @@ export interface FileRouteTypes {
     | '/field-view'
     | '/graphics'
     | '/login'
-    | '/field'
     | '/multistream'
     | '/owner'
     | '/playout'
@@ -252,7 +241,6 @@ export interface FileRouteTypes {
     | '/field-view'
     | '/graphics'
     | '/login'
-    | '/field'
     | '/multistream'
     | '/owner'
     | '/playout'
@@ -275,7 +263,6 @@ export interface RootRouteChildren {
   FieldViewRoute: typeof FieldViewRoute
   GraphicsRoute: typeof GraphicsRoute
   LoginRoute: typeof LoginRoute
-  FieldRoute: typeof FieldRoute
   MultistreamRoute: typeof MultistreamRoute
   OwnerRoute: typeof OwnerRoute
   PlayoutRoute: typeof PlayoutRoute
@@ -339,13 +326,6 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/field': {
-      id: '/field'
-      path: '/field'
-      fullPath: '/field'
-      preLoaderRoute: typeof FieldRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/multistream': {
@@ -443,7 +423,6 @@ const rootRouteChildren: RootRouteChildren = {
   FieldViewRoute: FieldViewRoute,
   GraphicsRoute: GraphicsRoute,
   LoginRoute: LoginRoute,
-  FieldRoute: FieldRoute,
   MultistreamRoute: MultistreamRoute,
   OwnerRoute: OwnerRoute,
   PlayoutRoute: PlayoutRoute,

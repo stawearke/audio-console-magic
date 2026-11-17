@@ -535,6 +535,8 @@ export class SwitcherEngine {
     for (let i = 0; i < DSK_COUNT; i++) {
       const target = this.state.config.dsks[i];
       if (!target?.source || !this.state.dskActive[i] || this.dskBus[i]) continue;
+      // A DSK with its own scene chosen in Settings stays in that scene: no copies into the scene that goes to air.
+      if (target.scene) continue;
       const prev = this.dskOver[i];
       if (prev === to) continue;
       try {
@@ -2656,7 +2658,9 @@ export class SwitcherEngine {
       }
       // Like a real downstream keyer: also show it over whatever scene is on air, even when the
       // item lives in another scene (graphics scene, a camera without it, ...).
-      const onAir = this.state.programScene;
+      // Only when no scene is chosen for this DSK. With a scene chosen in Settings the DSK stays in that scene:
+      // nothing is copied into other scenes (a copy already left behind is still switched off).
+      const onAir = target.scene ? null : this.state.programScene;
       if (!this.state.demo && target.source && (onAir || this.dskOver[index])) {
         try {
           if (next && onAir) {
