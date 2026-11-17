@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AUDIO_BITRATES,
   OutputClient,
+  type IsoMode,
+  type IsoRow,
   REC_FORMATS,
   FRAME_RATES,
   REC_QUALITIES,
@@ -54,6 +56,8 @@ export function StreamSettings() {
   });
   const [folder, setFolder] = useState("");
   const [video, setVideo] = useState<VideoSettings | null>(null);
+  const [iso, setIso] = useState<IsoRow[]>([]);
+  const [isoOk, setIsoOk] = useState(true);
 
   const load = useCallback(async (c: OutputClient) => {
     setDest(await c.dest());
@@ -61,6 +65,9 @@ export function StreamSettings() {
     setFolder(await c.recordFolder().catch(() => ""));
     setVideo(await c.video().catch(() => null));
     setOut(await c.status());
+    const ok = await c.isoAvailable();
+    setIsoOk(ok);
+    setIso(ok ? await c.isoList().catch(() => []) : []);
   }, []);
 
   const connect = useCallback(async () => {
@@ -455,6 +462,75 @@ export function StreamSettings() {
         >
           Save quality &amp; recording
         </button>
+      </Panel>
+
+      <Panel title="SOURCE RECORD (each feed on its own, no graphics)">
+        {!isoOk ? (
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Install the free &quot;Source Record&quot; plugin by Exeldro in OBS (obsproject.com → Forums →
+            Resources → Source Record), restart OBS, then press Refresh.
+          </p>
+        ) : (
+          <>
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Records the raw camera / source, before scenes and graphics. WITH REC = starts and stops with the
+              main REC button. NOW = records until you stop it. Files go to the save folder above, one per source.
+            </p>
+            <div className="grid gap-1">
+              {iso.length === 0 && (
+                <span className="font-mono text-[10px] text-muted-foreground">No video sources found.</span>
+              )}
+              {iso.map((r) => (
+                <div key={r.name} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-xs" title={r.kind}>
+                    {r.name}
+                  </span>
+                  <span className="flex shrink-0 gap-1">
+                    {([0, 3, 1] as IsoMode[]).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() =>
+                          void run(async () => {
+                            await c.isoSet(r.name, m);
+                            setIso(await c.isoList());
+                          })
+                        }
+                        className={cn(
+                          "mk-button h-7 rounded-sm px-2 text-[11px]",
+                          r.mode === m && (m === 1 ? "mk-lit-program" : m === 3 ? "mk-lit-amber" : ""),
+                        )}
+                      >
+                        {m === 0 ? "OFF" : m === 3 ? "WITH REC" : "NOW"}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() =>
+                  void run(async () => {
+                    for (const r of iso) if (r.mode !== 0) await c.isoSet(r.name, 0);
+                    setIso(await c.isoList());
+                  })
+                }
+                className="mk-button h-8 w-fit rounded-sm px-3 text-xs"
+              >
+                All OFF
+              </button>
+              <button
+                type="button"
+                onClick={() => void run(async () => setIso(await c.isoList()))}
+                className="mk-button flex h-8 w-fit items-center gap-1 rounded-sm px-3 text-xs"
+              >
+                <RefreshCw className="h-3 w-3" /> Refresh
+              </button>
+            </div>
+          </>
+        )}
       </Panel>
     </div>
   );
