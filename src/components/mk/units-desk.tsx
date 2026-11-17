@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { FieldCameraPanel } from "@/components/mk/field-camera-panel";
 import { FieldReturnPanel } from "@/components/mk/field-return-panel";
+import { SignalChip, UplinkLine } from "@/components/mk/uplink";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DEFAULT_FIELD_FPS, DEFAULT_FIELD_ORIENT, DEFAULT_FIELD_QUALITY, fieldKbps, FIELD_FPS, FIELD_KBPS, FIELD_QUALITY, reporterUrl, viewerUrl, type FieldCtl, type FieldSetup } from "@/lib/mk/field-link";
 import { FIELD_FIRST_SLOT, fieldUnits, setupOf, useFieldUnits, useFieldViewer, useThrottledCtl, type FieldUnitInfo } from "@/lib/mk/field-units";
@@ -342,6 +343,7 @@ function UnitCard({
             BATT {state.battery.level}%{state.battery.charging ? " CHG" : ""}
           </span>
         )}
+        {state.link === "live" && <SignalChip net={state.net} />}
         {state.link === "live" && (
           <span className="relative h-2 w-20 overflow-hidden rounded bg-black/40" role="meter" aria-label="Reporter mic level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(state.level * 100)} title="The reporter's mic level">
             <span className="absolute inset-y-0 left-0 bg-emerald-400" style={{ width: `${Math.min(100, state.level * 140)}%` }} />
@@ -453,6 +455,7 @@ function UnitCard({
             {state.kbps > 0 ? ` · ${(state.kbps / 1000).toFixed(1)} Mbps` : ""} · {state.orient === "portrait" ? "portrait" : "landscape"}
           </span>
         )}
+        <UplinkLine net={state.net} auto={state.auto} topKbps={fieldKbps(wantRes, wantFps, wantKbps)} live={state.link === "live"} />
         {online && state.held && state.held !== state.orient && (
           <span className="font-mono text-[10px] text-amber-400">
             The phone is held {state.held === "portrait" ? "upright" : "sideways"}. The reporter has been asked to {state.orient === "landscape" ? "turn it sideways" : "hold it upright"}.

@@ -85,6 +85,30 @@ export function signalOf(net: Pick<FieldNet, "rtt" | "loss">): Signal {
   return { level, bars: (4 - ORDER.indexOf(level)) as Signal["bars"], label: level.toUpperCase() };
 }
 
+// ------------------------------------------------------------------------------------------------- wording
+
+const mbps = (kbps: number) => (kbps / 1000).toFixed(1);
+
+export /** "7.8 Mbps · 90 ms · 1.2 % loss" */
+function formatNet(net: FieldNet): string {
+  return `${mbps(net.kbps)} Mbps · ${net.rtt} ms · ${(net.loss * 100).toFixed(1)} % loss`;
+}
+
+/**
+ * Wording for what Auto quality is doing, or null when there is nothing to say.
+ * `topKbps` = the most Auto may send (what the director's size and frame rate normally use).
+ */
+export function autoNote(
+  net: FieldNet,
+  auto: boolean,
+  topKbps: number,
+): { text: string; lowered: boolean } | null {
+  if (!auto) return null;
+  if (topKbps > 0 && net.cap < topKbps)
+    return { text: `AUTO · lowered to ${mbps(net.cap)} of ${mbps(topKbps)} Mbps`, lowered: true };
+  return { text: "AUTO", lowered: false };
+}
+
 // ------------------------------------------------------------------------------------------------- measuring
 
 /** The few fields of the browser's WebRTC statistics this module reads. */

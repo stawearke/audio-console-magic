@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ReporterSignal } from "@/components/mk/uplink";
 import {
   captureSize,
   DEFAULT_FIELD_FPS,
@@ -21,6 +22,7 @@ import {
   type FieldSetup,
   type FieldTally,
 } from "@/lib/mk/field-link";
+import { type FieldNet } from "@/lib/mk/field-health";
 import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +95,8 @@ export function FieldUnit() {
   const [state, setState] = useState("");
   const [error, setError] = useState("");
   const [stats, setStats] = useState({ kbps: 0, rtt: 0 });
+  // The phone's own uplink measurement (connected-to-studio mode): drives the signal indicator.
+  const [net, setNet] = useState<FieldNet | null>(null);
   const [level, setLevel] = useState(0);
 
   const video = useRef<HTMLVideoElement>(null);
@@ -320,6 +324,7 @@ export function FieldUnit() {
       },
     );
     reporter.current = r;
+    r.onNet = (n) => setNet(n);
     void r.start();
     return () => {
       r.stop();
@@ -450,6 +455,11 @@ export function FieldUnit() {
     return () => clearInterval(id);
   }, [live]);
 
+  // No measurement outlives the live session.
+  useEffect(() => {
+    if (!live) setNet(null);
+  }, [live]);
+
   const ready = p2p || !!(target.server && target.path);
 
   return (
@@ -572,7 +582,8 @@ export function FieldUnit() {
       >
         {live ? "STOP" : "GO LIVE"}
       </button>
-      {live && (
+      {live && p2p && <ReporterSignal net={net} auto={kbpsPick === 0} topKbps={kbpsEff} />}
+      {live && !p2p && (
         <p className="text-center font-mono text-[11px] text-muted-foreground">
           {(stats.kbps / 1000).toFixed(1)} Mbps · delay {stats.rtt} ms
         </p>
