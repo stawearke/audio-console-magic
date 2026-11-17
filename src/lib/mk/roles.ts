@@ -157,7 +157,7 @@ export function useLocked(): boolean {
 
 /** Pages each desk may open. Only the Director is unrestricted, whether or not the link was locked. */
 const ROUTES: Record<Exclude<Role, "director">, string[]> = {
-  graphics: ["/", "/graphics", "/onair", "/settings"],
+  graphics: ["/", "/graphics", "/settings"],
   sound: ["/", "/audio", "/sounds", "/settings"],
   prompter: ["/", "/prompter", "/settings"],
 };

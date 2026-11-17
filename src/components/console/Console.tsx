@@ -821,7 +821,7 @@ export function Console() {
               <a
                 href={embedded ? "/graphics" : "/onair"}
                 className="console-btn inline-flex h-8 items-center rounded px-3 text-xs"
-                title="Open OnAir Studio (graphics)"
+                title="Open Graphics Studio"
               >
                 Graphics
               </a>

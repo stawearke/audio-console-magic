@@ -91,11 +91,11 @@ describe("shared script library (cloud merge)", () => {
 });
 
 describe("accounts", () => {
-  test("control pages need a login, output / camera / prompter pages do not", async () => {
+  test("control pages need a login, camera / prompter pages do not", async () => {
     const { needsLogin } = await import("../src/lib/mk/cloud");
     for (const p of ["/", "/settings", "/audio", "/playout", "/graphics"])
       expect(needsLogin(p)).toBe(true);
-    for (const p of ["/login", "/set-password", "/prompter", "/output", "/cam", "/prompter/"])
+    for (const p of ["/login", "/set-password", "/prompter", "/cam", "/prompter/"])
       expect(needsLogin(p)).toBe(false);
   });
 

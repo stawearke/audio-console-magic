@@ -15,8 +15,6 @@ import { Route as CamRouteImport } from './routes/cam'
 import { Route as GraphicsRouteImport } from './routes/graphics'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MultistreamRouteImport } from './routes/multistream'
-import { Route as OnairRouteImport } from './routes/onair'
-import { Route as OutputRouteImport } from './routes/output'
 import { Route as OwnerRouteImport } from './routes/owner'
 import { Route as PlayoutRouteImport } from './routes/playout'
 import { Route as PrompterRouteImport } from './routes/prompter'
@@ -56,16 +54,6 @@ const LoginRoute = LoginRouteImport.update({
 const MultistreamRoute = MultistreamRouteImport.update({
   id: '/multistream',
   path: '/multistream',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OnairRoute = OnairRouteImport.update({
-  id: '/onair',
-  path: '/onair',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OutputRoute = OutputRouteImport.update({
-  id: '/output',
-  path: '/output',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OwnerRoute = OwnerRouteImport.update({
@@ -126,8 +114,6 @@ export interface FileRoutesByFullPath {
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
   '/multistream': typeof MultistreamRoute
-  '/onair': typeof OnairRoute
-  '/output': typeof OutputRoute
   '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
@@ -146,8 +132,6 @@ export interface FileRoutesByTo {
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
   '/multistream': typeof MultistreamRoute
-  '/onair': typeof OnairRoute
-  '/output': typeof OutputRoute
   '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
@@ -167,8 +151,6 @@ export interface FileRoutesById {
   '/graphics': typeof GraphicsRoute
   '/login': typeof LoginRoute
   '/multistream': typeof MultistreamRoute
-  '/onair': typeof OnairRoute
-  '/output': typeof OutputRoute
   '/owner': typeof OwnerRoute
   '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
@@ -189,8 +171,6 @@ export interface FileRouteTypes {
     | '/graphics'
     | '/login'
     | '/multistream'
-    | '/onair'
-    | '/output'
     | '/owner'
     | '/playout'
     | '/prompter'
@@ -209,8 +189,6 @@ export interface FileRouteTypes {
     | '/graphics'
     | '/login'
     | '/multistream'
-    | '/onair'
-    | '/output'
     | '/owner'
     | '/playout'
     | '/prompter'
@@ -229,8 +207,6 @@ export interface FileRouteTypes {
     | '/graphics'
     | '/login'
     | '/multistream'
-    | '/onair'
-    | '/output'
     | '/owner'
     | '/playout'
     | '/prompter'
@@ -250,8 +226,6 @@ export interface RootRouteChildren {
   GraphicsRoute: typeof GraphicsRoute
   LoginRoute: typeof LoginRoute
   MultistreamRoute: typeof MultistreamRoute
-  OnairRoute: typeof OnairRoute
-  OutputRoute: typeof OutputRoute
   OwnerRoute: typeof OwnerRoute
   PlayoutRoute: typeof PlayoutRoute
   PrompterRoute: typeof PrompterRoute
@@ -306,20 +280,6 @@ declare module '@tanstack/react-router' {
       path: '/multistream'
       fullPath: '/multistream'
       preLoaderRoute: typeof MultistreamRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/onair': {
-      id: '/onair'
-      path: '/onair'
-      fullPath: '/onair'
-      preLoaderRoute: typeof OnairRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/output': {
-      id: '/output'
-      path: '/output'
-      fullPath: '/output'
-      preLoaderRoute: typeof OutputRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/owner': {
@@ -402,8 +362,6 @@ const rootRouteChildren: RootRouteChildren = {
   GraphicsRoute: GraphicsRoute,
   LoginRoute: LoginRoute,
   MultistreamRoute: MultistreamRoute,
-  OnairRoute: OnairRoute,
-  OutputRoute: OutputRoute,
   OwnerRoute: OwnerRoute,
   PlayoutRoute: PlayoutRoute,
   PrompterRoute: PrompterRoute,
