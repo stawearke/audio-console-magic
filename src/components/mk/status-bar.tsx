@@ -61,13 +61,13 @@ export function StatusBar({ status, statusMessage, demo, menus, listen, role }: 
             {statusMessage && !demo ? ` · ${statusMessage}` : ""}
           </span>
         </div>
-        {route("/onair") && !embedded && (
+        {route("/graphics") && !embedded && (
           <a
-            href="/onair"
+            href="/graphics"
             className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]"
-            aria-label="OnAir Studio graphics"
+            aria-label="Graphics Studio"
           >
-            OnAir
+            Graphics
           </a>
         )}
         {route("/audio") && (

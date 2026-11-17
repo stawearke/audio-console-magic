@@ -819,7 +819,7 @@ export function Console() {
                 Switcher
               </a>
               <a
-                href={embedded ? "/graphics" : "/onair"}
+                href="/graphics"
                 className="console-btn inline-flex h-8 items-center rounded px-3 text-xs"
                 title="Open Graphics Studio"
               >
