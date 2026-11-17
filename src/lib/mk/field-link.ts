@@ -66,6 +66,34 @@ export function cleanFieldSetup(m: unknown): Partial<FieldSetup> {
   return out;
 }
 
+// ------------------------------------------------------------------------------------ return channel
+
+/** What the reporter's phone shows about the studio: red = this unit is on air, green = it is next. */
+export type FieldTally = "program" | "preview" | "off";
+export const isFieldTally = (t: unknown): t is FieldTally => t === "program" || t === "preview" || t === "off";
+
+/** A short written cue from the director that appears big on the reporter's phone. */
+export const CUE_MAX = 120;
+export function cleanCue(t: unknown): string {
+  // eslint-disable-next-line no-control-regex
+  return typeof t === "string" ? t.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, CUE_MAX) : "";
+}
+
+export interface FieldBattery {
+  /** 0-100 */
+  level: number;
+  charging: boolean;
+}
+export function cleanBattery(b: unknown): FieldBattery | null {
+  const r = (b && typeof b === "object" ? b : null) as Record<string, unknown> | null;
+  const level = r?.["level"];
+  if (typeof level !== "number" || !Number.isFinite(level) || level < 0 || level > 100) return null;
+  return { level: Math.round(level), charging: r?.["charging"] === true };
+}
+
+/** Mic peak (0-1) the reporter reports a few times a second. */
+export const cleanLevel = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
+
 // ------------------------------------------------------------------------- remote camera + mic controls
 
 export type FieldFacing = "environment" | "user";
@@ -261,11 +289,22 @@ export interface FieldState {
   caps: FieldCaps | null;
   /** The camera / mic settings the reporter is using right now. */
   ctl: FieldCtl;
+  /** Phone battery (null = the phone does not say). */
+  battery: FieldBattery | null;
+  /** The reporter's mic level right now, 0-1. */
+  level: number;
+  /** Number of the last cue the reporter tapped OK on. */
+  ack: number;
+  /** The director's voice is going to the reporter's ear right now. */
+  talking: boolean;
 }
 
-type ToViewer = { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl };
+type ToViewer =
+  | { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery }
+  | { t: "lvl"; v: number }
+  | { t: "ack"; seq: number };
 /** Director -> reporter. `quality` is the older single-setting message, still understood. `ctl` = camera + mic controls. */
-type ToReporter = { t: "quality"; id: string } | ({ t: "setup" } & Partial<FieldSetup>) | ({ t: "ctl" } & FieldCtl);
+type ToReporter = { t: "quality"; id: string } | ({ t: "setup" } & Partial<FieldSetup>) | ({ t: "ctl" } & FieldCtl) | { t: "tally"; state: FieldTally } | { t: "cue"; text: string; seq: number };
 
 const RETRY_MS = 3000;
 const NO_PICTURE_MS = 12000;
@@ -317,7 +356,7 @@ function placeholderStream(): MediaStream {
 
 /** Watches one field unit: its status, and (when `video`) its picture. */
 export class FieldViewer {
-  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {} };
+  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false };
   /** The incoming picture (null until the unit is live and the call is up). */
   stream: MediaStream | null = null;
   private peer: Peer | null = null;
@@ -342,6 +381,80 @@ export class FieldViewer {
 
   private wantSetup: Partial<FieldSetup>;
   private wantCtl: FieldCtl;
+  private wantTally: FieldTally = "off";
+  private cueSeq = Date.now() % 1_000_000_000;
+  private talkCall: MediaConnection | null = null;
+  private talkMic: MediaStream | null = null;
+
+  /** Show the reporter whether this unit is on air (red), next (green) or neither. Sent now and again after a reconnect. */
+  setTally(t: FieldTally) {
+    this.wantTally = t;
+    this.sendRaw({ t: "tally", state: t });
+  }
+
+  /** Put a short written cue on the reporter's phone. Returns its number (0 = not sent, the reporter is offline). */
+  cue(text: string): number {
+    const clean = cleanCue(text);
+    if (!clean || !this.conn?.open) return 0;
+    const seq = ++this.cueSeq;
+    return this.sendRaw({ t: "cue", text: clean, seq }) ? seq : 0;
+  }
+
+  /** Open or close the director's voice to the reporter's ear. Returns a problem to show, or null. */
+  async talk(on: boolean): Promise<string | null> {
+    if (!on) {
+      this.endTalk();
+      return null;
+    }
+    const peer = this.peer;
+    if (!peer || !this.conn?.open) return "The reporter is offline.";
+    if (this.talkCall) return null;
+    let mic: MediaStream;
+    try {
+      mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch {
+      return "Allow this browser to use your microphone to talk to the reporter.";
+    }
+    if (this.dead || this.talkCall) {
+      mic.getTracks().forEach((t) => t.stop());
+      return null;
+    }
+    this.talkMic = mic;
+    const call = peer.call(fieldPeerId(this.room, this.unit), mic, { metadata: { kind: "ifb" } });
+    this.talkCall = call;
+    call.on("close", () => {
+      if (this.talkCall === call) this.endTalk();
+    });
+    call.on("error", () => {
+      if (this.talkCall === call) this.endTalk();
+    });
+    this.patch({ talking: true });
+    return null;
+  }
+
+  private endTalk() {
+    const call = this.talkCall;
+    this.talkCall = null;
+    try {
+      call?.close();
+    } catch {
+      /* ignore */
+    }
+    this.talkMic?.getTracks().forEach((t) => t.stop());
+    this.talkMic = null;
+    if (this.state.talking) this.patch({ talking: false });
+  }
+
+  private sendRaw(m: ToReporter): boolean {
+    const c = this.conn;
+    if (!c?.open) return false;
+    try {
+      c.send(m);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   /** Director moves the camera or mic (zoom, torch, focus, exposure, white balance, front/back, sound processing). Sent now, and again after a reconnect. */
   setCtl(patch: FieldCtl) {
@@ -439,9 +552,18 @@ export class FieldViewer {
     conn.on("open", () => {
       this.sendSetup();
       this.sendCtl(this.wantCtl);
+      if (this.wantTally !== "off") this.sendRaw({ t: "tally", state: this.wantTally });
     });
     conn.on("data", (d) => {
       const m = d as ToViewer;
+      if (m?.t === "lvl") {
+        this.patch({ level: cleanLevel(m.v) });
+        return;
+      }
+      if (m?.t === "ack") {
+        if (Number.isInteger(m.seq)) this.patch({ ack: m.seq });
+        return;
+      }
       if (m?.t !== "state") return;
       this.patch({
         link: m.live ? "live" : "standby",
@@ -455,6 +577,7 @@ export class FieldViewer {
         error: null,
         caps: cleanFieldCaps(m.caps),
         ctl: cleanFieldCtl(m.ctl),
+        battery: cleanBattery(m.battery),
       });
       if (m.live && this.video) this.startCall();
       if (!m.live) this.dropCall();
@@ -524,6 +647,7 @@ export class FieldViewer {
   stop() {
     this.dead = true;
     if (this.retry) clearTimeout(this.retry);
+    this.endTalk();
     this.dropCall();
     try {
       this.conn?.close();
@@ -551,7 +675,7 @@ export class FieldReporter {
   constructor(
     private room: string,
     private unit: number,
-    private meta: () => { name: string; loc: string; orient: FieldOrient; fps: number; kbps: number; held: FieldOrient | ""; caps?: FieldCaps; ctl?: FieldCtl },
+    private meta: () => { name: string; loc: string; orient: FieldOrient; fps: number; kbps: number; held: FieldOrient | ""; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery },
     private getStream: () => MediaStream | null,
     private onStatus: (s: { registered: boolean; viewers: number; error: string | null }) => void,
     /** The director changed the picture setup: the phone follows. */
@@ -559,7 +683,33 @@ export class FieldReporter {
     private currentQuality: () => string = () => DEFAULT_FIELD_QUALITY,
     /** The director moved the camera or mic: the phone follows. */
     private onCtl: (c: FieldCtl) => void = () => {},
+    /** What the studio sends back: tally light, written cues, and the director's voice (null = voice stopped). */
+    private studio: { tally?: (t: FieldTally) => void; cue?: (text: string, seq: number) => void; voice?: (s: MediaStream | null) => void } = {},
   ) {}
+
+  private voiceCall: MediaConnection | null = null;
+
+  /** Tell the studio the reporter has read cue `seq`. */
+  sendAck(seq: number) {
+    this.conns.forEach((c) => {
+      try {
+        if (c.open) c.send({ t: "ack", seq } satisfies ToViewer);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  /** Mic level (0-1) for the director's card. Cheap: only sent while somebody is connected. */
+  sendLevel(v: number) {
+    this.conns.forEach((c) => {
+      try {
+        if (c.open) c.send({ t: "lvl", v: Math.round(cleanLevel(v) * 100) / 100 } satisfies ToViewer);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
 
   private report(error: string | null = null) {
     this.onStatus({ registered: !!this.peer && !this.peer.disconnected && !!this.peer.open, viewers: this.calls.size, error });
@@ -584,12 +734,32 @@ export class FieldReporter {
         } else if (m?.t === "ctl") {
           const c = cleanFieldCtl(m);
           if (Object.keys(c).length) this.onCtl(c);
+        } else if (m?.t === "tally" && isFieldTally(m.state)) this.studio.tally?.(m.state);
+        else if (m?.t === "cue") {
+          const text = cleanCue(m.text);
+          if (text && Number.isInteger(m.seq)) this.studio.cue?.(text, m.seq);
         }
       });
       c.on("close", () => this.conns.delete(c));
       c.on("error", () => this.conns.delete(c));
     });
     peer.on("call", (call) => {
+      // The director's voice: answer listen-only, even when not live. It is not a viewer and carries no picture.
+      if ((call.metadata as { kind?: unknown } | undefined)?.kind === "ifb") {
+        this.voiceCall?.close();
+        this.voiceCall = call;
+        call.answer();
+        call.on("stream", (s) => this.studio.voice?.(s));
+        const done = () => {
+          if (this.voiceCall === call) {
+            this.voiceCall = null;
+            this.studio.voice?.(null);
+          }
+        };
+        call.on("close", done);
+        call.on("error", done);
+        return;
+      }
       const s = this.getStream();
       if (!this.live || !s) {
         call.close();
@@ -627,7 +797,7 @@ export class FieldReporter {
 
   private send(c: DataConnection) {
     const m = this.meta();
-    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: m.kbps, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}) };
+    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: m.kbps, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}), ...(m.battery ? { battery: m.battery } : {}) };
     try {
       if (c.open) c.send(msg);
     } catch {
@@ -696,6 +866,8 @@ export class FieldReporter {
   stop() {
     this.dead = true;
     if (this.retry) clearTimeout(this.retry);
+    this.voiceCall?.close();
+    this.voiceCall = null;
     this.calls.forEach((c) => c.close());
     this.calls.clear();
     this.conns.forEach((c) => c.close());

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { cleanFieldCtl, DEFAULT_FIELD_ORIENT, FieldViewer, isFieldFps, isFieldKbps, isFieldOrient, isFieldQuality, newFieldRoom, type FieldCtl, type FieldOrient, type FieldSetup, type FieldState } from "./field-link";
+import { cleanFieldCtl, DEFAULT_FIELD_ORIENT, FieldViewer, isFieldFps, isFieldKbps, isFieldOrient, isFieldQuality, newFieldRoom, type FieldCtl, type FieldOrient, type FieldTally, type FieldSetup, type FieldState } from "./field-link";
 
 /** First CAM slot (0-based) a field unit may take: CAM 9. Studio cameras CAM 1-8 stay untouched. */
 export const FIELD_FIRST_SLOT = 8;
@@ -158,13 +158,17 @@ export function useFieldViewer(room: string, unit: number, video: boolean, setup
   }, [video]);
 
   const v = ref.current;
-  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {} };
+  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false };
   return {
     state,
     stream: v?.stream ?? null,
     setSetup: (p: Partial<FieldSetup>) => v?.setSetup(p),
     setQuality: (id: string) => v?.setQuality(id),
     setCtl: (c: FieldCtl) => v?.setCtl(c),
+    // These read the viewer when called, so a call from an effect never meets a stale (null) viewer.
+    setTally: (t: FieldTally) => ref.current?.setTally(t),
+    cue: (text: string) => ref.current?.cue(text) ?? 0,
+    talk: (on: boolean) => ref.current?.talk(on) ?? Promise.resolve<string | null>("The reporter is offline."),
   };
 }
 

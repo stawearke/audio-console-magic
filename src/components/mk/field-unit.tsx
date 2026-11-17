@@ -13,11 +13,13 @@ import {
   FIELD_QUALITY,
   FieldReporter,
   videoConstraintsOf,
+  type FieldBattery,
   type FieldCaps,
   type FieldCtl,
   type FieldFacing,
   type FieldOrient,
   type FieldSetup,
+  type FieldTally,
 } from "@/lib/mk/field-link";
 import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
 import { cn } from "@/lib/utils";
@@ -76,6 +78,13 @@ export function FieldUnit() {
   const [facing, setFacing] = useState<FieldFacing>("environment");
   const facingRef = useRef(facing);
   facingRef.current = facing;
+  // What the studio sends back: tally light, written cues, the director's voice.
+  const [tally, setTally] = useState<FieldTally>("off");
+  const [cue, setCue] = useState<{ text: string; seq: number } | null>(null);
+  const [voice, setVoice] = useState<MediaStream | null>(null);
+  const [battery, setBattery] = useState<FieldBattery | undefined>(undefined);
+  const voiceEl = useRef<HTMLAudioElement>(null);
+  const levelRef = useRef(0);
   const [caps, setCaps] = useState<FieldCaps | null>(null);
   const [ctl, setCtl] = useState<FieldCtl>({});
   // Sound is sent raw (no processing) until the director asks for it.
@@ -100,8 +109,8 @@ export function FieldUnit() {
   const kbpsEff = fieldKbps(quality, fps, kbpsPick);
   const held: FieldOrient = deviceTall ? "portrait" : "landscape";
   const needTurn = isPhone() && held !== orient && !ignoreTurn;
-  const metaRef = useRef<{ orient: FieldOrient; fps: number; kbps: number; held: FieldOrient; caps?: FieldCaps; ctl: FieldCtl }>({ orient, fps, kbps: kbpsEff, held, ctl });
-  metaRef.current = { orient, fps, kbps: kbpsEff, held, ...(caps ? { caps } : {}), ctl };
+  const metaRef = useRef<{ orient: FieldOrient; fps: number; kbps: number; held: FieldOrient; caps?: FieldCaps; ctl: FieldCtl; battery?: FieldBattery }>({ orient, fps, kbps: kbpsEff, held, ctl });
+  metaRef.current = { orient, fps, kbps: kbpsEff, held, ...(caps ? { caps } : {}), ctl, ...(battery ? { battery } : {}) };
 
   // How the phone is held right now (the director sees it, and we ask for a turn if it does not match).
   useEffect(() => {
@@ -236,6 +245,7 @@ export function FieldUnit() {
           let peak = 0;
           for (const v of buf) peak = Math.max(peak, Math.abs(v - 128) / 128);
           setLevel(peak);
+          levelRef.current = peak;
           requestAnimationFrame(tick);
         };
         tick();
@@ -296,6 +306,18 @@ export function FieldUnit() {
       },
       () => qualityRef.current,
       (c: FieldCtl) => void applyCtl(c),
+      {
+        tally: setTally,
+        cue: (text, seq) => {
+          setCue({ text, seq });
+          try {
+            navigator.vibrate?.([200, 100, 200]);
+          } catch {
+            /* not every phone can vibrate */
+          }
+        },
+        voice: setVoice,
+      },
     );
     reporter.current = r;
     void r.start();
@@ -313,7 +335,45 @@ export function FieldUnit() {
   // Tell the studio (and OBS monitor) the moment the shape changes, the phone is turned, or the camera / mic changed.
   useEffect(() => {
     reporter.current?.announce();
-  }, [orient, held, caps, ctl]);
+  }, [orient, held, caps, ctl, battery]);
+
+  // The studio's voice plays in the reporter's ear.
+  useEffect(() => {
+    const el = voiceEl.current;
+    if (!el) return;
+    el.srcObject = voice;
+    if (voice) void el.play().catch(() => {});
+  }, [voice]);
+
+  // Phone battery, so the director knows before it dies.
+  useEffect(() => {
+    type Battery = { level: number; charging: boolean; addEventListener(t: string, f: () => void): void; removeEventListener(t: string, f: () => void): void };
+    let alive = true;
+    let b: Battery | null = null;
+    const read = () => b && alive && setBattery({ level: Math.round(b.level * 100), charging: b.charging });
+    (navigator as Navigator & { getBattery?: () => Promise<Battery> }).getBattery?.().then(
+      (x) => {
+        if (!alive) return;
+        b = x;
+        read();
+        x.addEventListener("levelchange", read);
+        x.addEventListener("chargingchange", read);
+      },
+      () => {},
+    );
+    return () => {
+      alive = false;
+      b?.removeEventListener("levelchange", read);
+      b?.removeEventListener("chargingchange", read);
+    };
+  }, []);
+
+  // Mic level to the director's card, a few times a second.
+  useEffect(() => {
+    if (!live || !p2p) return;
+    const id = setInterval(() => reporter.current?.sendLevel(levelRef.current), 250);
+    return () => clearInterval(id);
+  }, [live, p2p]);
 
   // Keep the screen awake while live (a sleeping phone stops the stream).
   useEffect(() => {
@@ -393,6 +453,40 @@ export function FieldUnit() {
 
   return (
     <div className="mx-auto grid max-w-xl gap-3 p-3">
+      <audio ref={voiceEl} autoPlay playsInline className="hidden" />
+      {tally !== "off" && (
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none fixed inset-0 z-40 border-[8px]",
+            tally === "program" ? "animate-pulse border-red-600" : "border-emerald-400",
+          )}
+        >
+          <span className={cn("absolute left-1/2 top-2 -translate-x-1/2 rounded-sm px-3 py-1 font-mono text-xs font-bold tracking-[0.2em] text-white", tally === "program" ? "bg-red-600" : "bg-emerald-600")}>
+            {tally === "program" ? "YOU ARE ON AIR" : "YOU ARE NEXT"}
+          </span>
+        </div>
+      )}
+      {cue && (
+        <div role="alert" className="fixed inset-x-0 top-0 z-50 grid gap-2 bg-amber-500 p-4 text-center text-black shadow-lg">
+          <div className="text-2xl font-black leading-tight">{cue.text}</div>
+          <button
+            type="button"
+            className="mx-auto h-11 rounded-sm bg-black px-8 text-sm font-bold tracking-[0.15em] text-white"
+            onClick={() => {
+              reporter.current?.sendAck(cue.seq);
+              setCue(null);
+            }}
+          >
+            OK
+          </button>
+        </div>
+      )}
+      {voice && (
+        <p className="rounded-sm border border-amber-400 p-2 text-center font-mono text-[11px] text-amber-300">
+          The studio is talking to you. Wear headphones, or their voice goes back on air through your mic.
+        </p>
+      )}
       {p2p && (
         <div className="mk-panel rounded-md p-3 text-center">
           <div className="text-lg tracking-[0.15em] text-foreground">

@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 
 import { FieldCameraPanel } from "@/components/mk/field-camera-panel";
+import { FieldReturnPanel } from "@/components/mk/field-return-panel";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DEFAULT_FIELD_FPS, DEFAULT_FIELD_ORIENT, DEFAULT_FIELD_QUALITY, fieldKbps, FIELD_FPS, FIELD_KBPS, FIELD_QUALITY, reporterUrl, viewerUrl, type FieldCtl, type FieldSetup } from "@/lib/mk/field-link";
 import { FIELD_FIRST_SLOT, fieldUnits, setupOf, useFieldUnits, useFieldViewer, useThrottledCtl, type FieldUnitInfo } from "@/lib/mk/field-units";
@@ -226,7 +227,7 @@ function UnitCard({
   const [watch, setWatch] = useState(false);
   // The torch is never remembered: a light that switches itself on at the next session would surprise the reporter.
   const { torch: _torch, ...rememberedCtl } = u.ctl ?? {};
-  const { state, stream, setSetup, setCtl } = useFieldViewer(room, u.n, watch, setupOf(u), rememberedCtl);
+  const { state, stream, setSetup, setCtl, setTally, cue, talk } = useFieldViewer(room, u.n, watch, setupOf(u), rememberedCtl);
   const sendCtl = useThrottledCtl(setCtl);
   const sw = useSwitcher();
   const inputName = `FIELD ${u.n} feed`;
@@ -247,6 +248,12 @@ function UnitCard({
     setSetup(patch);
   };
   const online = state.link !== "offline" && state.link !== "connecting";
+  // The reporter's phone shows a red frame while this unit is on air and a green one while it is next.
+  const tallyNow = cam < 0 ? "off" : sw.program === cam ? "program" : sw.preview === cam ? "preview" : "off";
+  useEffect(() => {
+    setTally(tallyNow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tallyNow, state.link]);
   // What the director set wins (so a dragged slider never jumps back); otherwise what the phone reports.
   const [torch, setTorch] = useState<boolean | undefined>(undefined);
   const ctlNow: FieldCtl = { ...state.ctl, ...rememberedCtl, ...((torch ?? state.ctl.torch) !== undefined ? { torch: (torch ?? state.ctl.torch) as boolean } : {}) };
@@ -328,6 +335,16 @@ function UnitCard({
         {state.link !== "offline" && state.link !== "connecting" && (
           <span className="mk-button rounded-[3px] px-2 py-1 font-mono text-[10px]">
             {state.orient === "portrait" ? "PORTRAIT 9:16" : "LANDSCAPE 16:9"}
+          </span>
+        )}
+        {online && state.battery && (
+          <span className={cn("mk-button rounded-[3px] px-2 py-1 font-mono text-[10px]", state.battery.level < 20 && !state.battery.charging && "mk-lit-amber")} title="The reporter's phone battery">
+            BATT {state.battery.level}%{state.battery.charging ? " CHG" : ""}
+          </span>
+        )}
+        {state.link === "live" && (
+          <span className="relative h-2 w-20 overflow-hidden rounded bg-black/40" role="meter" aria-label="Reporter mic level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(state.level * 100)} title="The reporter's mic level">
+            <span className="absolute inset-y-0 left-0 bg-emerald-400" style={{ width: `${Math.min(100, state.level * 140)}%` }} />
           </span>
         )}
         {cam >= 0 ? (
@@ -442,6 +459,8 @@ function UnitCard({
           </span>
         )}
       </div>
+
+      <FieldReturnPanel online={online} talking={state.talking} ack={state.ack} onCue={cue} onTalk={talk} />
 
       <FieldCameraPanel caps={state.caps} ctl={ctlNow} online={online} onChange={pickCtl} />
 
