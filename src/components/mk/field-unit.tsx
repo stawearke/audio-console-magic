@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils";
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const field = "mk-button h-10 w-full rounded-sm px-2 text-sm text-foreground";
 const QUALITY = [
-  { id: "720", label: "720p · 2.5 Mbps (safe on mobile data)", w: 1280, h: 720, kbps: 2500 },
+  { id: "1080hi", label: "1080p · 8 Mbps (best picture, strong 4G/5G or Wi-Fi)", w: 1920, h: 1080, kbps: 8000 },
   { id: "1080", label: "1080p · 4.5 Mbps (good connection)", w: 1920, h: 1080, kbps: 4500 },
+  { id: "720", label: "720p · 2.5 Mbps (safe on mobile data)", w: 1280, h: 720, kbps: 2500 },
   { id: "480", label: "480p · 1 Mbps (weak signal)", w: 854, h: 480, kbps: 1000 },
 ];
 
@@ -40,7 +41,7 @@ export function FieldUnit() {
   const [mics, setMics] = useState<Dev[]>([]);
   const [cam, setCam] = useState("");
   const [mic, setMic] = useState("");
-  const [quality, setQuality] = useState("720");
+  const [quality, setQuality] = useState("1080hi");
   const [live, setLive] = useState(false);
   const [state, setState] = useState("");
   const [error, setError] = useState("");
@@ -73,6 +74,8 @@ export function FieldUnit() {
         autoGainControl: false,
       },
     });
+    // Keep the picture sharp and smooth rather than letting the encoder trade it away.
+    for (const t of s.getVideoTracks()) if ("contentHint" in t) t.contentHint = "motion";
     stream.current = s;
     if (video.current) video.current.srcObject = s;
     const list = await navigator.mediaDevices.enumerateDevices();

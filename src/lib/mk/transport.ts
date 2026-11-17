@@ -181,6 +181,10 @@ export interface Transport {
    * browser source for a web page). Returns the scene name.
    */
   addFieldSource?(n: number, mode: "media" | "web", url: string, label?: string): Promise<string>;
+  /** Point the browser source of field unit n at `url` (and reset it to full-HD 30 fps). */
+  setFieldUrl?(n: number, url: string): Promise<void>;
+  /** The address the browser source of field unit n currently loads, or null if there is none. */
+  getFieldUrl?(n: number): Promise<string | null>;
   /** Re-emit authoritative program / preview scenes. */
   resync(): Promise<void>;
   /** Shared setup between desks, kept in OBS itself (one slot per key). Absent on Demo Mode. */

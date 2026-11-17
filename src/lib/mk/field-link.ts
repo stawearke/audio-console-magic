@@ -351,7 +351,9 @@ export class FieldReporter {
       const sender = call.peerConnection.getSenders().find((x) => x.track?.kind === "video");
       if (!sender) continue;
       const prm = sender.getParameters();
-      prm.encodings = [{ ...(prm.encodings?.[0] ?? {}), maxBitrate: this.kbps * 1000 }];
+      prm.encodings = [{ ...(prm.encodings?.[0] ?? {}), maxBitrate: this.kbps * 1000, maxFramerate: 30 }];
+      // Under a weak signal drop frames, not sharpness.
+      (prm as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = "maintain-resolution";
       void sender.setParameters(prm).catch(() => {});
     }
   }

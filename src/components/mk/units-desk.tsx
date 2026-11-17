@@ -27,7 +27,38 @@ export function UnitsDesk() {
   const [loc, setLoc] = useState("");
   const [note, setNote] = useState("");
   const [qr, setQr] = useState<FieldUnitInfo | null>(null);
-  const connected = sw.status === "connected";
+  const connected = sw.status === "connected" && !sw.demo;
+  const [roomReady, setRoomReady] = useState(false);
+
+  // One room for everybody: it lives in OBS. The first desk to connect saves its room there,
+  // every other device and address then adopts it, so links and OBS sources can never drift apart.
+  useEffect(() => {
+    if (!connected || !room) {
+      setRoomReady(false);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      const inObs = await engine.getFieldRoom();
+      if (!alive) return;
+      if (inObs && inObs !== room) fieldUnits.setRoom(inObs);
+      else if (!inObs) await engine.setFieldRoom(room).catch(() => {});
+      if (alive) setRoomReady(true);
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, room === ""]);
+
+  const newRoom = async () => {
+    if (!confirm("New room code? Links already sent stop working, and the OBS sources are re-pointed for you.")) return;
+    fieldUnits.newRoom();
+    const next = fieldUnits.snapshot().room;
+    await engine.setFieldRoom(next).catch(() => {});
+    for (const u of fieldUnits.snapshot().units)
+      await engine.setFieldUrl(u.n, viewerUrl(fieldUnits.snapshot().base, next, u.n)).catch(() => {});
+  };
   const insecure = base !== "" && !base.startsWith("https://");
 
   const sceneOf = (n: number) => sw.config.camScenes.find((s) => s && new RegExp(`^FIELD ${n}\\b`, "i").test(s)) ?? null;
@@ -80,7 +111,7 @@ export function UnitsDesk() {
       {units.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No field units yet. Add the first one above.</p>}
 
       {units.map((u) => (
-        <UnitCard key={u.n} u={u} room={room} base={base} cam={camOf(u.n)} connected={connected} onAdd={() => void toSwitcher(u)} onQr={() => setQr(u)} />
+        <UnitCard key={u.n} u={u} room={room} base={base} cam={camOf(u.n)} connected={connected && roomReady} onAdd={() => void toSwitcher(u)} onQr={() => setQr(u)} />
       ))}
 
       <details className="mk-panel rounded-md p-3 text-xs">
@@ -100,7 +131,7 @@ export function UnitsDesk() {
             <button
               type="button"
               className={btn}
-              onClick={() => confirm("New room code? Every link already sent, and the OBS sources, stop working.") && fieldUnits.newRoom()}
+              onClick={() => void newRoom()}
             >
               New room code
             </button>
@@ -154,12 +185,40 @@ function UnitCard({
   const { state, stream } = useFieldViewer(room, u.n, watch);
   const video = useRef<HTMLVideoElement>(null);
   const [copied, setCopied] = useState(false);
+  const [obsUrl, setObsUrl] = useState<string | null | undefined>(undefined);
+  const [fixing, setFixing] = useState(false);
   const link = reporterUrl(base, room, u.n, u.name, u.loc);
+  const wanted = viewerUrl(base, room, u.n);
   const chip = CHIP[state.link] ?? CHIP["offline"]!;
 
   useEffect(() => {
     if (video.current) video.current.srcObject = stream;
   }, [stream, watch]);
+
+  // What OBS actually loads for this unit, compared with what it should load.
+  useEffect(() => {
+    if (!connected || cam < 0) {
+      setObsUrl(undefined);
+      return;
+    }
+    let alive = true;
+    void engine.getFieldUrl(u.n).then((x) => alive && setObsUrl(x));
+    return () => {
+      alive = false;
+    };
+  }, [connected, cam, u.n, wanted]);
+  const obsWrong = obsUrl !== undefined && obsUrl !== wanted;
+  const fixObs = async () => {
+    setFixing(true);
+    try {
+      await engine.setFieldUrl(u.n, wanted);
+      setObsUrl(wanted);
+    } catch {
+      /* the button stays, try again */
+    } finally {
+      setFixing(false);
+    }
+  };
 
   const copy = async () => {
     try {
@@ -241,6 +300,20 @@ function UnitCard({
             <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] text-white/60">
               {state.link === "live" ? "Connecting the picture…" : "Waiting for the reporter to go live"}
             </span>
+          )}
+        </div>
+      )}
+      {cam >= 0 && obsUrl !== undefined && (
+        <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
+          {obsWrong ? (
+            <>
+              <span className="text-amber-400">The OBS source loads a different link, so it will be black on air.</span>
+              <button type="button" disabled={fixing} className={cn(btn, "h-7 mk-lit-amber")} onClick={() => void fixObs()}>
+                {fixing ? "Fixing…" : "Fix OBS link"}
+              </button>
+            </>
+          ) : (
+            <span className="text-muted-foreground">OBS link OK · full HD</span>
           )}
         </div>
       )}

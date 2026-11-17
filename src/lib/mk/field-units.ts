@@ -91,6 +91,10 @@ export const fieldUnits = {
   setBase(base: string) {
     write({ ...state, base: base.trim() });
   },
+  /** Use this room (the one kept in OBS). */
+  setRoom(room: string) {
+    if (room && room !== state.room) write({ ...state, room });
+  },
   /** New room code: every old reporter link and OBS source stops working. */
   newRoom() {
     write({ ...state, room: newFieldRoom() });

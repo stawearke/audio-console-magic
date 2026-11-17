@@ -436,6 +436,29 @@ export class SwitcherEngine {
     return scene;
   }
 
+  /** The field room kept in OBS itself, so every device and address uses the same one. */
+  async getFieldRoom(): Promise<string | null> {
+    const t = this.transport;
+    if (!t?.sharedGet || this.state.status !== "connected" || this.state.demo) return null;
+    const v = cleanEntry(await t.sharedGet("fieldRoom").catch(() => null))?.value;
+    return typeof v === "string" && /^[a-z0-9]{4,16}$/i.test(v) ? v : null;
+  }
+
+  async setFieldRoom(room: string): Promise<void> {
+    const t = this.transport;
+    if (!t?.sharedSet || this.state.status !== "connected" || this.state.demo) return;
+    await t.sharedSet("fieldRoom", { rev: Date.now(), by: deskId(), value: room });
+  }
+
+  async getFieldUrl(n: number): Promise<string | null> {
+    return (await this.transport?.getFieldUrl?.(n)) ?? null;
+  }
+
+  async setFieldUrl(n: number, url: string): Promise<void> {
+    if (!this.transport?.setFieldUrl) throw new Error("Connect to OBS first.");
+    await this.transport.setFieldUrl(n, url);
+  }
+
   autoMapScenes() {
     const scenes = this.state.scenes.filter((n) => n !== GFX_SCENE && n !== FX_SCENE).slice(0, CAM_COUNT);
     const camScenes = Array.from({ length: CAM_COUNT }, (_, i) => scenes[i] ?? null);

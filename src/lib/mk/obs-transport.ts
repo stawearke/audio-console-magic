@@ -1503,7 +1503,7 @@ export class ObsTransport implements Transport {
     await this.obs.call("CreateScene", { sceneName: scene });
     const inputSettings =
       mode === "web"
-        ? { url, width: 1920, height: 1080, reroute_audio: true }
+        ? { url, width: 1920, height: 1080, fps: 30, fps_custom: true, reroute_audio: true, shutdown: false }
         : { input: url, is_local_file: false, close_when_inactive: false, restart_on_activate: false, hw_decode: true };
     try {
       await this.obs.call("CreateInput", {
@@ -1518,6 +1518,24 @@ export class ObsTransport implements Transport {
       throw e;
     }
     return scene;
+  }
+
+  async setFieldUrl(n: number, url: string) {
+    await this.obs.call("SetInputSettings", {
+      inputName: `FIELD ${n} feed`,
+      inputSettings: { url, width: 1920, height: 1080, fps: 30, fps_custom: true, reroute_audio: true, shutdown: false },
+      overlay: true,
+    });
+  }
+
+  async getFieldUrl(n: number) {
+    try {
+      const r = await this.obs.call("GetInputSettings", { inputName: `FIELD ${n} feed` });
+      const url = (r.inputSettings as { url?: unknown }).url;
+      return typeof url === "string" ? url : null;
+    } catch {
+      return null;
+    }
   }
 
   async fxCutTo(scene: string) {
