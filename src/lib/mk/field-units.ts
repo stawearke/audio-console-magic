@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { FieldViewer, newFieldRoom, type FieldState } from "./field-link";
+import { FieldViewer, isFieldQuality, newFieldRoom, type FieldState } from "./field-link";
 
 /** First CAM slot (0-based) a field unit may take: CAM 5. Studio cameras CAM 1-4 stay untouched. */
 export const FIELD_FIRST_SLOT = 4;
 
 export interface FieldUnitInfo {
+  /** Picture quality the director chose for this unit (see FIELD_QUALITY). */
+  quality?: string;
   /** Unit number: 1, 2, 3… Also the reporter's connection id. */
   n: number;
   name: string;
@@ -32,7 +34,7 @@ const read = (): Saved => {
       units: Array.isArray(p.units)
         ? p.units
             .filter((u): u is FieldUnitInfo => !!u && typeof u.n === "number")
-            .map((u) => ({ n: u.n, name: String(u.name ?? ""), loc: String(u.loc ?? "") }))
+            .map((u) => ({ n: u.n, name: String(u.name ?? ""), loc: String(u.loc ?? ""), ...(isFieldQuality(u.quality) ? { quality: u.quality } : {}) }))
         : [],
     };
   } catch {
@@ -82,7 +84,7 @@ export const fieldUnits = {
     write({ ...state, units: [...state.units, unit] });
     return unit;
   },
-  update(n: number, patch: Partial<Pick<FieldUnitInfo, "name" | "loc">>) {
+  update(n: number, patch: Partial<Pick<FieldUnitInfo, "name" | "loc" | "quality">>) {
     write({ ...state, units: state.units.map((u) => (u.n === n ? { ...u, ...patch } : u)) });
   },
   remove(n: number) {
@@ -108,15 +110,17 @@ export const useFieldUnits = () => {
 };
 
 /** Live status (and optionally the picture) of one unit. */
-export function useFieldViewer(room: string, unit: number, video: boolean) {
+export function useFieldViewer(room: string, unit: number, video: boolean, quality?: string) {
   const [, tick] = useState(0);
   const ref = useRef<FieldViewer | null>(null);
   const wantVideo = useRef(video);
   wantVideo.current = video;
+  const wantQuality = useRef(quality);
+  wantQuality.current = quality;
 
   useEffect(() => {
     if (!room) return;
-    const v = new FieldViewer(room, unit, { video: wantVideo.current }, () => tick((x) => x + 1));
+    const v = new FieldViewer(room, unit, { video: wantVideo.current, ...(wantQuality.current ? { quality: wantQuality.current } : {}) }, () => tick((x) => x + 1));
     ref.current = v;
     void v.start();
     return () => {
@@ -130,6 +134,6 @@ export function useFieldViewer(room: string, unit: number, video: boolean) {
   }, [video]);
 
   const v = ref.current;
-  const state: FieldState = v?.state ?? { link: "connecting", name: "", loc: "", error: null };
-  return { state, stream: v?.stream ?? null };
+  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: "landscape", error: null };
+  return { state, stream: v?.stream ?? null, setQuality: (id: string) => v?.setQuality(id) };
 }

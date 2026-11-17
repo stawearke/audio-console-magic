@@ -13,17 +13,35 @@ import type { DataConnection, MediaConnection, Peer } from "peerjs";
 
 export const fieldPeerId = (room: string, unit: number) => `mkf-${room}-${unit}`;
 
+export type FieldOrient = "landscape" | "portrait";
+
 export type FieldLink = "connecting" | "offline" | "standby" | "live";
+
+/** Picture quality the director can pick for a field unit (the reporter's phone then follows). */
+export const FIELD_QUALITY = [
+  { id: "1080hi", label: "1080p · 8 Mbps (best picture)", short: "1080p HQ", w: 1920, h: 1080, kbps: 8000 },
+  { id: "1080", label: "1080p · 4.5 Mbps", short: "1080p", w: 1920, h: 1080, kbps: 4500 },
+  { id: "720", label: "720p · 2.5 Mbps (safe on mobile data)", short: "720p", w: 1280, h: 720, kbps: 2500 },
+  { id: "480", label: "480p · 1 Mbps (weak signal)", short: "480p", w: 854, h: 480, kbps: 1000 },
+] as const;
+export const DEFAULT_FIELD_QUALITY = "1080hi";
+export const isFieldQuality = (id: unknown): id is string => FIELD_QUALITY.some((q) => q.id === id);
 
 export interface FieldState {
   link: FieldLink;
+  /** Quality the reporter is sending at right now. */
+  quality: string;
   name: string;
   loc: string;
+  /** Which way the reporter is filming: the picture arrives 16:9 (landscape) or 9:16 (portrait). */
+  orient: FieldOrient;
   /** Soft problem to show (e.g. network). */
   error: string | null;
 }
 
-type ToViewer = { t: "state"; live: boolean; name: string; loc: string };
+type ToViewer = { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient };
+/** Director -> reporter. */
+type ToReporter = { t: "quality"; id: string };
 
 const RETRY_MS = 3000;
 const NO_PICTURE_MS = 12000;
@@ -75,7 +93,7 @@ function placeholderStream(): MediaStream {
 
 /** Watches one field unit: its status, and (when `video`) its picture. */
 export class FieldViewer {
-  state: FieldState = { link: "connecting", name: "", loc: "", error: null };
+  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: "landscape", error: null };
   /** The incoming picture (null until the unit is live and the call is up). */
   stream: MediaStream | null = null;
   private peer: Peer | null = null;
@@ -90,10 +108,30 @@ export class FieldViewer {
   constructor(
     private room: string,
     private unit: number,
-    opts: { video: boolean },
+    opts: { video: boolean; quality?: string },
     private onChange: () => void,
   ) {
     this.video = opts.video;
+    this.wantQuality = opts.quality && isFieldQuality(opts.quality) ? opts.quality : null;
+  }
+
+  private wantQuality: string | null;
+
+  /** Director picks the reporter's picture quality. Sent now if the unit is online, and again whenever it reconnects. */
+  setQuality(id: string) {
+    if (!isFieldQuality(id)) return;
+    this.wantQuality = id;
+    this.sendQuality();
+  }
+
+  private sendQuality() {
+    const c = this.conn;
+    if (!this.wantQuality || !c?.open) return;
+    try {
+      c.send({ t: "quality", id: this.wantQuality } satisfies ToReporter);
+    } catch {
+      /* sent again on reconnect */
+    }
   }
 
   private patch(p: Partial<FieldState>) {
@@ -153,10 +191,18 @@ export class FieldViewer {
     }
     const conn = peer.connect(fieldPeerId(this.room, this.unit), { reliable: true });
     this.conn = conn;
+    conn.on("open", () => this.sendQuality());
     conn.on("data", (d) => {
       const m = d as ToViewer;
       if (m?.t !== "state") return;
-      this.patch({ link: m.live ? "live" : "standby", name: m.name, loc: m.loc, error: null });
+      this.patch({
+        link: m.live ? "live" : "standby",
+        name: m.name,
+        loc: m.loc,
+        quality: m.quality ?? "",
+        orient: m.orient === "portrait" ? "portrait" : "landscape",
+        error: null,
+      });
       if (m.live && this.video) this.startCall();
       if (!m.live) this.dropCall();
     });
@@ -251,9 +297,11 @@ export class FieldReporter {
   constructor(
     private room: string,
     private unit: number,
-    private meta: () => { name: string; loc: string },
+    private meta: () => { name: string; loc: string; orient: FieldOrient },
     private getStream: () => MediaStream | null,
     private onStatus: (s: { registered: boolean; viewers: number; error: string | null }) => void,
+    private onQuality: (id: string) => void = () => {},
+    private currentQuality: () => string = () => DEFAULT_FIELD_QUALITY,
   ) {}
 
   private report(error: string | null = null) {
@@ -270,6 +318,10 @@ export class FieldReporter {
     peer.on("connection", (c) => {
       this.conns.add(c);
       c.on("open", () => this.send(c));
+      c.on("data", (d) => {
+        const m = d as ToReporter;
+        if (m?.t === "quality" && isFieldQuality(m.id)) this.onQuality(m.id);
+      });
       c.on("close", () => this.conns.delete(c));
       c.on("error", () => this.conns.delete(c));
     });
@@ -311,7 +363,7 @@ export class FieldReporter {
 
   private send(c: DataConnection) {
     const m = this.meta();
-    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc };
+    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient };
     try {
       if (c.open) c.send(msg);
     } catch {
@@ -321,6 +373,18 @@ export class FieldReporter {
 
   private broadcast() {
     this.conns.forEach((c) => this.send(c));
+  }
+
+  /** Tell every viewer the quality changed, and apply the new bitrate to calls already running. */
+  setQuality(kbps: number) {
+    this.kbps = kbps;
+    this.applyBitrate();
+    this.broadcast();
+  }
+
+  /** Orientation (or name / place) changed: tell every viewer now. */
+  announce() {
+    this.broadcast();
   }
 
   setLive(on: boolean, kbps: number) {
