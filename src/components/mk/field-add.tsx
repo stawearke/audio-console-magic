@@ -1,10 +1,11 @@
 import { useState } from "react";
 
+import { FIELD_FIRST_SLOT } from "@/lib/mk/field-units";
 import { engine } from "@/lib/mk/use-switcher";
 
 const field = "mk-button h-9 w-full rounded-sm px-2 text-xs text-foreground";
 
-/** Adds a field feed as scene "FIELD n" on the next free CAM slot. Studio cameras are not touched. */
+/** Adds a field feed as scene "FIELD n" on the next free CAM slot from CAM 9. Studio cameras are not touched. */
 export function FieldAdd() {
   const [mode, setMode] = useState<"media" | "web">("media");
   const [url, setUrl] = useState("");
@@ -15,7 +16,7 @@ export function FieldAdd() {
     setBusy(true);
     setNote("");
     try {
-      const scene = await engine.addFieldSource(mode, url);
+      const scene = await engine.addFieldSource(mode, url, { fromSlot: FIELD_FIRST_SLOT });
       setNote(`Added ${scene}. It is on the source bus now.`);
       setUrl("");
     } catch (e) {

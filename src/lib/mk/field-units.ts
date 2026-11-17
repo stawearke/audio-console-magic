@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { FieldViewer, isFieldQuality, newFieldRoom, type FieldState } from "./field-link";
 
-/** First CAM slot (0-based) a field unit may take: CAM 5. Studio cameras CAM 1-4 stay untouched. */
-export const FIELD_FIRST_SLOT = 4;
+/** First CAM slot (0-based) a field unit may take: CAM 9. Studio cameras CAM 1-8 stay untouched. */
+export const FIELD_FIRST_SLOT = 8;
 
 export interface FieldUnitInfo {
   /** Picture quality the director chose for this unit (see FIELD_QUALITY). */

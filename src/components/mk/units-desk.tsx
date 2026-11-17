@@ -51,7 +51,7 @@ export function UnitsDesk() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, room === ""]);
 
-  // New scenes added in OBS later also need the always-on field audio.
+  // Only units switched to FADER mode need re-syncing when new scenes appear in OBS.
   const sceneCount = sw.scenes.length;
   useEffect(() => {
     if (connected) void engine.syncFieldAudio();
@@ -81,8 +81,7 @@ export function UnitsDesk() {
         label: u.name || u.loc,
         fromSlot: FIELD_FIRST_SLOT,
       });
-      // New field units keep their sound on the mix even when their camera is off air.
-      if (!sw.config.fieldAudioAlways.includes(`FIELD ${u.n} feed`)) await engine.setFieldAudioAlways(u.n, true);
+      // Sound is GLOBAL by default (OBS Desktop Audio): nothing is added to your other scenes.
       setNote("");
     } catch (e) {
       setNote(`FIELD ${u.n}: ${msg(e)}`);
@@ -109,7 +108,7 @@ export function UnitsDesk() {
           </button>
         </div>
         <p className="font-mono text-[10px] text-muted-foreground">
-          Each unit gets a link to send to the reporter, and becomes the next free camera from CAM {FIELD_FIRST_SLOT + 1}. No scene mapping.
+          Each unit gets a link to send to the reporter, and becomes the next free camera from CAM {FIELD_FIRST_SLOT + 1} (CAM 9). No scene mapping.
         </p>
         {!connected && (
           <p className="font-mono text-[10px] text-amber-400">OBS is not connected, so units cannot join the switcher yet. Links still work.</p>
@@ -343,9 +342,9 @@ function UnitCard({
             disabled={!connected || cam < 0}
             className={cn(btn, "w-full", always && "mk-lit-preview")}
             onClick={() => void engine.setFieldAudioAlways(u.n, !always)}
-            title="Keep this unit's sound on the mix even when its camera is not on air"
+            title="GLOBAL: sound plays through the PC and OBS Desktop Audio in every scene, no scene items. FADER: own OBS fader strip, but the feed is parked in every scene."
           >
-            {always ? "ALWAYS ON · sound stays on air" : "Follows camera (muted when off air)"}
+            {always ? "FADER · own strip, parked in all scenes" : "GLOBAL · Desktop Audio, in no extra scenes"}
           </button>
           {strip && (
             <div className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">

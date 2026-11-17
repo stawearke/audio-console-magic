@@ -613,7 +613,7 @@ export interface MkConfig {
   limiter: LimiterConfig;
   /** Audio inputs the operator hid from the mixer (they stay in OBS and on the mix). */
   hiddenAudio: string[];
-  /** Field feeds whose audio stays on the mix even when their camera is not on air (input names, e.g. "FIELD 1 feed"). */
+  /** Field feeds in FADER mode (own OBS strip, parked in every scene). Feeds not listed here are GLOBAL: sound goes through OBS Desktop Audio. */
   fieldAudioAlways: string[];
   /** Pre-planned run of show (titles + planned lengths) shown in the Tools panel. */
   rundown: RundownItem[];

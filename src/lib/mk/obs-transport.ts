@@ -1503,7 +1503,7 @@ export class ObsTransport implements Transport {
     await this.obs.call("CreateScene", { sceneName: scene });
     const inputSettings =
       mode === "web"
-        ? { url, width: 1920, height: 1080, fps: 30, fps_custom: true, reroute_audio: true, shutdown: false }
+        ? { url, width: 1920, height: 1080, fps: 30, fps_custom: true, reroute_audio: false, shutdown: false }
         : { input: url, is_local_file: false, close_when_inactive: false, restart_on_activate: false, hw_decode: true };
     try {
       await this.obs.call("CreateInput", {
@@ -1523,13 +1523,18 @@ export class ObsTransport implements Transport {
   async setFieldUrl(n: number, url: string) {
     await this.obs.call("SetInputSettings", {
       inputName: `FIELD ${n} feed`,
-      inputSettings: { url, width: 1920, height: 1080, fps: 30, fps_custom: true, reroute_audio: true, shutdown: false },
+      inputSettings: { url, width: 1920, height: 1080, fps: 30, fps_custom: true, shutdown: false },
       overlay: true,
     });
   }
 
   async setFieldAudioEverywhere(n: number, on: boolean) {
     const input = `FIELD ${n} feed`;
+    // on  = own OBS fader strip (needs the feed parked in the other scenes so OBS counts it active)
+    // off = GLOBAL: sound plays out of the PC and OBS Desktop Audio carries it in every scene, nothing parked
+    await this.obs
+      .call("SetInputSettings", { inputName: input, inputSettings: { reroute_audio: on }, overlay: true })
+      .catch(() => {});
     const scenes = await this.getScenes();
     const own = scenes.find((s) => new RegExp(`^FIELD ${n}\\b`, "i").test(s));
     for (const sceneName of scenes) {
