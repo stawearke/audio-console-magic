@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { FieldReporter } from "@/lib/mk/field-link";
+import { DEFAULT_FIELD_QUALITY, FIELD_QUALITY, FieldReporter, type FieldOrient } from "@/lib/mk/field-link";
 import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
 import { cn } from "@/lib/utils";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const field = "mk-button h-10 w-full rounded-sm px-2 text-sm text-foreground";
-const QUALITY = [
-  { id: "1080hi", label: "1080p · 8 Mbps (best picture, strong 4G/5G or Wi-Fi)", w: 1920, h: 1080, kbps: 8000 },
-  { id: "1080", label: "1080p · 4.5 Mbps (good connection)", w: 1920, h: 1080, kbps: 4500 },
-  { id: "720", label: "720p · 2.5 Mbps (safe on mobile data)", w: 1280, h: 720, kbps: 2500 },
-  { id: "480", label: "480p · 1 Mbps (weak signal)", w: 854, h: 480, kbps: 1000 },
-];
+const QUALITY = FIELD_QUALITY;
 
 type Dev = { id: string; label: string };
+
+const ORIENT = [
+  { id: "auto", label: "Auto (follows how the phone is held)" },
+  { id: "landscape", label: "Landscape · wide 16:9" },
+  { id: "portrait", label: "Portrait · tall 9:16" },
+] as const;
+type OrientChoice = (typeof ORIENT)[number]["id"];
 
 /** Reporter page: pick camera + mic (laptop webcam, capture card, phone camera), go live to the relay. */
 export function FieldUnit() {
@@ -41,7 +43,11 @@ export function FieldUnit() {
   const [mics, setMics] = useState<Dev[]>([]);
   const [cam, setCam] = useState("");
   const [mic, setMic] = useState("");
-  const [quality, setQuality] = useState("1080hi");
+  const [quality, setQuality] = useState<string>(DEFAULT_FIELD_QUALITY);
+  const [orientChoice, setOrientChoice] = useState<OrientChoice>("auto");
+  const [deviceTall, setDeviceTall] = useState(false);
+  const qualityRef = useRef(quality);
+  qualityRef.current = quality;
   const [live, setLive] = useState(false);
   const [state, setState] = useState("");
   const [error, setError] = useState("");
@@ -56,15 +62,34 @@ export function FieldUnit() {
   const last = useRef({ bytes: 0, at: 0 });
 
   const secure = typeof window === "undefined" || window.isSecureContext;
-  const qual = QUALITY.find((x) => x.id === quality) ?? QUALITY[0]!;
+  const qual = QUALITY.find((x) => x.id === quality) ?? QUALITY[0];
+  const orient: FieldOrient =
+    orientChoice === "auto" ? (deviceTall ? "portrait" : "landscape") : orientChoice;
+  const portrait = orient === "portrait";
+  // Portrait = the same picture turned on its side: 1080x1920 instead of 1920x1080.
+  const capW = portrait ? qual.h : qual.w;
+  const capH = portrait ? qual.w : qual.h;
+  const orientRef = useRef<FieldOrient>(orient);
+  orientRef.current = orient;
+
+  // Auto: follow the phone when it is turned.
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(orientation: portrait)");
+    const on = () => setDeviceTall(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
 
   const open = useCallback(async () => {
     stream.current?.getTracks().forEach((t) => t.stop());
     const s = await navigator.mediaDevices.getUserMedia({
       video: {
         ...(cam ? { deviceId: { exact: cam } } : { facingMode: "environment" }),
-        width: { ideal: qual.w },
-        height: { ideal: qual.h },
+        width: { ideal: capW },
+        height: { ideal: capH },
+        aspectRatio: { ideal: capW / capH },
         frameRate: { ideal: 30 },
       },
       audio: {
@@ -86,7 +111,7 @@ export function FieldUnit() {
     setCams(dev("videoinput"));
     setMics(dev("audioinput"));
     return s;
-  }, [cam, mic, qual.w, qual.h]);
+  }, [cam, mic, capW, capH]);
 
   // preview + mic meter
   useEffect(() => {
@@ -152,13 +177,16 @@ export function FieldUnit() {
     const r = new FieldReporter(
       room,
       unit,
-      () => ({ name: unitName, loc: unitLoc }),
+      () => ({ name: unitName, loc: unitLoc, orient: orientRef.current }),
       () => stream.current,
       (st) => {
         setRegistered(st.registered);
         setViewers(st.viewers);
         if (st.error) setError(st.error);
       },
+      // The director picked a quality: follow it (camera is re-opened at that size, bitrate follows).
+      (id) => setQuality(id),
+      () => qualityRef.current,
     );
     reporter.current = r;
     void r.start();
@@ -167,6 +195,16 @@ export function FieldUnit() {
       reporter.current = null;
     };
   }, [p2p, room, unit, unitName, unitLoc]);
+
+  // Quality changed (by the director or here): tell the studio and apply the new bitrate to running calls.
+  useEffect(() => {
+    reporter.current?.setQuality(qual.kbps);
+  }, [qual.kbps, quality]);
+
+  // Tell the studio (and OBS monitor) the moment the orientation changes.
+  useEffect(() => {
+    reporter.current?.announce();
+  }, [orient]);
 
   // Keep the screen awake while live (a sleeping phone stops the stream).
   useEffect(() => {
@@ -269,7 +307,10 @@ export function FieldUnit() {
           autoPlay
           muted
           playsInline
-          className="aspect-video w-full object-contain"
+          className={cn(
+            "object-contain",
+            portrait ? "mx-auto block aspect-[9/16] h-[70vh] w-auto max-w-full" : "aspect-video w-full",
+          )}
         />
         <span
           className={cn(
@@ -339,11 +380,25 @@ export function FieldUnit() {
         </select>
       </label>
       <label className="grid gap-1">
-        <span className="mk-label text-[9px]">QUALITY</span>
+        <span className="mk-label text-[9px]">VIDEO SHAPE</span>
+        <select
+          value={orientChoice}
+          onChange={(e) => setOrientChoice(e.target.value as OrientChoice)}
+          className={field}
+        >
+          {ORIENT.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1">
+        <span className="mk-label text-[9px]">QUALITY{p2p ? " (set by the director)" : ""}</span>
         <select
           value={quality}
           onChange={(e) => setQuality(e.target.value)}
-          disabled={live}
+          disabled={live || p2p}
           className={field}
         >
           {QUALITY.map((x) => (

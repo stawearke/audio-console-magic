@@ -2,7 +2,7 @@ import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { reporterUrl, viewerUrl } from "@/lib/mk/field-link";
+import { FIELD_QUALITY, reporterUrl, viewerUrl } from "@/lib/mk/field-link";
 import { FIELD_FIRST_SLOT, fieldUnits, useFieldUnits, useFieldViewer, type FieldUnitInfo } from "@/lib/mk/field-units";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { camLabel } from "@/lib/mk/types";
@@ -51,6 +51,13 @@ export function UnitsDesk() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, room === ""]);
 
+  // New scenes added in OBS later also need the always-on field audio.
+  const sceneCount = sw.scenes.length;
+  useEffect(() => {
+    if (connected) void engine.syncFieldAudio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, sceneCount]);
+
   const newRoom = async () => {
     if (!confirm("New room code? Links already sent stop working, and the OBS sources are re-pointed for you.")) return;
     fieldUnits.newRoom();
@@ -74,6 +81,8 @@ export function UnitsDesk() {
         label: u.name || u.loc,
         fromSlot: FIELD_FIRST_SLOT,
       });
+      // New field units keep their sound on the mix even when their camera is off air.
+      if (!sw.config.fieldAudioAlways.includes(`FIELD ${u.n} feed`)) await engine.setFieldAudioAlways(u.n, true);
       setNote("");
     } catch (e) {
       setNote(`FIELD ${u.n}: ${msg(e)}`);
@@ -182,7 +191,12 @@ function UnitCard({
   onQr: () => void;
 }) {
   const [watch, setWatch] = useState(false);
-  const { state, stream } = useFieldViewer(room, u.n, watch);
+  const { state, stream, setQuality } = useFieldViewer(room, u.n, watch, u.quality);
+  const sw = useSwitcher();
+  const inputName = `FIELD ${u.n} feed`;
+  const always = sw.config.fieldAudioAlways.includes(inputName);
+  const strip = sw.audio.find((c) => c.name === inputName);
+  const shownQuality = u.quality ?? (state.quality || "");
   const video = useRef<HTMLVideoElement>(null);
   const [copied, setCopied] = useState(false);
   const [obsUrl, setObsUrl] = useState<string | null | undefined>(undefined);
@@ -247,6 +261,11 @@ function UnitCard({
       <div className="flex flex-wrap items-center gap-2">
         <span className="mk-button rounded-[3px] px-2 py-1 font-mono text-[11px]">FIELD {u.n}</span>
         <span className={cn("rounded-[3px] px-2 py-1 font-mono text-[10px]", chip.cls)}>{chip.text}</span>
+        {state.link !== "offline" && state.link !== "connecting" && (
+          <span className="mk-button rounded-[3px] px-2 py-1 font-mono text-[10px]">
+            {state.orient === "portrait" ? "PORTRAIT 9:16" : "LANDSCAPE 16:9"}
+          </span>
+        )}
         {cam >= 0 ? (
           <span className="mk-button rounded-[3px] px-2 py-1 font-mono text-[11px]">on {camLabel(cam)}</span>
         ) : (
@@ -293,9 +312,72 @@ function UnitCard({
         )}
       </div>
 
+      <div className="grid gap-2 rounded-[3px] border border-white/10 p-2 sm:grid-cols-2">
+        <label className="grid gap-1">
+          <span className="mk-label text-[9px]">CAMERA RESOLUTION (director controls the reporter's phone)</span>
+          <select
+            value={shownQuality}
+            onChange={(e) => {
+              fieldUnits.update(u.n, { quality: e.target.value });
+              setQuality(e.target.value);
+            }}
+            className={cn(input, "w-full")}
+          >
+            {!shownQuality && <option value="">Reporter's own setting</option>}
+            {FIELD_QUALITY.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+          {state.link !== "offline" && state.quality && (
+            <span className="font-mono text-[10px] text-muted-foreground">
+              Reporter sending: {FIELD_QUALITY.find((x) => x.id === state.quality)?.short ?? state.quality}
+            </span>
+          )}
+        </label>
+        <div className="grid gap-1">
+          <span className="mk-label text-[9px]">AUDIO</span>
+          <button
+            type="button"
+            disabled={!connected || cam < 0}
+            className={cn(btn, "w-full", always && "mk-lit-preview")}
+            onClick={() => void engine.setFieldAudioAlways(u.n, !always)}
+            title="Keep this unit's sound on the mix even when its camera is not on air"
+          >
+            {always ? "ALWAYS ON · sound stays on air" : "Follows camera (muted when off air)"}
+          </button>
+          {strip && (
+            <div className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+              Also on track
+              {[3, 4, 5, 6].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={cn(btn, "h-6 px-2", strip.tracks?.[t - 1] && "mk-lit-preview")}
+                  onClick={() => void engine.toggleAudioTrack(inputName, t)}
+                  title={`Record this unit's sound alone on OBS audio track ${t}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {watch && (
         <div className="relative overflow-hidden rounded bg-black">
-          <video ref={video} autoPlay muted playsInline className="aspect-video w-full object-contain" />
+          <video
+            ref={video}
+            autoPlay
+            muted
+            playsInline
+            className={cn(
+              "object-contain",
+              state.orient === "portrait" ? "mx-auto block aspect-[9/16] h-80 w-auto max-w-full" : "aspect-video w-full",
+            )}
+          />
           {!stream && (
             <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] text-white/60">
               {state.link === "live" ? "Connecting the picture…" : "Waiting for the reporter to go live"}
@@ -313,7 +395,9 @@ function UnitCard({
               </button>
             </>
           ) : (
-            <span className="text-muted-foreground">OBS link OK · full HD</span>
+            <span className="text-muted-foreground">
+              OBS link OK · full HD{state.orient === "portrait" ? " · tall picture sits centred in the frame" : ""}
+            </span>
           )}
         </div>
       )}
