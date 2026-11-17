@@ -466,6 +466,21 @@ export class SwitcherEngine {
     } else this.applyAfv();
   }
 
+  /**
+   * Take every field feed out of the other scenes and switch it to GLOBAL audio (OBS Desktop Audio).
+   * `extra` = unit numbers to clean even if they were never marked "always on" (e.g. left over from older versions).
+   */
+  async makeAllFieldAudioGlobal(extra: number[] = []): Promise<void> {
+    const ns = new Set<number>(extra);
+    for (const name of this.state.config.fieldAudioAlways) {
+      const n = Number(/^FIELD (\d+) feed$/.exec(name)?.[1]);
+      if (n) ns.add(n);
+    }
+    this.updateConfig({ fieldAudioAlways: [] });
+    for (const n of ns) await this.transport?.setFieldAudioEverywhere?.(n, false);
+    this.applyAfv();
+  }
+
   /** Re-apply "always on" to every field feed that has it, e.g. after new scenes were added in OBS. */
   async syncFieldAudio(): Promise<void> {
     for (const name of this.state.config.fieldAudioAlways) {

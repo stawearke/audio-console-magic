@@ -88,6 +88,16 @@ export function UnitsDesk() {
     }
   };
 
+  const cleanScenes = async () => {
+    if (!confirm("Remove the field feeds from all your other scenes and use GLOBAL audio (Desktop Audio)?")) return;
+    try {
+      await engine.makeAllFieldAudioGlobal(units.map((x) => x.n));
+      setNote("Done. The field feeds are only in their own FIELD scenes now.");
+    } catch (e) {
+      setNote(msg(e));
+    }
+  };
+
   const add = async () => {
     const u = fieldUnits.add(name, loc);
     setName("");
@@ -115,6 +125,12 @@ export function UnitsDesk() {
         )}
         {note && <p className="font-mono text-[10px] text-amber-400">{note}</p>}
       </div>
+
+      {units.length > 0 && (
+        <button type="button" disabled={!connected} className="mk-button h-9 rounded-[3px] px-4 text-xs" onClick={() => void cleanScenes()}>
+          REMOVE FIELD FEEDS FROM ALL OTHER SCENES · GLOBAL AUDIO
+        </button>
+      )}
 
       {units.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No field units yet. Add the first one above.</p>}
 
