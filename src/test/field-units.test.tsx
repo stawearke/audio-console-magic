@@ -47,3 +47,14 @@ describe("Field units page", () => {
     expect(fieldUnits.snapshot().units).toEqual([{ n: 1, name: "Ryan", loc: "Kisumu" }]);
   });
 });
+
+describe("Camera operator page", () => {
+  it("allows every camera the switcher has, not just the first 8", async () => {
+    const { CAM_COUNT } = await import("@/lib/mk/types");
+    const { Route } = await import("@/routes/cam");
+    const validate = (Route.options as { validateSearch: (s: Record<string, unknown>) => { cam: number } }).validateSearch;
+    expect(validate({ room: "x", cam: "10" }).cam).toBe(10);
+    expect(validate({ room: "x", cam: String(CAM_COUNT) }).cam).toBe(CAM_COUNT);
+    expect(validate({ room: "x", cam: "99" }).cam).toBe(CAM_COUNT);
+  });
+});

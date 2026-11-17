@@ -2,12 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
 import { OperatorLink, useOperator } from "@/lib/mk/intercom";
+import { CAM_COUNT } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/cam")({
   validateSearch: (s: Record<string, unknown>) => ({
     room: typeof s["room"] === "string" ? s["room"] : "",
-    cam: Math.max(1, Math.min(8, Number(s["cam"]) || 1)),
+    cam: Math.max(1, Math.min(CAM_COUNT, Number(s["cam"]) || 1)),
   }),
   head: () => ({
     meta: [
