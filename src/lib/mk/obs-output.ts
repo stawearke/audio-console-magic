@@ -75,6 +75,19 @@ export interface QualitySettings {
   recQuality: string;
 }
 
+export const ISO_KIND = "source_record_filter";
+export const ISO_FILTER = "MK ISO";
+/** Audio-only input kinds have no picture to record. */
+const ISO_SKIP_KINDS = /^(wasapi_|pulse_|coreaudio_|alsa_|jack_|audio_)/;
+
+/** 0 = off, 3 = starts and stops with the main REC button, 1 = recording now. */
+export type IsoMode = 0 | 1 | 3;
+export interface IsoRow {
+  name: string;
+  kind: string;
+  mode: IsoMode;
+}
+
 export class OutputClient extends StudioClient {
   async status(): Promise<OutputStatus> {
     const [s, r] = await Promise.all([
@@ -183,4 +196,73 @@ export class OutputClient extends StudioClient {
   }
   setRecordFolder = (recordDirectory: string) =>
     this.obs.call("SetRecordDirectory", { recordDirectory });
+
+  // ---------------------------------------------------------------- ISO / source record
+  // Needs the free "Source Record" plugin by Exeldro (filter kind `source_record_filter`).
+  // The filter sits on the INPUT itself, so it records the raw feed: no graphics, no scene mix.
+
+  /** True when the Source Record plugin is installed in this OBS. */
+  async isoAvailable(): Promise<boolean> {
+    try {
+      const r = await this.obs.call("GetSourceFilterKindList");
+      return (r.sourceFilterKinds as string[]).includes(ISO_KIND);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Every non-MK input that carries picture (audio-only kinds are left out) and its ISO mode. */
+  async isoList(): Promise<IsoRow[]> {
+    const { inputs } = await this.obs.call("GetInputList");
+    const rows: IsoRow[] = [];
+    for (const i of inputs as Array<Record<string, unknown>>) {
+      const name = String(i["inputName"]);
+      const kind = String(i["unversionedInputKind"] ?? i["inputKind"] ?? "");
+      if (/^MK /.test(name) || ISO_SKIP_KINDS.test(kind)) continue;
+      let mode: IsoMode = 0;
+      try {
+        const f = await this.obs.call("GetSourceFilter", { sourceName: name, filterName: ISO_FILTER });
+        const m = Number((f.filterSettings as Record<string, unknown>)["record_mode"] ?? 0);
+        if (f.filterEnabled && (m === 1 || m === 3)) mode = m;
+      } catch {
+        /* no ISO filter yet */
+      }
+      rows.push({ name, kind, mode });
+    }
+    return rows;
+  }
+
+  /** 0 = off, 3 = records whenever the main REC button records, 1 = records right now. */
+  async isoSet(input: string, mode: IsoMode) {
+    const { filters } = await this.obs.call("GetSourceFilterList", { sourceName: input });
+    const has = (filters as Array<Record<string, unknown>>).some((f) => f["filterName"] === ISO_FILTER);
+    if (!has && mode === 0) return;
+    const stamp = input.replace(/[\\/:*?"<>|%]/g, "_");
+    const filterSettings: Record<string, number | string> = {
+      record_mode: mode,
+      stream_mode: 0,
+      // one file per source, named after it: "2026-11-17 14-02-11 CAM 1"
+      filename_formatting: `%CCYY-%MM-%DD %hh-%mm-%ss ${stamp}`,
+    };
+    if (!has) {
+      await this.obs.call("CreateSourceFilter", {
+        sourceName: input,
+        filterName: ISO_FILTER,
+        filterKind: ISO_KIND,
+        filterSettings,
+      });
+      return;
+    }
+    await this.obs.call("SetSourceFilterSettings", {
+      sourceName: input,
+      filterName: ISO_FILTER,
+      filterSettings,
+      overlay: true,
+    });
+    await this.obs.call("SetSourceFilterEnabled", {
+      sourceName: input,
+      filterName: ISO_FILTER,
+      filterEnabled: true,
+    });
+  }
 }
