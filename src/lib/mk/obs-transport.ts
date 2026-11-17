@@ -1496,6 +1496,29 @@ export class ObsTransport implements Transport {
     if (bad) throw new Error(bad.requestStatus?.comment || `OBS rejected ${bad.requestType}`);
   }
 
+  async addFieldSource(n: number, mode: "media" | "web", url: string) {
+    const scene = `FIELD ${n}`;
+    const inputName = `FIELD ${n} feed`;
+    await this.obs.call("CreateScene", { sceneName: scene });
+    const inputSettings =
+      mode === "web"
+        ? { url, width: 1920, height: 1080, reroute_audio: true }
+        : { input: url, is_local_file: false, close_when_inactive: false, restart_on_activate: false, hw_decode: true };
+    try {
+      await this.obs.call("CreateInput", {
+        sceneName: scene,
+        inputName,
+        inputKind: mode === "web" ? "browser_source" : "ffmpeg_source",
+        inputSettings,
+        sceneItemEnabled: true,
+      });
+    } catch (e) {
+      await this.obs.call("RemoveScene", { sceneName: scene }).catch(() => {});
+      throw e;
+    }
+    return scene;
+  }
+
   async fxCutTo(scene: string) {
     await this.ensureStaged(scene);
     const previous = await this.currentTransition();

@@ -407,6 +407,22 @@ export class SwitcherEngine {
     });
   }
 
+  /** Add a field feed (scene FIELD n) and put it on the first free CAM slot. Studio cameras are not touched. */
+  async addFieldSource(mode: "media" | "web", url: string): Promise<string> {
+    const t = this.transport;
+    if (!t?.addFieldSource) throw new Error("Connect to OBS first.");
+    const used = this.state.scenes
+      .map((n) => /^FIELD (\d+)$/i.exec(n)?.[1])
+      .filter(Boolean)
+      .map(Number);
+    const n = used.length ? Math.max(...used) + 1 : 1;
+    const scene = await t.addFieldSource(n, mode, url.trim());
+    const slot = this.state.config.camScenes.findIndex((s) => !s);
+    if (slot === -1) throw new Error(`${scene} was created, but all ${CAM_COUNT} CAM slots are in use.`);
+    this.mapCam(slot, scene);
+    return scene;
+  }
+
   autoMapScenes() {
     const scenes = this.state.scenes.filter((n) => n !== GFX_SCENE && n !== FX_SCENE).slice(0, CAM_COUNT);
     const camScenes = Array.from({ length: CAM_COUNT }, (_, i) => scenes[i] ?? null);
@@ -1120,6 +1136,8 @@ export class SwitcherEngine {
     for (let i = 0; i < CAM_COUNT; i++) {
       const scene = this.state.config.camScenes[i];
       if (scene && lower === scene.toLowerCase()) return i;
+      // a field feed's own audio ("FIELD 1 feed") follows its FIELD 1 scene
+      if (scene && /^field\s*\d+/.test(lower) && lower.startsWith(`${scene.toLowerCase()} `)) return i;
       if (new RegExp(`^(cam|camera)\\s*${i + 1}\\b`).test(lower)) return i;
     }
     return null;

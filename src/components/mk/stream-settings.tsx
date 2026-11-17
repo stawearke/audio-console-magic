@@ -467,18 +467,21 @@ export function StreamSettings() {
       <Panel title="SOURCE RECORD (each feed on its own, no graphics)">
         {!isoOk ? (
           <p className="font-mono text-[10px] text-muted-foreground">
-            Install the free &quot;Source Record&quot; plugin by Exeldro in OBS (obsproject.com → Forums →
-            Resources → Source Record), restart OBS, then press Refresh.
+            Install the free &quot;Source Record&quot; plugin by Exeldro in OBS (obsproject.com →
+            Forums → Resources → Source Record), restart OBS, then press Refresh.
           </p>
         ) : (
           <>
             <p className="font-mono text-[10px] text-muted-foreground">
-              Records the raw camera / source, before scenes and graphics. WITH REC = starts and stops with the
-              main REC button. NOW = records until you stop it. Files go to the save folder above, one per source.
+              Records the raw camera / source, before scenes and graphics. WITH REC = starts and
+              stops with the main REC button. NOW = records until you stop it. Files go to the save
+              folder above, one per source.
             </p>
             <div className="grid gap-1">
               {iso.length === 0 && (
-                <span className="font-mono text-[10px] text-muted-foreground">No video sources found.</span>
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  No video sources found.
+                </span>
               )}
               {iso.map((r) => (
                 <div key={r.name} className="flex items-center justify-between gap-2">
@@ -498,7 +501,8 @@ export function StreamSettings() {
                         }
                         className={cn(
                           "mk-button h-7 rounded-sm px-2 text-[11px]",
-                          r.mode === m && (m === 1 ? "mk-lit-program" : m === 3 ? "mk-lit-amber" : ""),
+                          r.mode === m &&
+                            (m === 1 ? "mk-lit-program" : m === 3 ? "mk-lit-amber" : ""),
                         )}
                       >
                         {m === 0 ? "OFF" : m === 3 ? "WITH REC" : "NOW"}

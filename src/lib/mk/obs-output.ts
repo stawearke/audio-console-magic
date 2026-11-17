@@ -221,7 +221,10 @@ export class OutputClient extends StudioClient {
       if (/^MK /.test(name) || ISO_SKIP_KINDS.test(kind)) continue;
       let mode: IsoMode = 0;
       try {
-        const f = await this.obs.call("GetSourceFilter", { sourceName: name, filterName: ISO_FILTER });
+        const f = await this.obs.call("GetSourceFilter", {
+          sourceName: name,
+          filterName: ISO_FILTER,
+        });
         const m = Number((f.filterSettings as Record<string, unknown>)["record_mode"] ?? 0);
         if (f.filterEnabled && (m === 1 || m === 3)) mode = m;
       } catch {
@@ -235,7 +238,9 @@ export class OutputClient extends StudioClient {
   /** 0 = off, 3 = records whenever the main REC button records, 1 = records right now. */
   async isoSet(input: string, mode: IsoMode) {
     const { filters } = await this.obs.call("GetSourceFilterList", { sourceName: input });
-    const has = (filters as Array<Record<string, unknown>>).some((f) => f["filterName"] === ISO_FILTER);
+    const has = (filters as Array<Record<string, unknown>>).some(
+      (f) => f["filterName"] === ISO_FILTER,
+    );
     if (!has && mode === 0) return;
     const stamp = input.replace(/[\\/:*?"<>|%]/g, "_");
     const filterSettings: Record<string, number | string> = {
