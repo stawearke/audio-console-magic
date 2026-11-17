@@ -10,6 +10,8 @@ import {
   type MultistreamInfo,
   type MultistreamTarget,
 } from "@/lib/mk/multistream";
+import { isEmbedded } from "@/lib/mk/cloud";
+import { ObsMultistream } from "@/components/mk/obs-multistream";
 import { cn } from "@/lib/utils";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -47,7 +49,12 @@ const clock = (s: number) =>
 
 const field = "mk-button h-9 w-full rounded-sm px-2 text-xs text-foreground";
 
+/** Inside MK VISION Studio the app runs the extra streams itself; with plain OBS it drives Aitum Multistream. */
 export function MultistreamPanel() {
+  return isEmbedded() ? <NativeMultistream /> : <ObsMultistream />;
+}
+
+function NativeMultistream() {
   const [info, setInfo] = useState<MultistreamInfo | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [dirty, setDirty] = useState(false);
