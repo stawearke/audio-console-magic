@@ -158,7 +158,7 @@ export function useFieldViewer(room: string, unit: number, video: boolean, setup
   }, [video]);
 
   const v = ref.current;
-  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false };
+  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, net: null };
   return {
     state,
     stream: v?.stream ?? null,

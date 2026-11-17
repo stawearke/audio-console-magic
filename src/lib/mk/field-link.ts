@@ -1,5 +1,7 @@
 import type { DataConnection, MediaConnection, Peer } from "peerjs";
 
+import { cleanFieldNet, FieldHealth, NET_STALE_MS, type FieldNet } from "./field-health";
+
 /**
  * Field units, peer-to-peer (VDO.Ninja style, no server of your own).
  *
@@ -297,10 +299,15 @@ export interface FieldState {
   ack: number;
   /** The director's voice is going to the reporter's ear right now. */
   talking: boolean;
+  /** Auto quality is on: the phone lowers its bitrate when the signal is poor and raises it again when it recovers. `kbps` above is then its current ceiling. */
+  auto: boolean;
+  /** The phone's latest uplink measurement (null = none yet, the unit is not live, or the phone is too old to send it). */
+  net: FieldNet | null;
 }
 
 type ToViewer =
-  | { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery }
+  | { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery; auto?: boolean }
+  | ({ t: "net" } & FieldNet)
   | { t: "lvl"; v: number }
   | { t: "ack"; seq: number };
 /** Director -> reporter. `quality` is the older single-setting message, still understood. `ctl` = camera + mic controls. */
@@ -356,7 +363,7 @@ function placeholderStream(): MediaStream {
 
 /** Watches one field unit: its status, and (when `video`) its picture. */
 export class FieldViewer {
-  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false };
+  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, net: null };
   /** The incoming picture (null until the unit is live and the call is up). */
   stream: MediaStream | null = null;
   private peer: Peer | null = null;
@@ -367,6 +374,7 @@ export class FieldViewer {
   private retry: ReturnType<typeof setTimeout> | null = null;
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   private decoy: MediaStream | null = null;
+  private netTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private room: string,
@@ -564,6 +572,14 @@ export class FieldViewer {
         if (Number.isInteger(m.seq)) this.patch({ ack: m.seq });
         return;
       }
+      if (m?.t === "net") {
+        const net = cleanFieldNet(m);
+        if (net && this.state.link === "live") {
+          this.patch({ net });
+          this.armNetTimer();
+        }
+        return;
+      }
       if (m?.t !== "state") return;
       this.patch({
         link: m.live ? "live" : "standby",
@@ -578,7 +594,10 @@ export class FieldViewer {
         caps: cleanFieldCaps(m.caps),
         ctl: cleanFieldCtl(m.ctl),
         battery: cleanBattery(m.battery),
+        auto: m.auto === true,
+        ...(m.live ? {} : { net: null }),
       });
+      if (!m.live) this.clearNet();
       if (m.live && this.video) this.startCall();
       if (!m.live) this.dropCall();
     });
@@ -586,14 +605,31 @@ export class FieldViewer {
       if (this.conn !== conn) return;
       this.conn = null;
       this.dropCall();
+      this.clearNet();
       this.patch({ link: "offline" });
       this.schedule();
     });
     conn.on("error", () => {
       this.dropCall();
+      this.clearNet();
       this.patch({ link: "offline" });
       this.schedule();
     });
+  }
+
+  /** The numbers go stale if the phone stops sending them: better "no data" than a frozen healthy-looking reading. */
+  private armNetTimer() {
+    if (this.netTimer) clearTimeout(this.netTimer);
+    this.netTimer = setTimeout(() => {
+      this.netTimer = null;
+      if (this.state.net) this.patch({ net: null });
+    }, NET_STALE_MS);
+  }
+
+  private clearNet() {
+    if (this.netTimer) clearTimeout(this.netTimer);
+    this.netTimer = null;
+    if (this.state.net) this.patch({ net: null });
   }
 
   private startCall() {
@@ -647,6 +683,7 @@ export class FieldViewer {
   stop() {
     this.dead = true;
     if (this.retry) clearTimeout(this.retry);
+    if (this.netTimer) clearTimeout(this.netTimer);
     this.endTalk();
     this.dropCall();
     try {
@@ -671,6 +708,26 @@ export class FieldReporter {
   private fps = DEFAULT_FIELD_FPS;
   private dead = false;
   private retry: ReturnType<typeof setTimeout> | null = null;
+
+  /** Called with every new uplink measurement, for the phone's own signal indicator. `auto` = Auto quality is on. */
+  onNet: (net: FieldNet, auto: boolean) => void = () => {};
+
+  /** Measures the uplink every couple of seconds and (with Auto quality on) moves the bitrate ceiling. */
+  private health = new FieldHealth(
+    {
+      pc: () => this.statsPc(),
+      apply: (cap) => {
+        this.kbps = cap;
+        this.applyBitrate();
+        this.broadcast(); // the studio sees the new ceiling at once
+      },
+      report: (net, auto) => {
+        this.onNet(net, auto);
+        this.sendNet(net);
+      },
+    },
+    2500,
+  );
 
   constructor(
     private room: string,
@@ -795,9 +852,21 @@ export class FieldReporter {
     });
   }
 
+  /** Send the latest uplink measurement to every viewer. */
+  private sendNet(net: FieldNet) {
+    this.conns.forEach((c) => {
+      try {
+        if (c.open) c.send({ t: "net", ...net } satisfies ToViewer);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
   private send(c: DataConnection) {
     const m = this.meta();
-    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: m.kbps, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}), ...(m.battery ? { battery: m.battery } : {}) };
+    // While live the ceiling Auto quality is using is the truth; otherwise what the phone is set to.
+    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: this.live ? this.kbps : m.kbps, auto: this.health.isAuto, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}), ...(m.battery ? { battery: m.battery } : {}) };
     try {
       if (c.open) c.send(msg);
     } catch {
@@ -810,8 +879,9 @@ export class FieldReporter {
   }
 
   /** Tell every viewer the quality changed, and apply the new bitrate and frame rate to calls already running. */
-  setQuality(kbps: number, fps: number = this.fps) {
-    this.kbps = kbps;
+  setQuality(kbps: number, fps: number = this.fps, auto = false) {
+    this.health.configure(kbps, auto); // `kbps` is the top: Auto may go below it, never above
+    this.kbps = this.health.cap;
     this.fps = fps;
     this.applyBitrate();
     this.broadcast();
@@ -824,7 +894,10 @@ export class FieldReporter {
 
   setLive(on: boolean, kbps: number) {
     this.live = on;
-    this.kbps = kbps;
+    this.health.configure(kbps, this.health.isAuto);
+    if (on) this.health.start(); // every live session starts at the top
+    else this.health.stop();
+    this.kbps = this.health.cap;
     if (!on) {
       this.calls.forEach((c) => c.close());
       this.calls.clear();
@@ -866,6 +939,7 @@ export class FieldReporter {
   stop() {
     this.dead = true;
     if (this.retry) clearTimeout(this.retry);
+    this.health.stop();
     this.voiceCall?.close();
     this.voiceCall = null;
     this.calls.forEach((c) => c.close());

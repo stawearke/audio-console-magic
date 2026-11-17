@@ -329,8 +329,9 @@ export function FieldUnit() {
 
   // Quality / frame rate changed (by the director or here): tell the studio and apply it to running calls.
   useEffect(() => {
-    reporter.current?.setQuality(kbpsEff, fps);
-  }, [kbpsEff, fps, quality]);
+    // Bitrate "Auto" (0) means Auto quality: the phone may go below this and climbs back when the signal recovers.
+    reporter.current?.setQuality(kbpsEff, fps, kbpsPick === 0);
+  }, [kbpsEff, fps, quality, kbpsPick]);
 
   // Tell the studio (and OBS monitor) the moment the shape changes, the phone is turned, or the camera / mic changed.
   useEffect(() => {
