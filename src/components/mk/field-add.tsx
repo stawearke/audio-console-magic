@@ -40,7 +40,11 @@ export function FieldAdd() {
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder={mode === "media" ? "srt://server:8890?streamid=read:field1" : "https://…"}
+          placeholder={
+            mode === "media"
+              ? "srt://server:8890?streamid=read:field1"
+              : "https://relay.example.com/field1?controls=false&muted=false&autoplay=true&user=studio&pass=…"
+          }
           className={`${field} min-w-[14rem] flex-1`}
         />
         <button
