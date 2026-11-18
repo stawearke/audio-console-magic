@@ -1,9 +1,8 @@
 import { CopyPlus, Download, Link2, Pencil, Save, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DesignRows } from "@/components/mk/design-rows";
 import { rowStore } from "@/lib/mk/gfx-rows";
-import { gfxSync } from "@/lib/mk/gfx-sync";
 import { GFX_LAYERS, layerUrl } from "@/lib/mk/graphics";
 import {
   exportJson,
@@ -95,7 +94,6 @@ export function DesignLibrary({
   onIncoming: (items: ReturnType<typeof parsePack>) => void;
   say: (msg: string) => void;
 }) {
-  const sync = useSyncExternalStore(gfxSync.subscribe, gfxSync.getStatus, () => "off" as const);
   const [saveName, setSaveName] = useState("");
   const [paste, setPaste] = useState("");
   const [allLayers, setAllLayers] = useState(false);
@@ -142,11 +140,6 @@ export function DesignLibrary({
     <section className="mk-panel flex max-h-none min-h-[14rem] shrink-0 flex-col gap-1.5 rounded-md p-2 fit:max-h-[46%]">
       <div className="flex items-center gap-1">
         <h2 className="mk-label mr-auto text-foreground">{allLayers ? "All my designs" : `My ${label} designs`}</h2>
-        {sync !== "off" && (
-          <span className={cn("font-mono text-[9px] uppercase", sync === "error" ? "text-red-400" : "text-muted-foreground")} title="Cloud copy of your designs, packages and rows">
-            {sync === "synced" ? "Cloud ✓" : sync === "syncing" ? "Syncing…" : sync === "read-only" ? "Cloud (read only)" : "Cloud error"}
-          </span>
-        )}
         <button
           type="button"
           onClick={() => setAllLayers((v) => !v)}
