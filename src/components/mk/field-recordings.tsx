@@ -26,6 +26,30 @@ export function RecChip({ on }: { on: boolean }) {
   );
 }
 
+/** The reporter's own REC button: the backup records only when the reporter presses it, and stops only when pressed again. */
+export function RecButton({
+  on,
+  disabled,
+  onToggle,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid="rec-button"
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn("mk-button h-11 rounded-sm text-sm tracking-[0.15em]", on && "mk-lit-program")}
+    >
+      <span aria-hidden className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-red-500 align-middle" />
+      {on ? "STOP REC" : "REC"}
+    </button>
+  );
+}
+
 /** The reporter's line while recording (or the reason it stopped). Nothing when idle and fine. */
 export function RecStatusLine({ status }: { status: RecStatus }) {
   if (!status.on && !status.error) return null;
@@ -50,13 +74,9 @@ export function RecStatusLine({ status }: { status: RecStatus }) {
 export function RecordingsPanel({
   store,
   status,
-  enabled,
-  onEnabled,
 }: {
   store: RecStore | null;
   status: RecStatus;
-  enabled: boolean;
-  onEnabled: (on: boolean) => void;
 }) {
   const [list, setList] = useState<RecMeta[]>([]);
   const [space, setSpace] = useState<{ used: number; quota: number } | null>(null);
@@ -115,18 +135,10 @@ export function RecordingsPanel({
         BACKUP RECORDINGS{list.length ? ` (${list.length})` : ""}
       </summary>
       <div className="mt-2 grid gap-2">
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={enabled}
-            disabled={status.on}
-            onChange={(e) => onEnabled(e.target.checked)}
-          />
-          Record a full-quality backup on this phone while live
-        </label>
         <p className="font-mono text-[10px] text-muted-foreground">
-          The studio gets the live picture; this copy stays on your phone at full quality. After the
-          show, share it, then delete it to free space.
+          Press REC to keep a full-quality copy on your phone; it stops when you press STOP REC. The
+          studio gets the live picture; this copy stays here. After the show, share it, then delete
+          it to free space.
           {space ? ` Space used: ${formatBytes(space.used)} of ${formatBytes(space.quota)}.` : ""}
         </p>
         {list.length === 0 && (

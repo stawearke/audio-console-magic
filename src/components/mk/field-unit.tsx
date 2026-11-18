@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
+import { RecButton, RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
 import { ReporterSignal } from "@/components/mk/uplink";
 import {
   captureSize,
@@ -41,27 +41,28 @@ const ORIENT = [
 ] as const;
 
 /** Phone controls are real phones only: a laptop webcam is always wide and must not be nagged to turn. */
-/** Remembers that this phone is live, so a refresh (or a crash) picks the show back up instead of dropping it. */
+/** Remembers that this phone is live / recording, so a refresh (or a crash) picks it back up instead of dropping it. */
 const LIVE_KEY = "mk-field-live";
-const LIVE_FRESH_MS = 5 * 60_000;
-function markLive(key: string, rec: string) {
+const REC_KEY = "mk-field-rec-on";
+const FLAG_FRESH_MS = 5 * 60_000;
+function markFlag(name: string, key: string, rec = "") {
   try {
-    localStorage.setItem(LIVE_KEY, JSON.stringify({ key, rec, at: Date.now() }));
+    localStorage.setItem(name, JSON.stringify({ key, rec, at: Date.now() }));
   } catch {
     /* ignore */
   }
 }
-function clearLive() {
+function clearFlag(name: string) {
   try {
-    localStorage.removeItem(LIVE_KEY);
+    localStorage.removeItem(name);
   } catch {
     /* ignore */
   }
 }
-function readLive(key: string): { rec: string } | null {
+function readFlag(name: string, key: string): { rec: string } | null {
   try {
-    const v = JSON.parse(localStorage.getItem(LIVE_KEY) ?? "null") as { key?: string; rec?: string; at?: number } | null;
-    if (v && v.key === key && typeof v.at === "number" && Date.now() - v.at < LIVE_FRESH_MS)
+    const v = JSON.parse(localStorage.getItem(name) ?? "null") as { key?: string; rec?: string; at?: number } | null;
+    if (v && v.key === key && typeof v.at === "number" && Date.now() - v.at < FLAG_FRESH_MS)
       return { rec: typeof v.rec === "string" ? v.rec : "" };
   } catch {
     /* ignore */
@@ -92,7 +93,8 @@ export function FieldUnit() {
   const unitLoc = q.get("loc") ?? "";
   const liveKey = p2p ? `${room}:${unit}` : "solo";
   const resumed = useRef(false);
-  const goLiveRef = useRef<(resume?: string) => Promise<void>>(async () => {});
+  const goLiveRef = useRef<() => Promise<void>>(async () => {});
+  const startRecRef = useRef<(resume?: string) => Promise<void>>(async () => {});
   const [viewers, setViewers] = useState(0);
   const [registered, setRegistered] = useState(false);
   const reporter = useRef<FieldReporter | null>(null);
@@ -135,15 +137,6 @@ export function FieldUnit() {
   const [recStore] = useState(() => idbStore());
   const recorder = useRef<FieldRecorder | null>(null);
   const [rec, setRec] = useState<RecStatus>(REC_IDLE);
-  const [recOn, setRecOn] = useState(() => {
-    try {
-      return localStorage.getItem("mk-field-rec") !== "off";
-    } catch {
-      return true;
-    }
-  });
-  const recOnRef = useRef(recOn);
-  recOnRef.current = recOn;
 
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -284,11 +277,12 @@ export function FieldUnit() {
       .then((s) => {
         reporter.current?.swapTracks(s);
         recorder.current?.retarget(s); // a new camera stream while recording: carry on in a new part
-        // The page was refreshed (or the phone restarted it) while live: go live again by itself and carry on in the same backup.
+        // The page was refreshed (or the phone restarted it) while live or recording: carry on by itself, in the same backup.
         if (!stop && !resumed.current) {
           resumed.current = true;
-          const was = readLive(liveKey);
-          if (was) void goLiveRef.current(was.rec);
+          const recWas = readFlag(REC_KEY, liveKey);
+          if (recWas) void startRecRef.current(recWas.rec);
+          if (readFlag(LIVE_KEY, liveKey)) void goLiveRef.current();
         }
         if (stop || s.getAudioTracks().length === 0) return;
         ctx = new AudioContext();
@@ -458,7 +452,7 @@ export function FieldUnit() {
     return () => void lock?.release().catch(() => {});
   }, [live]);
 
-  const goLive = async (resume = "") => {
+  const goLive = async () => {
     setError("");
     try {
       want.current = true;
@@ -468,8 +462,6 @@ export function FieldUnit() {
       } else await connect();
       if (isPhone()) void lockPhone(orient, true);
       setLive(true);
-      if (recOnRef.current && stream.current)
-        void recorder.current?.start(stream.current, { name: p2p ? `FIELD ${unit}${unitName ? ` ${unitName}` : ""}` : unitName || "Field", kbps: kbpsEff, ...(resume ? { resume } : {}) });
     } catch (e) {
       want.current = false;
       setError(msg(e));
@@ -478,7 +470,6 @@ export function FieldUnit() {
   const stopLive = async () => {
     want.current = false;
     setLive(false);
-    void recorder.current?.stop();
     reporter.current?.setLive(false, kbpsEff);
     await whipStop(session.current, target);
     pc.current?.close();
@@ -489,16 +480,39 @@ export function FieldUnit() {
   // The reporter pressed STOP: that, and only that, forgets the show (a refresh must not).
   const endShow = async () => {
     await stopLive();
-    clearLive();
+    clearFlag(LIVE_KEY);
   };
-  // While live, note it every few seconds (and which backup it is), so a refresh can pick up where it left off.
+  // The backup records only when the reporter presses REC, and stops only when they press STOP REC.
+  const startRec = async (resume = "") => {
+    if (!stream.current) return;
+    await recorder.current?.start(stream.current, {
+      name: p2p ? `FIELD ${unit}${unitName ? ` ${unitName}` : ""}` : unitName || "Field",
+      kbps: kbpsEff,
+      ...(resume ? { resume } : {}),
+    });
+  };
+  startRecRef.current = startRec;
+  const toggleRec = async () => {
+    if (rec.on) {
+      await recorder.current?.stop();
+      clearFlag(REC_KEY);
+    } else await startRec();
+  };
+  // While live / recording, note it every few seconds so a refresh can pick up where it left off.
   useEffect(() => {
     if (!live) return;
-    const beat = () => markLive(liveKey, recorder.current?.recordingId ?? "");
+    const beat = () => markFlag(LIVE_KEY, liveKey);
     beat();
     const id = setInterval(beat, 3000);
     return () => clearInterval(id);
-  }, [live, liveKey, rec.on]);
+  }, [live, liveKey]);
+  useEffect(() => {
+    if (!rec.on) return;
+    const beat = () => markFlag(REC_KEY, liveKey, recorder.current?.recordingId ?? "");
+    beat();
+    const id = setInterval(beat, 3000);
+    return () => clearInterval(id);
+  }, [rec.on, liveKey]);
   useEffect(() => () => void stopLive(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Switching camera / mic while live: swap the track, the stream to the studio does not restart.
@@ -667,6 +681,11 @@ export function FieldUnit() {
       >
         {live ? "STOP" : "GO LIVE"}
       </button>
+      <RecButton
+        on={rec.on}
+        disabled={!recStore || !secure}
+        onToggle={() => void toggleRec()}
+      />
       <RecStatusLine status={rec} />
       {live && p2p && <ReporterSignal net={net} auto={kbpsPick === 0} topKbps={kbpsEff} />}
       {live && !p2p && (
@@ -762,19 +781,7 @@ export function FieldUnit() {
         </div>
       )}
 
-      <RecordingsPanel
-        store={recStore}
-        status={rec}
-        enabled={recOn}
-        onEnabled={(on) => {
-          setRecOn(on);
-          try {
-            localStorage.setItem("mk-field-rec", on ? "on" : "off");
-          } catch {
-            /* ignore */
-          }
-        }}
-      />
+      <RecordingsPanel store={recStore} status={rec} />
     </div>
   );
 }

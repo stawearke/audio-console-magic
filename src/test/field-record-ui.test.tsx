@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RecChip, RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
+import { RecButton, RecChip, RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
 import {
   memoryStore,
   REC_IDLE,
@@ -74,7 +74,7 @@ describe("saved backups on the phone", () => {
   });
   const panel = (over: Partial<Parameters<typeof RecordingsPanel>[0]> = {}) =>
     render(
-      <RecordingsPanel store={store} status={REC_IDLE} enabled onEnabled={() => {}} {...over} />,
+      <RecordingsPanel store={store} status={REC_IDLE} {...over} />,
     );
 
   it("says so on a browser that cannot keep recordings", () => {
@@ -114,7 +114,7 @@ describe("saved backups on the phone", () => {
     );
   });
 
-  it("will not save or delete the recording that is running right now, and locks the switch", async () => {
+  it("will not save or delete the recording that is running right now", async () => {
     await store.begin(
       unfinished({
         id: "now",
@@ -127,7 +127,6 @@ describe("saved backups on the phone", () => {
     expect(row.textContent).toContain("recording now");
     for (const b of row.querySelectorAll("button"))
       expect((b as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
   });
 
   it("shares a backup through the phone's share sheet", async () => {
@@ -152,11 +151,21 @@ describe("saved backups on the phone", () => {
     await waitFor(async () => expect(await store.list()).toHaveLength(0));
     await screen.findByText("No backups yet.");
   });
+});
 
-  it("lets the reporter switch the backup off between shows", () => {
-    const onEnabled = vi.fn();
-    panel({ onEnabled });
-    fireEvent.click(screen.getByRole("checkbox"));
-    expect(onEnabled).toHaveBeenCalledWith(false);
+describe("the reporter's REC button", () => {
+  afterEach(cleanup);
+  it("starts the backup only when pressed, and stops it only when pressed again", () => {
+    const onToggle = vi.fn();
+    const { rerender } = render(<RecButton on={false} onToggle={onToggle} />);
+    expect(screen.getByTestId("rec-button").textContent).toBe("REC");
+    fireEvent.click(screen.getByTestId("rec-button"));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    rerender(<RecButton on onToggle={onToggle} />);
+    expect(screen.getByTestId("rec-button").textContent).toBe("STOP REC");
+  });
+  it("cannot be pressed when the phone cannot record", () => {
+    render(<RecButton on={false} disabled onToggle={() => {}} />);
+    expect((screen.getByTestId("rec-button") as HTMLButtonElement).disabled).toBe(true);
   });
 });
