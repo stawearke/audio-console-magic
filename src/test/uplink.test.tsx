@@ -36,6 +36,7 @@ vi.mock("@/lib/mk/field-units", async (orig) => ({
       ack: 0,
       talking: false,
       auto: true,
+      rec: false,
       net: null,
       ...viewerState,
     } satisfies FieldState,
@@ -161,6 +162,16 @@ describe("director's unit card", () => {
     viewerState = { link: "live", net: null };
     render(<UnitsDesk />);
     expect(screen.getByTestId("uplink").textContent).toMatch(/waiting for numbers/);
+  });
+
+  it("shows REC while the phone keeps a backup, and not otherwise", () => {
+    viewerState = { link: "live", rec: true, net: net() };
+    const { unmount } = render(<UnitsDesk />);
+    expect(screen.getByText("REC")).toBeTruthy();
+    unmount();
+    viewerState = { link: "live", rec: false, net: net() };
+    render(<UnitsDesk />);
+    expect(screen.queryByText("REC")).toBeNull();
   });
 
   it("shows no uplink line when the unit is on standby", () => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
 import { ReporterSignal } from "@/components/mk/uplink";
 import {
   captureSize,
@@ -23,6 +24,7 @@ import {
   type FieldTally,
 } from "@/lib/mk/field-link";
 import { type FieldNet } from "@/lib/mk/field-health";
+import { FieldRecorder, idbStore, REC_IDLE, type RecStatus } from "@/lib/mk/field-record";
 import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
 import { cn } from "@/lib/utils";
 
@@ -98,6 +100,19 @@ export function FieldUnit() {
   // The phone's own uplink measurement (connected-to-studio mode): drives the signal indicator.
   const [net, setNet] = useState<FieldNet | null>(null);
   const [level, setLevel] = useState(0);
+  // Backup recording: a full-quality copy of the show kept on this phone (see field-record.ts).
+  const [recStore] = useState(() => idbStore());
+  const recorder = useRef<FieldRecorder | null>(null);
+  const [rec, setRec] = useState<RecStatus>(REC_IDLE);
+  const [recOn, setRecOn] = useState(() => {
+    try {
+      return localStorage.getItem("mk-field-rec") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const recOnRef = useRef(recOn);
+  recOnRef.current = recOn;
 
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -237,6 +252,7 @@ export function FieldUnit() {
     open()
       .then((s) => {
         reporter.current?.swapTracks(s);
+        recorder.current?.retarget(s); // a new camera stream while recording: carry on in a new part
         if (stop || s.getAudioTracks().length === 0) return;
         ctx = new AudioContext();
         const an = ctx.createAnalyser();
@@ -332,6 +348,21 @@ export function FieldUnit() {
     };
   }, [p2p, room, unit, unitName, unitLoc, applyCtl]);
 
+  // One recorder for the life of the page. It reports through whichever reporter is current (the director's card shows REC).
+  useEffect(() => {
+    if (!recStore) return;
+    const fr = new FieldRecorder(recStore);
+    fr.onChange = (st) => {
+      setRec(st);
+      reporter.current?.setRec(st.on);
+    };
+    recorder.current = fr;
+    return () => {
+      void fr.stop();
+      recorder.current = null;
+    };
+  }, [recStore]);
+
   // Quality / frame rate changed (by the director or here): tell the studio and apply it to running calls.
   useEffect(() => {
     // Bitrate "Auto" (0) means Auto quality: the phone may go below this and climbs back when the signal recovers.
@@ -400,6 +431,8 @@ export function FieldUnit() {
       } else await connect();
       if (isPhone()) void lockPhone(orient, true);
       setLive(true);
+      if (recOnRef.current && stream.current)
+        void recorder.current?.start(stream.current, { name: p2p ? `FIELD ${unit}${unitName ? ` ${unitName}` : ""}` : unitName || "Field", kbps: kbpsEff });
     } catch (e) {
       want.current = false;
       setError(msg(e));
@@ -408,6 +441,7 @@ export function FieldUnit() {
   const stopLive = async () => {
     want.current = false;
     setLive(false);
+    void recorder.current?.stop();
     reporter.current?.setLive(false, kbpsEff);
     await whipStop(session.current, target);
     pc.current?.close();
@@ -582,6 +616,7 @@ export function FieldUnit() {
       >
         {live ? "STOP" : "GO LIVE"}
       </button>
+      <RecStatusLine status={rec} />
       {live && p2p && <ReporterSignal net={net} auto={kbpsPick === 0} topKbps={kbpsEff} />}
       {live && !p2p && (
         <p className="text-center font-mono text-[11px] text-muted-foreground">
@@ -675,6 +710,20 @@ export function FieldUnit() {
           ))}
         </div>
       )}
+
+      <RecordingsPanel
+        store={recStore}
+        status={rec}
+        enabled={recOn}
+        onEnabled={(on) => {
+          setRecOn(on);
+          try {
+            localStorage.setItem("mk-field-rec", on ? "on" : "off");
+          } catch {
+            /* ignore */
+          }
+        }}
+      />
     </div>
   );
 }

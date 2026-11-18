@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 
 import { FieldCameraPanel } from "@/components/mk/field-camera-panel";
+import { RecChip } from "@/components/mk/field-recordings";
 import { FieldReturnPanel } from "@/components/mk/field-return-panel";
 import { AirAlertBanner, SignalChip, UplinkLine } from "@/components/mk/uplink";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -365,6 +366,7 @@ function UnitCard({
           </span>
         )}
         {state.link === "live" && <SignalChip net={state.net} />}
+        {state.link === "live" && <RecChip on={state.rec} />}
         {state.link === "live" && (
           <span className="relative h-2 w-20 overflow-hidden rounded bg-black/40" role="meter" aria-label="Reporter mic level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(state.level * 100)} title="The reporter's mic level">
             <span className="absolute inset-y-0 left-0 bg-emerald-400" style={{ width: `${Math.min(100, state.level * 140)}%` }} />

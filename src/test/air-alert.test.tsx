@@ -67,6 +67,7 @@ vi.mock("@/lib/mk/field-units", async (orig) => ({
       ack: 0,
       talking: false,
       auto: true,
+      rec: false,
       net: null,
       ...viewerState,
     } satisfies FieldState,

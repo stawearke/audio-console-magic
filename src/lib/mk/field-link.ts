@@ -301,12 +301,14 @@ export interface FieldState {
   talking: boolean;
   /** Auto quality is on: the phone lowers its bitrate when the signal is poor and raises it again when it recovers. `kbps` above is then its current ceiling. */
   auto: boolean;
+  /** The phone is keeping a full-quality backup recording of this show on itself. */
+  rec: boolean;
   /** The phone's latest uplink measurement (null = none yet, the unit is not live, or the phone is too old to send it). */
   net: FieldNet | null;
 }
 
 type ToViewer =
-  | { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery; auto?: boolean }
+  | { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery; auto?: boolean; rec?: boolean }
   | ({ t: "net" } & FieldNet)
   | { t: "lvl"; v: number }
   | { t: "ack"; seq: number };
@@ -363,7 +365,7 @@ function placeholderStream(): MediaStream {
 
 /** Watches one field unit: its status, and (when `video`) its picture. */
 export class FieldViewer {
-  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, net: null };
+  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, rec: false, net: null };
   /** The incoming picture (null until the unit is live and the call is up). */
   stream: MediaStream | null = null;
   private peer: Peer | null = null;
@@ -595,6 +597,7 @@ export class FieldViewer {
         ctl: cleanFieldCtl(m.ctl),
         battery: cleanBattery(m.battery),
         auto: m.auto === true,
+        rec: m.rec === true,
         ...(m.live ? {} : { net: null }),
       });
       if (!m.live) this.clearNet();
@@ -709,8 +712,16 @@ export class FieldReporter {
   private dead = false;
   private retry: ReturnType<typeof setTimeout> | null = null;
 
+  /** The phone says whether it is keeping a backup recording. Only the director's card cares; sent when it changes. */
+  setRec(on: boolean) {
+    if (this.rec === on) return;
+    this.rec = on;
+    this.broadcast();
+  }
+
   /** Called with every new uplink measurement, for the phone's own signal indicator. `auto` = Auto quality is on. */
   onNet: (net: FieldNet, auto: boolean) => void = () => {};
+  private rec = false;
 
   /** Measures the uplink every couple of seconds and (with Auto quality on) moves the bitrate ceiling. */
   private health = new FieldHealth(
@@ -866,7 +877,7 @@ export class FieldReporter {
   private send(c: DataConnection) {
     const m = this.meta();
     // While live the ceiling Auto quality is using is the truth; otherwise what the phone is set to.
-    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: this.live ? this.kbps : m.kbps, auto: this.health.isAuto, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}), ...(m.battery ? { battery: m.battery } : {}) };
+    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: this.live ? this.kbps : m.kbps, auto: this.health.isAuto, rec: this.rec, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}), ...(m.battery ? { battery: m.battery } : {}) };
     try {
       if (c.open) c.send(msg);
     } catch {

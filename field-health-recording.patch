@@ -1,0 +1,1588 @@
+diff --git a/src/components/mk/field-recordings.tsx b/src/components/mk/field-recordings.tsx
+new file mode 100644
+index 0000000..38b45f1
+--- /dev/null
++++ b/src/components/mk/field-recordings.tsx
+@@ -0,0 +1,177 @@
++import { useCallback, useEffect, useState } from "react";
++
++import {
++  formatBytes,
++  formatDuration,
++  saveRecording,
++  type RecMeta,
++  type RecStatus,
++  type RecStore,
++} from "@/lib/mk/field-record";
++import { cn } from "@/lib/utils";
++
++/** Backup-recording UI: the phone's running line and saved list, and the director's REC chip. */
++
++/** On the director's unit card while the phone is keeping a full-quality backup. */
++export function RecChip({ on }: { on: boolean }) {
++  if (!on) return null;
++  return (
++    <span
++      className="mk-button inline-flex items-center gap-1.5 rounded-[3px] px-2 py-1 font-mono text-[10px]"
++      title="The reporter's phone is keeping a full-quality backup recording"
++    >
++      <span aria-hidden className="h-2 w-2 rounded-full bg-red-500" />
++      REC
++    </span>
++  );
++}
++
++/** The reporter's line while recording (or the reason it stopped). Nothing when idle and fine. */
++export function RecStatusLine({ status }: { status: RecStatus }) {
++  if (!status.on && !status.error) return null;
++  return (
++    <div className="grid gap-0.5 text-center font-mono text-[11px]" data-testid="rec-status">
++      {status.on && (
++        <p className="text-muted-foreground">
++          <span
++            aria-hidden
++            className="mr-1.5 inline-block h-2 w-2 rounded-full bg-red-500 align-middle"
++          />
++          Backup recording {formatDuration(status.ms)} · {formatBytes(status.bytes)}
++          {status.parts > 1 ? ` · ${status.parts} parts` : ""}
++        </p>
++      )}
++      {status.error && <p className="text-amber-400">{status.error}</p>}
++    </div>
++  );
++}
++
++/** Saved backups on this phone: save or share them after the show, delete them to free space. */
++export function RecordingsPanel({
++  store,
++  status,
++  enabled,
++  onEnabled,
++}: {
++  store: RecStore | null;
++  status: RecStatus;
++  enabled: boolean;
++  onEnabled: (on: boolean) => void;
++}) {
++  const [list, setList] = useState<RecMeta[]>([]);
++  const [space, setSpace] = useState<{ used: number; quota: number } | null>(null);
++  const [note, setNote] = useState("");
++
++  const refresh = useCallback(async () => {
++    if (!store) return;
++    try {
++      setList(await store.list());
++    } catch {
++      /* an unreadable list shows as empty */
++    }
++    try {
++      const e = await navigator.storage?.estimate?.();
++      if (e?.quota !== undefined && e.usage !== undefined)
++        setSpace({ used: e.usage, quota: e.quota });
++    } catch {
++      /* the browser does not say */
++    }
++  }, [store]);
++  // Again whenever a recording starts or ends.
++  useEffect(() => {
++    void refresh();
++  }, [refresh, status.on]);
++
++  if (!store)
++    return (
++      <p
++        className="rounded-sm border border-border p-2 font-mono text-[11px] text-muted-foreground"
++        data-testid="rec-panel"
++      >
++        This browser cannot keep a backup recording.
++      </p>
++    );
++
++  const save = async (m: RecMeta) => {
++    setNote("");
++    try {
++      const r = await saveRecording(store, m);
++      setNote(
++        r === "shared" ? "Sent." : r === "downloaded" ? "Saved to this phone's downloads." : "",
++      );
++    } catch (e) {
++      setNote(e instanceof Error ? e.message : "Could not save it.");
++    }
++  };
++  const del = async (m: RecMeta) => {
++    if (!confirm(`Delete the backup "${m.name}"? This cannot be undone.`)) return;
++    await store.remove(m.id).catch(() => {});
++    await refresh();
++  };
++
++  return (
++    <details className="rounded-sm border border-border p-2" data-testid="rec-panel">
++      <summary className="mk-label cursor-pointer text-[9px]">
++        BACKUP RECORDINGS{list.length ? ` (${list.length})` : ""}
++      </summary>
++      <div className="mt-2 grid gap-2">
++        <label className="flex items-center gap-2 text-xs">
++          <input
++            type="checkbox"
++            checked={enabled}
++            disabled={status.on}
++            onChange={(e) => onEnabled(e.target.checked)}
++          />
++          Record a full-quality backup on this phone while live
++        </label>
++        <p className="font-mono text-[10px] text-muted-foreground">
++          The studio gets the live picture; this copy stays on your phone at full quality. After the
++          show, share it, then delete it to free space.
++          {space ? ` Space used: ${formatBytes(space.used)} of ${formatBytes(space.quota)}.` : ""}
++        </p>
++        {list.length === 0 && (
++          <p className="font-mono text-[11px] text-muted-foreground">No backups yet.</p>
++        )}
++        {list.map((m, i) => {
++          const running = status.on && !m.endedAt && i === 0;
++          const cut = !m.endedAt && !running;
++          return (
++            <div key={m.id} className="grid gap-1 rounded-sm bg-black/20 p-2" data-testid="rec-row">
++              <div className="font-mono text-[11px]">
++                {m.name || "Field"} · {new Date(m.startedAt).toLocaleString()}
++              </div>
++              <div className="font-mono text-[10px] text-muted-foreground">
++                {running
++                  ? "recording now"
++                  : cut
++                    ? "cut short (still saved)"
++                    : formatDuration((m.endedAt ?? m.startedAt) - m.startedAt)}{" "}
++                · {formatBytes(m.bytes)}
++                {m.parts > 1 ? ` · ${m.parts} parts` : ""}
++              </div>
++              <div className="flex gap-2">
++                <button
++                  type="button"
++                  disabled={running}
++                  className={cn("mk-button h-8 flex-1 rounded-[3px] text-xs")}
++                  onClick={() => void save(m)}
++                >
++                  SAVE / SHARE
++                </button>
++                <button
++                  type="button"
++                  disabled={running}
++                  className="mk-button h-8 rounded-[3px] px-3 text-xs"
++                  onClick={() => void del(m)}
++                >
++                  DELETE
++                </button>
++              </div>
++            </div>
++          );
++        })}
++        {note && <p className="font-mono text-[11px] text-amber-400">{note}</p>}
++      </div>
++    </details>
++  );
++}
+diff --git a/src/components/mk/field-unit.tsx b/src/components/mk/field-unit.tsx
+index 0275289..97d9c9b 100644
+--- a/src/components/mk/field-unit.tsx
++++ b/src/components/mk/field-unit.tsx
+@@ -1,5 +1,6 @@
+ import { useCallback, useEffect, useRef, useState } from "react";
+ 
++import { RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
+ import { ReporterSignal } from "@/components/mk/uplink";
+ import {
+   captureSize,
+@@ -23,6 +24,7 @@ import {
+   type FieldTally,
+ } from "@/lib/mk/field-link";
+ import { type FieldNet } from "@/lib/mk/field-health";
++import { FieldRecorder, idbStore, REC_IDLE, type RecStatus } from "@/lib/mk/field-record";
+ import { whipStart, whipStop, type WhipTarget } from "@/lib/mk/whip";
+ import { cn } from "@/lib/utils";
+ 
+@@ -98,6 +100,19 @@ export function FieldUnit() {
+   // The phone's own uplink measurement (connected-to-studio mode): drives the signal indicator.
+   const [net, setNet] = useState<FieldNet | null>(null);
+   const [level, setLevel] = useState(0);
++  // Backup recording: a full-quality copy of the show kept on this phone (see field-record.ts).
++  const [recStore] = useState(() => idbStore());
++  const recorder = useRef<FieldRecorder | null>(null);
++  const [rec, setRec] = useState<RecStatus>(REC_IDLE);
++  const [recOn, setRecOn] = useState(() => {
++    try {
++      return localStorage.getItem("mk-field-rec") !== "off";
++    } catch {
++      return true;
++    }
++  });
++  const recOnRef = useRef(recOn);
++  recOnRef.current = recOn;
+ 
+   const video = useRef<HTMLVideoElement>(null);
+   const stream = useRef<MediaStream | null>(null);
+@@ -237,6 +252,7 @@ export function FieldUnit() {
+     open()
+       .then((s) => {
+         reporter.current?.swapTracks(s);
++        recorder.current?.retarget(s); // a new camera stream while recording: carry on in a new part
+         if (stop || s.getAudioTracks().length === 0) return;
+         ctx = new AudioContext();
+         const an = ctx.createAnalyser();
+@@ -332,6 +348,21 @@ export function FieldUnit() {
+     };
+   }, [p2p, room, unit, unitName, unitLoc, applyCtl]);
+ 
++  // One recorder for the life of the page. It reports through whichever reporter is current (the director's card shows REC).
++  useEffect(() => {
++    if (!recStore) return;
++    const fr = new FieldRecorder(recStore);
++    fr.onChange = (st) => {
++      setRec(st);
++      reporter.current?.setRec(st.on);
++    };
++    recorder.current = fr;
++    return () => {
++      void fr.stop();
++      recorder.current = null;
++    };
++  }, [recStore]);
++
+   // Quality / frame rate changed (by the director or here): tell the studio and apply it to running calls.
+   useEffect(() => {
+     // Bitrate "Auto" (0) means Auto quality: the phone may go below this and climbs back when the signal recovers.
+@@ -400,6 +431,8 @@ export function FieldUnit() {
+       } else await connect();
+       if (isPhone()) void lockPhone(orient, true);
+       setLive(true);
++      if (recOnRef.current && stream.current)
++        void recorder.current?.start(stream.current, { name: p2p ? `FIELD ${unit}${unitName ? ` ${unitName}` : ""}` : unitName || "Field", kbps: kbpsEff });
+     } catch (e) {
+       want.current = false;
+       setError(msg(e));
+@@ -408,6 +441,7 @@ export function FieldUnit() {
+   const stopLive = async () => {
+     want.current = false;
+     setLive(false);
++    void recorder.current?.stop();
+     reporter.current?.setLive(false, kbpsEff);
+     await whipStop(session.current, target);
+     pc.current?.close();
+@@ -582,6 +616,7 @@ export function FieldUnit() {
+       >
+         {live ? "STOP" : "GO LIVE"}
+       </button>
++      <RecStatusLine status={rec} />
+       {live && p2p && <ReporterSignal net={net} auto={kbpsPick === 0} topKbps={kbpsEff} />}
+       {live && !p2p && (
+         <p className="text-center font-mono text-[11px] text-muted-foreground">
+@@ -675,6 +710,20 @@ export function FieldUnit() {
+           ))}
+         </div>
+       )}
++
++      <RecordingsPanel
++        store={recStore}
++        status={rec}
++        enabled={recOn}
++        onEnabled={(on) => {
++          setRecOn(on);
++          try {
++            localStorage.setItem("mk-field-rec", on ? "on" : "off");
++          } catch {
++            /* ignore */
++          }
++        }}
++      />
+     </div>
+   );
+ }
+diff --git a/src/components/mk/units-desk.tsx b/src/components/mk/units-desk.tsx
+index b958e8f..c2b1200 100644
+--- a/src/components/mk/units-desk.tsx
++++ b/src/components/mk/units-desk.tsx
+@@ -2,6 +2,7 @@ import QRCode from "qrcode";
+ import { useEffect, useRef, useState } from "react";
+ 
+ import { FieldCameraPanel } from "@/components/mk/field-camera-panel";
++import { RecChip } from "@/components/mk/field-recordings";
+ import { FieldReturnPanel } from "@/components/mk/field-return-panel";
+ import { AirAlertBanner, SignalChip, UplinkLine } from "@/components/mk/uplink";
+ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+@@ -365,6 +366,7 @@ function UnitCard({
+           </span>
+         )}
+         {state.link === "live" && <SignalChip net={state.net} />}
++        {state.link === "live" && <RecChip on={state.rec} />}
+         {state.link === "live" && (
+           <span className="relative h-2 w-20 overflow-hidden rounded bg-black/40" role="meter" aria-label="Reporter mic level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(state.level * 100)} title="The reporter's mic level">
+             <span className="absolute inset-y-0 left-0 bg-emerald-400" style={{ width: `${Math.min(100, state.level * 140)}%` }} />
+diff --git a/src/lib/mk/field-link.ts b/src/lib/mk/field-link.ts
+index b101f9d..e716ca9 100644
+--- a/src/lib/mk/field-link.ts
++++ b/src/lib/mk/field-link.ts
+@@ -301,12 +301,14 @@ export interface FieldState {
+   talking: boolean;
+   /** Auto quality is on: the phone lowers its bitrate when the signal is poor and raises it again when it recovers. `kbps` above is then its current ceiling. */
+   auto: boolean;
++  /** The phone is keeping a full-quality backup recording of this show on itself. */
++  rec: boolean;
+   /** The phone's latest uplink measurement (null = none yet, the unit is not live, or the phone is too old to send it). */
+   net: FieldNet | null;
+ }
+ 
+ type ToViewer =
+-  | { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery; auto?: boolean }
++  | { t: "state"; live: boolean; name: string; loc: string; quality: string; orient?: FieldOrient; fps?: number; kbps?: number; held?: FieldOrient; caps?: FieldCaps; ctl?: FieldCtl; battery?: FieldBattery; auto?: boolean; rec?: boolean }
+   | ({ t: "net" } & FieldNet)
+   | { t: "lvl"; v: number }
+   | { t: "ack"; seq: number };
+@@ -363,7 +365,7 @@ function placeholderStream(): MediaStream {
+ 
+ /** Watches one field unit: its status, and (when `video`) its picture. */
+ export class FieldViewer {
+-  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, net: null };
++  state: FieldState = { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, rec: false, net: null };
+   /** The incoming picture (null until the unit is live and the call is up). */
+   stream: MediaStream | null = null;
+   private peer: Peer | null = null;
+@@ -595,6 +597,7 @@ export class FieldViewer {
+         ctl: cleanFieldCtl(m.ctl),
+         battery: cleanBattery(m.battery),
+         auto: m.auto === true,
++        rec: m.rec === true,
+         ...(m.live ? {} : { net: null }),
+       });
+       if (!m.live) this.clearNet();
+@@ -709,8 +712,16 @@ export class FieldReporter {
+   private dead = false;
+   private retry: ReturnType<typeof setTimeout> | null = null;
+ 
++  /** The phone says whether it is keeping a backup recording. Only the director's card cares; sent when it changes. */
++  setRec(on: boolean) {
++    if (this.rec === on) return;
++    this.rec = on;
++    this.broadcast();
++  }
++
+   /** Called with every new uplink measurement, for the phone's own signal indicator. `auto` = Auto quality is on. */
+   onNet: (net: FieldNet, auto: boolean) => void = () => {};
++  private rec = false;
+ 
+   /** Measures the uplink every couple of seconds and (with Auto quality on) moves the bitrate ceiling. */
+   private health = new FieldHealth(
+@@ -866,7 +877,7 @@ export class FieldReporter {
+   private send(c: DataConnection) {
+     const m = this.meta();
+     // While live the ceiling Auto quality is using is the truth; otherwise what the phone is set to.
+-    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: this.live ? this.kbps : m.kbps, auto: this.health.isAuto, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}), ...(m.battery ? { battery: m.battery } : {}) };
++    const msg: ToViewer = { t: "state", live: this.live, name: m.name, loc: m.loc, quality: this.currentQuality(), orient: m.orient, fps: m.fps, kbps: this.live ? this.kbps : m.kbps, auto: this.health.isAuto, rec: this.rec, ...(m.held ? { held: m.held } : {}), ...(m.caps ? { caps: m.caps } : {}), ...(m.ctl ? { ctl: m.ctl } : {}), ...(m.battery ? { battery: m.battery } : {}) };
+     try {
+       if (c.open) c.send(msg);
+     } catch {
+diff --git a/src/lib/mk/field-record.ts b/src/lib/mk/field-record.ts
+new file mode 100644
+index 0000000..b6ad27e
+--- /dev/null
++++ b/src/lib/mk/field-record.ts
+@@ -0,0 +1,477 @@
++/**
++ * Backup recording on the reporter's phone: a full-quality copy of what the phone is sending, kept ON the phone,
++ * so a dropped or squeezed uplink never costs the good picture.
++ *
++ *   - Records the same camera + mic stream that goes to the studio, at the director's top bitrate (never lowered by Auto quality).
++ *   - Stored on the phone in small pieces as it goes (IndexedDB), so a closed tab or a dead battery loses seconds, not the show.
++ *   - One GO LIVE = one recording made of PARTS. The page opens a brand-new camera stream whenever the camera, mic, size,
++ *     frame rate or front/back changes, and a recorder cannot follow that, so each new stream starts a new part
++ *     (a short gap at the switch). Every part plays on its own.
++ *   - The reporter saves or shares the files afterwards (share sheet on phones, download elsewhere).
++ */
++
++// ------------------------------------------------------------------------------------------------- what is kept
++
++export interface RecMeta {
++  id: string;
++  /** What the reporter sees in the list, e.g. "FIELD 1 Ryan". */
++  name: string;
++  startedAt: number;
++  /** Missing while recording, and on a recording that was cut short (closed tab, flat battery): it is still there to save. */
++  endedAt?: number;
++  /** The file type the phone's recorder produced. */
++  mime: string;
++  parts: number;
++  bytes: number;
++}
++
++/** Where the pieces go. The real one is IndexedDB; tests use memory. */
++export interface RecStore {
++  begin(meta: RecMeta): Promise<void>;
++  update(id: string, patch: Partial<RecMeta>): Promise<void>;
++  append(id: string, part: number, seq: number, chunk: Blob): Promise<void>;
++  /** Newest first. */
++  list(): Promise<RecMeta[]>;
++  /** One part, put back together as a file. */
++  read(id: string, part: number): Promise<Blob>;
++  remove(id: string): Promise<void>;
++}
++
++export function memoryStore(): RecStore {
++  const metas = new Map<string, RecMeta>();
++  const chunks = new Map<string, { part: number; seq: number; blob: Blob }[]>();
++  return {
++    async begin(m) {
++      metas.set(m.id, { ...m });
++      chunks.set(m.id, []);
++    },
++    async update(id, patch) {
++      const m = metas.get(id);
++      if (m) metas.set(id, { ...m, ...patch });
++    },
++    async append(id, part, seq, blob) {
++      chunks.get(id)?.push({ part, seq, blob });
++    },
++    async list() {
++      return [...metas.values()].sort((a, b) => b.startedAt - a.startedAt);
++    },
++    async read(id, part) {
++      const c = (chunks.get(id) ?? []).filter((x) => x.part === part).sort((a, b) => a.seq - b.seq);
++      return new Blob(
++        c.map((x) => x.blob),
++        { type: metas.get(id)?.mime ?? "" },
++      );
++    },
++    async remove(id) {
++      metas.delete(id);
++      chunks.delete(id);
++    },
++  };
++}
++
++const DB = "mk-field-rec";
++const req = <T>(r: IDBRequest<T>): Promise<T> =>
++  new Promise((res, rej) => {
++    r.onsuccess = () => res(r.result);
++    r.onerror = () => rej(r.error ?? new Error("Storage error"));
++  });
++const done = (tx: IDBTransaction): Promise<void> =>
++  new Promise((res, rej) => {
++    tx.oncomplete = () => res();
++    tx.onerror = () => rej(tx.error ?? new Error("Storage error"));
++    tx.onabort = () => rej(tx.error ?? new Error("Storage aborted"));
++  });
++const all = (id: string, part?: number) =>
++  part === undefined
++    ? IDBKeyRange.bound([id, 0, 0], [id, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER])
++    : IDBKeyRange.bound([id, part, 0], [id, part, Number.MAX_SAFE_INTEGER]);
++
++/** The real store, in the phone's IndexedDB. Null where the browser has none (then there is no backup recording). */
++export function idbStore(
++  factory: IDBFactory | undefined = typeof indexedDB === "undefined" ? undefined : indexedDB,
++): RecStore | null {
++  if (!factory) return null;
++  let opened: Promise<IDBDatabase> | null = null;
++  const db = () =>
++    (opened ??= new Promise<IDBDatabase>((res, rej) => {
++      const o = factory.open(DB, 1);
++      o.onupgradeneeded = () => {
++        o.result.createObjectStore("meta", { keyPath: "id" });
++        o.result.createObjectStore("chunks"); // key = [id, part, seq]
++      };
++      o.onsuccess = () => res(o.result);
++      o.onerror = () => rej(o.error ?? new Error("Cannot open storage"));
++    }));
++  return {
++    async begin(meta) {
++      const d = await db();
++      const tx = d.transaction("meta", "readwrite");
++      tx.objectStore("meta").put(meta);
++      await done(tx);
++    },
++    async update(id, patch) {
++      const d = await db();
++      const tx = d.transaction("meta", "readwrite");
++      const s = tx.objectStore("meta");
++      const cur = (await req(s.get(id))) as RecMeta | undefined;
++      if (cur) s.put({ ...cur, ...patch });
++      await done(tx);
++    },
++    async append(id, part, seq, chunk) {
++      const d = await db();
++      const tx = d.transaction("chunks", "readwrite");
++      tx.objectStore("chunks").put(chunk, [id, part, seq]);
++      await done(tx);
++    },
++    async list() {
++      const d = await db();
++      const rows = (await req(d.transaction("meta").objectStore("meta").getAll())) as RecMeta[];
++      return rows.sort((a, b) => b.startedAt - a.startedAt);
++    },
++    async read(id, part) {
++      const d = await db();
++      const mime =
++        ((await req(d.transaction("meta").objectStore("meta").get(id))) as RecMeta | undefined)
++          ?.mime ?? "";
++      const blobs = (await req(
++        d.transaction("chunks").objectStore("chunks").getAll(all(id, part)),
++      )) as Blob[];
++      return new Blob(blobs, { type: mime });
++    },
++    async remove(id) {
++      const d = await db();
++      const tx = d.transaction(["meta", "chunks"], "readwrite");
++      tx.objectStore("chunks").delete(all(id));
++      tx.objectStore("meta").delete(id);
++      await done(tx);
++    },
++  };
++}
++
++// ------------------------------------------------------------------------------------------------- helpers
++
++/** Best format first: MP4 plays everywhere (editors, WhatsApp, iPhones); WebM is what some Android browsers give. */
++export const REC_MIMES = [
++  "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
++  "video/mp4",
++  "video/webm;codecs=vp9,opus",
++  "video/webm;codecs=vp8,opus",
++  "video/webm",
++];
++
++export function pickMime(isSupported: (t: string) => boolean): string {
++  return REC_MIMES.find((m) => isSupported(m)) ?? "";
++}
++
++export const extOf = (mime: string) => (mime.includes("mp4") ? "mp4" : "webm");
++
++export function formatBytes(n: number): string {
++  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
++  if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
++  return `${Math.max(0, Math.round(n / 1e3))} KB`;
++}
++
++export function formatDuration(ms: number): string {
++  const s = Math.max(0, Math.floor(ms / 1000));
++  const h = Math.floor(s / 3600);
++  const m = Math.floor((s % 3600) / 60);
++  const two = (v: number) => String(v).padStart(2, "0");
++  return h > 0 ? `${h}:${two(m)}:${two(s % 60)}` : `${m}:${two(s % 60)}`;
++}
++
++/** "FIELD-1-Ryan_2026-11-18_1432.mp4", or "..._part2.mp4" when the recording has several parts. */
++export function fileName(
++  meta: Pick<RecMeta, "name" | "startedAt" | "mime" | "parts">,
++  part: number,
++): string {
++  const d = new Date(meta.startedAt);
++  const two = (v: number) => String(v).padStart(2, "0");
++  const stamp = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}_${two(d.getHours())}${two(d.getMinutes())}`;
++  const slug = meta.name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "field";
++  return `${slug}_${stamp}${meta.parts > 1 ? `_part${part + 1}` : ""}.${extOf(meta.mime)}`;
++}
++
++// ------------------------------------------------------------------------------------------------- the recorder
++
++export interface RecStatus {
++  /** A recording is running (also while waiting for the camera to come back after a switch). */
++  on: boolean;
++  bytes: number;
++  ms: number;
++  parts: number;
++  /** Why it stopped by itself, in words for the reporter. Empty = fine. */
++  error: string;
++}
++
++export const REC_IDLE: RecStatus = { on: false, bytes: 0, ms: 0, parts: 0, error: "" };
++
++/** Stop before the phone has less free space than this: the show matters more than the backup. */
++export const LOW_SPACE_BYTES = 300 * 1e6;
++const SLICE_MS = 1000;
++const SAVE_META_EVERY = 10;
++const CHECK_SPACE_EVERY = 15;
++
++interface RecorderCtor {
++  new (s: MediaStream, o?: MediaRecorderOptions): MediaRecorder;
++  isTypeSupported(t: string): boolean;
++}
++
++export interface RecDeps {
++  Recorder: RecorderCtor | undefined;
++  now: () => number;
++  newId: () => string;
++  /** Free space on the phone in bytes, or null if the browser will not say. */
++  freeBytes: () => Promise<number | null>;
++}
++
++const realDeps = (): RecDeps => ({
++  Recorder:
++    typeof MediaRecorder === "undefined" ? undefined : (MediaRecorder as unknown as RecorderCtor),
++  now: () => Date.now(),
++  newId: () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
++  freeBytes: async () => {
++    try {
++      const e = await navigator.storage?.estimate?.();
++      return e?.quota !== undefined && e.usage !== undefined ? e.quota - e.usage : null;
++    } catch {
++      return null;
++    }
++  },
++});
++
++export class FieldRecorder {
++  /** Called whenever something changes (about once a second while recording). */
++  onChange: (s: RecStatus) => void = () => {};
++
++  private deps: RecDeps;
++  private id = "";
++  private name = "";
++  private mime = "";
++  private kbps = 0;
++  private startedAt = 0;
++  private active = false;
++  private bytes = 0;
++  private parts = 0;
++  private seq = 0;
++  private chunks = 0;
++  private error = "";
++  private cur: MediaRecorder | null = null;
++  private curStream: MediaStream | null = null;
++  private chain: Promise<unknown> = Promise.resolve();
++  private partEnded: (() => void) | null = null;
++
++  constructor(
++    private store: RecStore,
++    deps: Partial<RecDeps> = {},
++  ) {
++    this.deps = { ...realDeps(), ...deps };
++  }
++
++  get status(): RecStatus {
++    return {
++      on: this.active,
++      bytes: this.bytes,
++      ms: this.startedAt ? this.deps.now() - this.startedAt : 0,
++      parts: this.parts,
++      error: this.error,
++    };
++  }
++
++  private emit() {
++    this.onChange(this.status);
++  }
++
++  /** Starts a recording of `stream`. Returns false (and says why in `status.error`) if the phone cannot. */
++  async start(stream: MediaStream, opts: { name: string; kbps: number }): Promise<boolean> {
++    if (this.active) return true;
++    const { Recorder } = this.deps;
++    this.error = "";
++    if (!Recorder) return this.refuse("This browser cannot record a backup.");
++    this.id = this.deps.newId();
++    this.name = opts.name;
++    this.mime = pickMime((t) => Recorder.isTypeSupported(t));
++    this.kbps = opts.kbps;
++    this.startedAt = this.deps.now();
++    this.bytes = 0;
++    this.parts = 0;
++    this.seq = 0;
++    this.chunks = 0;
++    try {
++      await this.store.begin({
++        id: this.id,
++        name: this.name,
++        startedAt: this.startedAt,
++        mime: this.mime,
++        parts: 0,
++        bytes: 0,
++      });
++    } catch {
++      this.startedAt = 0;
++      return this.refuse("The phone has nowhere to keep a backup recording.");
++    }
++    this.active = true;
++    if (!this.startPart(stream)) {
++      this.active = false;
++      return this.refuse("The backup recording could not start.");
++    }
++    void navigator.storage?.persist?.().catch(() => {}); // ask the browser not to clear it when space is short
++    this.emit();
++    return true;
++  }
++
++  private refuse(why: string): false {
++    this.error = why;
++    this.emit();
++    return false;
++  }
++
++  private startPart(stream: MediaStream): boolean {
++    const { Recorder } = this.deps;
++    if (!Recorder) return false;
++    const part = this.parts;
++    let rec: MediaRecorder;
++    try {
++      rec = new Recorder(stream, {
++        ...(this.mime ? { mimeType: this.mime } : {}),
++        videoBitsPerSecond: this.kbps * 1000,
++        audioBitsPerSecond: 128_000,
++      });
++      rec.ondataavailable = (e) => this.onData(part, e.data);
++      rec.onstop = () => this.onPartEnd(rec);
++      rec.onerror = () => this.fail("The backup recording hit an error and stopped.");
++      rec.start(SLICE_MS);
++    } catch {
++      return false;
++    }
++    this.parts++;
++    this.cur = rec;
++    this.curStream = stream;
++    return true;
++  }
++
++  private onData(part: number, blob: Blob) {
++    if (!blob || blob.size === 0) return;
++    const seq = this.seq++;
++    this.bytes += blob.size;
++    this.chunks++;
++    this.chain = this.chain
++      .then(() => this.store.append(this.id, part, seq, blob))
++      .then(async () => {
++        if (this.chunks % SAVE_META_EVERY === 0)
++          await this.store.update(this.id, { bytes: this.bytes, parts: this.parts });
++      })
++      .catch(() => this.fail("The phone's storage is full. Recording stopped."));
++    if (this.chunks % CHECK_SPACE_EVERY === 0)
++      void this.deps.freeBytes().then((free) => {
++        if (free !== null && free < LOW_SPACE_BYTES)
++          this.fail("The phone is almost out of space. Recording stopped.");
++      });
++    this.emit();
++  }
++
++  /** A part ended on its own (the camera was switched and its tracks stopped) or because we stopped it. */
++  private onPartEnd(rec: MediaRecorder) {
++    if (rec === this.cur) {
++      this.cur = null;
++      this.curStream = null;
++    }
++    this.partEnded?.();
++  }
++
++  /** The page opened a new camera stream: carry on in a new part. Does nothing if not recording, or if it is the stream already recorded. */
++  retarget(stream: MediaStream) {
++    if (!this.active || stream === this.curStream) return;
++    const old = this.cur;
++    this.cur = null;
++    this.curStream = null;
++    try {
++      if (old && old.state !== "inactive") old.stop(); // its last piece still arrives and is filed under its own part
++    } catch {
++      /* already stopped */
++    }
++    if (!this.startPart(stream))
++      this.fail("The backup could not follow the camera switch and stopped.");
++    else this.emit();
++  }
++
++  private fail(why: string) {
++    if (!this.active) return;
++    this.error = why;
++    void this.stop();
++  }
++
++  /** Ends the recording and files it. Safe to call twice. Returns the finished recording, or null if none was running. */
++  async stop(): Promise<RecMeta | null> {
++    if (!this.active) return null;
++    this.active = false;
++    const rec = this.cur;
++    if (rec && rec.state !== "inactive") {
++      const ended = new Promise<void>((res) => (this.partEnded = res));
++      try {
++        rec.stop();
++        await Promise.race([ended, new Promise<void>((res) => setTimeout(res, 3000))]);
++      } catch {
++        /* already stopped */
++      }
++    }
++    this.partEnded = null;
++    this.cur = null;
++    this.curStream = null;
++    await this.chain.catch(() => {});
++    const endedAt = this.deps.now();
++    await this.store
++      .update(this.id, { endedAt, bytes: this.bytes, parts: this.parts })
++      .catch(() => {});
++    this.emit();
++    return {
++      id: this.id,
++      name: this.name,
++      startedAt: this.startedAt,
++      endedAt,
++      mime: this.mime,
++      parts: this.parts,
++      bytes: this.bytes,
++    };
++  }
++}
++
++// ------------------------------------------------------------------------------------------------- save / share
++
++type Nav = Pick<Navigator, "share" | "canShare">;
++
++/**
++ * Gets a recording off the phone: the share sheet where there is one (WhatsApp, Drive, AirDrop ...), a download otherwise.
++ * Returns what happened. All parts go together.
++ */
++export async function saveRecording(
++  store: RecStore,
++  meta: RecMeta,
++  nav: Partial<Nav> = typeof navigator === "undefined" ? {} : navigator,
++): Promise<"shared" | "cancelled" | "downloaded"> {
++  const files: File[] = [];
++  for (let p = 0; p < Math.max(1, meta.parts); p++) {
++    const blob = await store.read(meta.id, p);
++    if (blob.size > 0)
++      files.push(new File([blob], fileName(meta, p), { type: meta.mime || blob.type }));
++  }
++  if (files.length === 0) throw new Error("Nothing was recorded.");
++  if (nav.canShare?.({ files }) && nav.share) {
++    try {
++      await nav.share({ files, title: meta.name });
++      return "shared";
++    } catch (e) {
++      if ((e as { name?: string }).name === "AbortError") return "cancelled"; // the reporter closed the share sheet
++      /* the share sheet failed: fall through to a download */
++    }
++  }
++  for (const f of files) {
++    const a = document.createElement("a");
++    a.href = URL.createObjectURL(f);
++    a.download = f.name;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
++  }
++  return "downloaded";
++}
+diff --git a/src/lib/mk/field-units.ts b/src/lib/mk/field-units.ts
+index 0b00193..3e75d44 100644
+--- a/src/lib/mk/field-units.ts
++++ b/src/lib/mk/field-units.ts
+@@ -158,7 +158,7 @@ export function useFieldViewer(room: string, unit: number, video: boolean, setup
+   }, [video]);
+ 
+   const v = ref.current;
+-  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, net: null };
++  const state: FieldState = v?.state ?? { link: "connecting", quality: "", name: "", loc: "", orient: DEFAULT_FIELD_ORIENT, fps: 0, kbps: 0, held: "", error: null, caps: null, ctl: {}, battery: null, level: 0, ack: 0, talking: false, auto: false, rec: false, net: null };
+   return {
+     state,
+     stream: v?.stream ?? null,
+diff --git a/src/test/air-alert.test.tsx b/src/test/air-alert.test.tsx
+index 1936016..c948693 100644
+--- a/src/test/air-alert.test.tsx
++++ b/src/test/air-alert.test.tsx
+@@ -67,6 +67,7 @@ vi.mock("@/lib/mk/field-units", async (orig) => ({
+       ack: 0,
+       talking: false,
+       auto: true,
++      rec: false,
+       net: null,
+       ...viewerState,
+     } satisfies FieldState,
+diff --git a/src/test/field-health.test.ts b/src/test/field-health.test.ts
+index cd8803c..8138dc1 100644
+--- a/src/test/field-health.test.ts
++++ b/src/test/field-health.test.ts
+@@ -527,6 +527,17 @@ describe("reporter to studio, end to end", () => {
+     expect(viewer.state).toMatchObject({ link: "standby", net: null });
+   });
+ 
++  it("tells the studio when the phone is keeping a backup recording", async () => {
++    expect(viewer.state.rec).toBe(false);
++    reporter.setRec(true);
++    await vi.advanceTimersByTimeAsync(10);
++    expect(viewer.state.rec).toBe(true);
++    reporter.setRec(true); // no change: nothing more to say
++    reporter.setRec(false);
++    await vi.advanceTimersByTimeAsync(10);
++    expect(viewer.state.rec).toBe(false);
++  });
++
+   it("ignores a net message with nonsense in it", async () => {
+     await world(8000, 0);
+     await world(8000, 0);
+diff --git a/src/test/field-record-idb.test.ts b/src/test/field-record-idb.test.ts
+new file mode 100644
+index 0000000..44b6a2f
+--- /dev/null
++++ b/src/test/field-record-idb.test.ts
+@@ -0,0 +1,96 @@
++import { Blob as NodeBlob } from "node:buffer";
++import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
++
++import { idbStore, type RecMeta } from "@/lib/mk/field-record";
++
++/**
++ * The real phone store, run against an in-memory IndexedDB.
++ * Needs the `fake-indexeddb` dev dependency (`npm i -D fake-indexeddb`); without it these are skipped, not failed.
++ */
++// A name held in a variable, so neither TypeScript nor Vite looks for the package until the test actually runs.
++const load = (name: string): Promise<unknown> => import(/* @vite-ignore */ name);
++const fake = await load("fake-indexeddb/auto")
++  .then(() => load("fake-indexeddb"))
++  .catch(() => null);
++
++const meta = (o: Partial<RecMeta> = {}): RecMeta => ({
++  id: "a",
++  name: "FIELD 1",
++  startedAt: 1000,
++  mime: "video/webm",
++  parts: 0,
++  bytes: 0,
++  ...o,
++});
++const text = (b: Blob) => b.text();
++const fresh = () =>
++  idbStore(new (fake as unknown as { IDBFactory: new () => IDBFactory }).IDBFactory())!;
++
++describe.skipIf(!fake)("phone storage (IndexedDB)", () => {
++  // jsdom's pretend Blob cannot be stored by the test database (a real browser keeps real Blobs), so use Node's real one here.
++  beforeAll(() => void vi.stubGlobal("Blob", NodeBlob));
++  afterAll(() => void vi.unstubAllGlobals());
++
++  it("is not available where the browser has no IndexedDB", () => {
++    expect(idbStore(null as unknown as undefined)).toBeNull();
++  });
++
++  it("lists recordings newest first", async () => {
++    const s = fresh();
++    await s.begin(meta({ id: "old", startedAt: 1 }));
++    await s.begin(meta({ id: "new", startedAt: 9 }));
++    expect((await s.list()).map((m) => m.id)).toEqual(["new", "old"]);
++  });
++
++  it("puts a part back together in the order it was recorded, even past ten pieces", async () => {
++    const s = fresh();
++    await s.begin(meta());
++    // Written out of order on purpose: pieces 0..11 must read back 0,1,2 ... 10,11 (numbers, not text order).
++    for (const i of [5, 11, 0, 2, 10, 1, 3, 4, 6, 7, 8, 9])
++      await s.append("a", 0, i, new Blob([`<${i}>`]));
++    const blob = await s.read("a", 0);
++    expect(await text(blob)).toBe(Array.from({ length: 12 }, (_, i) => `<${i}>`).join(""));
++    expect(blob.type).toBe("video/webm");
++  });
++
++  it("keeps parts, and recordings, apart", async () => {
++    const s = fresh();
++    await s.begin(meta({ id: "a" }));
++    await s.begin(meta({ id: "ab" })); // an id that starts like another one
++    await s.append("a", 0, 0, new Blob(["a0"]));
++    await s.append("a", 1, 0, new Blob(["a1"]));
++    await s.append("ab", 0, 0, new Blob(["ab0"]));
++    expect(await text(await s.read("a", 0))).toBe("a0");
++    expect(await text(await s.read("a", 1))).toBe("a1");
++    expect(await text(await s.read("ab", 0))).toBe("ab0");
++  });
++
++  it("updates what it knows about a recording, and ignores one it does not have", async () => {
++    const s = fresh();
++    await s.begin(meta());
++    await s.update("a", { bytes: 500, parts: 2, endedAt: 7 });
++    await s.update("missing", { bytes: 1 });
++    const list = await s.list();
++    expect(list).toHaveLength(1);
++    expect(list[0]).toMatchObject({ id: "a", name: "FIELD 1", bytes: 500, parts: 2, endedAt: 7 });
++  });
++
++  it("deletes a recording and all its pieces, and only that one", async () => {
++    const s = fresh();
++    await s.begin(meta({ id: "a" }));
++    await s.begin(meta({ id: "ab" }));
++    await s.append("a", 0, 0, new Blob(["x"]));
++    await s.append("a", 1, 0, new Blob(["y"]));
++    await s.append("ab", 0, 0, new Blob(["keep"]));
++    await s.remove("a");
++    expect((await s.list()).map((m) => m.id)).toEqual(["ab"]);
++    expect((await s.read("a", 0)).size).toBe(0);
++    expect((await s.read("a", 1)).size).toBe(0);
++    expect(await text(await s.read("ab", 0))).toBe("keep");
++  });
++
++  it("reads nothing, without failing, for a recording that does not exist", async () => {
++    const s = fresh();
++    expect((await s.read("nope", 0)).size).toBe(0);
++  });
++});
+diff --git a/src/test/field-record-ui.test.tsx b/src/test/field-record-ui.test.tsx
+new file mode 100644
+index 0000000..c034ab7
+--- /dev/null
++++ b/src/test/field-record-ui.test.tsx
+@@ -0,0 +1,162 @@
++import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++
++import { RecChip, RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
++import {
++  memoryStore,
++  REC_IDLE,
++  type RecMeta,
++  type RecStatus,
++  type RecStore,
++} from "@/lib/mk/field-record";
++
++const meta = (o: Partial<RecMeta> = {}): RecMeta => ({
++  id: "a",
++  name: "FIELD 1 Ryan",
++  startedAt: new Date(2026, 10, 18, 14, 32).getTime(),
++  endedAt: new Date(2026, 10, 18, 15, 2).getTime(),
++  mime: "video/mp4",
++  parts: 1,
++  bytes: 2_700_000_000,
++  ...o,
++});
++/** A recording that never finished (still running, or cut short): no end time at all. */
++const unfinished = (o: Partial<RecMeta> = {}): RecMeta => {
++  const { endedAt: _gone, ...rest } = meta(o);
++  return rest;
++};
++const running: RecStatus = { on: true, bytes: 48_000_000, ms: 65_000, parts: 1, error: "" };
++
++describe("director's REC chip", () => {
++  afterEach(cleanup);
++  it("shows only while the phone is recording", () => {
++    const { container, rerender } = render(<RecChip on={false} />);
++    expect(container.textContent).toBe("");
++    rerender(<RecChip on />);
++    expect(container.textContent).toBe("REC");
++  });
++});
++
++describe("phone's recording line", () => {
++  afterEach(cleanup);
++  it("is empty when idle and fine", () => {
++    const { container } = render(<RecStatusLine status={REC_IDLE} />);
++    expect(container.textContent).toBe("");
++  });
++  it("shows time and size, and the parts once there are several", () => {
++    const { rerender } = render(<RecStatusLine status={running} />);
++    expect(screen.getByTestId("rec-status").textContent).toContain("Backup recording 1:05 · 48 MB");
++    expect(screen.getByTestId("rec-status").textContent).not.toMatch(/parts/);
++    rerender(<RecStatusLine status={{ ...running, parts: 3 }} />);
++    expect(screen.getByTestId("rec-status").textContent).toContain("3 parts");
++  });
++  it("tells the reporter why it stopped", () => {
++    render(
++      <RecStatusLine
++        status={{ ...REC_IDLE, error: "The phone is almost out of space. Recording stopped." }}
++      />,
++    );
++    expect(screen.getByTestId("rec-status").textContent).toContain("almost out of space");
++    expect(screen.getByTestId("rec-status").textContent).not.toMatch(/Backup recording/);
++  });
++});
++
++describe("saved backups on the phone", () => {
++  let store: RecStore;
++  beforeEach(async () => {
++    store = memoryStore();
++    await store.begin(meta());
++    await store.append("a", 0, 0, new Blob(["abc"]));
++  });
++  afterEach(() => {
++    cleanup();
++    vi.restoreAllMocks();
++  });
++  const panel = (over: Partial<Parameters<typeof RecordingsPanel>[0]> = {}) =>
++    render(
++      <RecordingsPanel store={store} status={REC_IDLE} enabled onEnabled={() => {}} {...over} />,
++    );
++
++  it("says so on a browser that cannot keep recordings", () => {
++    panel({ store: null });
++    expect(screen.getByTestId("rec-panel").textContent).toMatch(/cannot keep a backup/);
++  });
++
++  it("lists what is saved, with length and size", async () => {
++    await store.begin(
++      meta({
++        id: "b",
++        name: "FIELD 1 Ryan",
++        startedAt: new Date(2026, 10, 19, 9, 0).getTime(),
++        endedAt: new Date(2026, 10, 19, 9, 10).getTime(),
++        parts: 3,
++        bytes: 900_000_000,
++      }),
++    );
++    panel();
++    const rows = await screen.findAllByTestId("rec-row");
++    expect(rows).toHaveLength(2);
++    expect(rows[0]!.textContent).toContain("10:00 · 900 MB · 3 parts"); // newest first
++    expect(rows[1]!.textContent).toContain("30:00 · 2.7 GB");
++  });
++
++  it("marks a recording that was cut short as still saved", async () => {
++    await store.begin(
++      unfinished({
++        id: "c",
++        startedAt: new Date(2026, 10, 20).getTime(),
++        bytes: 10_000_000,
++      }),
++    );
++    panel();
++    expect((await screen.findAllByTestId("rec-row"))[0]!.textContent).toContain(
++      "cut short (still saved)",
++    );
++  });
++
++  it("will not save or delete the recording that is running right now, and locks the switch", async () => {
++    await store.begin(
++      unfinished({
++        id: "now",
++        startedAt: new Date(2026, 10, 21).getTime(),
++        bytes: 1000,
++      }),
++    );
++    panel({ status: running });
++    const row = (await screen.findAllByTestId("rec-row"))[0]!;
++    expect(row.textContent).toContain("recording now");
++    for (const b of row.querySelectorAll("button"))
++      expect((b as HTMLButtonElement).disabled).toBe(true);
++    expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
++  });
++
++  it("shares a backup through the phone's share sheet", async () => {
++    const share = vi.fn(async (_d: ShareData) => {});
++    Object.assign(navigator, { canShare: () => true, share });
++    panel();
++    fireEvent.click(await screen.findByRole("button", { name: "SAVE / SHARE" }));
++    await screen.findByText("Sent.");
++    const files = (share.mock.calls[0]![0] as unknown as { files: File[] }).files;
++    expect(files).toHaveLength(1);
++    expect(files[0]!.name).toBe("FIELD-1-Ryan_2026-11-18_1432.mp4");
++  });
++
++  it("deletes a backup only after the reporter confirms", async () => {
++    panel();
++    const del = await screen.findByRole("button", { name: "DELETE" });
++    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
++    fireEvent.click(del);
++    expect(await store.list()).toHaveLength(1);
++    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
++    fireEvent.click(del);
++    await waitFor(async () => expect(await store.list()).toHaveLength(0));
++    await screen.findByText("No backups yet.");
++  });
++
++  it("lets the reporter switch the backup off between shows", () => {
++    const onEnabled = vi.fn();
++    panel({ onEnabled });
++    fireEvent.click(screen.getByRole("checkbox"));
++    expect(onEnabled).toHaveBeenCalledWith(false);
++  });
++});
+diff --git a/src/test/field-record.test.ts b/src/test/field-record.test.ts
+new file mode 100644
+index 0000000..9477fa6
+--- /dev/null
++++ b/src/test/field-record.test.ts
+@@ -0,0 +1,372 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++
++import {
++  extOf,
++  fileName,
++  FieldRecorder,
++  formatBytes,
++  formatDuration,
++  LOW_SPACE_BYTES,
++  memoryStore,
++  pickMime,
++  saveRecording,
++  type RecStatus,
++  type RecStore,
++} from "@/lib/mk/field-record";
++
++/** A pretend MediaRecorder the test drives by hand. */
++class FakeRec {
++  static all: FakeRec[] = [];
++  static supported = new Set<string>(["video/webm"]);
++  static isTypeSupported(t: string) {
++    return FakeRec.supported.has(t);
++  }
++  state: "inactive" | "recording" = "inactive";
++  ondataavailable: ((e: { data: Blob }) => void) | null = null;
++  onstop: (() => void) | null = null;
++  onerror: (() => void) | null = null;
++  constructor(
++    public stream: unknown,
++    public opts: {
++      mimeType?: string;
++      videoBitsPerSecond?: number;
++      audioBitsPerSecond?: number;
++    } = {},
++  ) {
++    FakeRec.all.push(this);
++  }
++  start() {
++    this.state = "recording";
++  }
++  /** One second of video arrives. */
++  emit(bytes: number) {
++    this.ondataavailable?.({ data: new Blob([new Uint8Array(bytes)]) });
++  }
++  /** We asked it to stop: the last piece, then "stop". */
++  stop() {
++    if (this.state === "inactive") return;
++    this.state = "inactive";
++    this.emit(5);
++    this.onstop?.();
++  }
++  /** The camera was switched: its tracks ended, so it stops by itself. */
++  endByTracks() {
++    this.state = "inactive";
++    this.emit(7);
++    this.onstop?.();
++  }
++}
++
++let t = 1_000_000;
++let free: number | null = null;
++let store: RecStore;
++const stream = () => ({ id: Math.random() }) as unknown as MediaStream;
++const make = (over: Partial<ConstructorParameters<typeof FieldRecorder>[1]> = {}) =>
++  new FieldRecorder(store, {
++    Recorder: FakeRec as never,
++    now: () => t,
++    newId: () => "rec1",
++    freeBytes: async () => free,
++    ...over,
++  });
++const flush = () => new Promise((r) => setTimeout(r, 0));
++const sizeOf = async (part: number) => (await store.read("rec1", part)).size;
++
++beforeEach(() => {
++  FakeRec.all = [];
++  FakeRec.supported = new Set(["video/webm"]);
++  t = 1_000_000;
++  free = null;
++  store = memoryStore();
++});
++
++describe("file helpers", () => {
++  it("picks the best format the phone can make", () => {
++    expect(pickMime(() => true)).toMatch(/^video\/mp4;codecs/);
++    expect(pickMime((m) => m.startsWith("video/webm"))).toBe("video/webm;codecs=vp9,opus");
++    expect(pickMime((m) => m === "video/webm")).toBe("video/webm");
++    expect(pickMime(() => false)).toBe("");
++    expect(extOf("video/mp4;codecs=avc1")).toBe("mp4");
++    expect(extOf("video/webm")).toBe("webm");
++    expect(extOf("")).toBe("webm");
++  });
++  it("writes sizes and times for people", () => {
++    expect(formatBytes(512)).toBe("1 KB");
++    expect(formatBytes(48_000_000)).toBe("48 MB");
++    expect(formatBytes(2_700_000_000)).toBe("2.7 GB");
++    expect(formatDuration(65_000)).toBe("1:05");
++    expect(formatDuration(3_725_000)).toBe("1:02:05");
++    expect(formatDuration(-5)).toBe("0:00");
++  });
++  it("names files so they sort and say what they are", () => {
++    const base = {
++      name: "FIELD 1 Ryan (Kisumu)",
++      startedAt: new Date(2026, 10, 18, 14, 32).getTime(),
++      mime: "video/mp4",
++    };
++    expect(fileName({ ...base, parts: 1 }, 0)).toBe("FIELD-1-Ryan-Kisumu_2026-11-18_1432.mp4");
++    expect(fileName({ ...base, parts: 3 }, 1)).toBe(
++      "FIELD-1-Ryan-Kisumu_2026-11-18_1432_part2.mp4",
++    );
++    expect(fileName({ ...base, name: "###", mime: "video/webm", parts: 1 }, 0)).toBe(
++      "field_2026-11-18_1432.webm",
++    );
++  });
++});
++
++describe("recording", () => {
++  it("records at the director's top bitrate and says what it is doing", async () => {
++    FakeRec.supported = new Set(["video/mp4"]);
++    const seen: RecStatus[] = [];
++    const r = make();
++    r.onChange = (s) => seen.push(s);
++    expect(await r.start(stream(), { name: "FIELD 1 Ryan", kbps: 8000 })).toBe(true);
++    expect(FakeRec.all).toHaveLength(1);
++    expect(FakeRec.all[0]!.opts).toMatchObject({
++      mimeType: "video/mp4",
++      videoBitsPerSecond: 8_000_000,
++    });
++    expect(r.status).toMatchObject({ on: true, parts: 1, bytes: 0, error: "" });
++    FakeRec.all[0]!.emit(1000);
++    t += 1000;
++    expect(r.status).toMatchObject({ bytes: 1000, ms: 1000 });
++    expect(seen.at(-1)).toMatchObject({ on: true, bytes: 1000 });
++  });
++
++  it("keeps the pieces in order and files the finished recording", async () => {
++    const r = make();
++    await r.start(stream(), { name: "FIELD 1 Ryan", kbps: 4000 });
++    for (const n of [100, 200, 300]) FakeRec.all[0]!.emit(n);
++    t += 30_000;
++    const meta = await r.stop();
++    expect(meta).toMatchObject({
++      id: "rec1",
++      name: "FIELD 1 Ryan",
++      parts: 1,
++      bytes: 605,
++      endedAt: t,
++    });
++    expect(r.status.on).toBe(false);
++    const [saved] = await store.list();
++    expect(saved).toMatchObject({
++      id: "rec1",
++      name: "FIELD 1 Ryan",
++      endedAt: t,
++      parts: 1,
++      bytes: 605,
++    });
++    expect(await sizeOf(0)).toBe(605); // 100 + 200 + 300 + the last piece when it was stopped
++  });
++
++  it("stopping twice is harmless, and starting twice does not start a second recording", async () => {
++    const r = make();
++    const s = stream();
++    await r.start(s, { name: "x", kbps: 1 });
++    expect(await r.start(s, { name: "x", kbps: 1 })).toBe(true);
++    expect(FakeRec.all).toHaveLength(1);
++    expect(await r.stop()).not.toBeNull();
++    expect(await r.stop()).toBeNull();
++  });
++
++  it("saves progress as it goes, so a cut-short recording still lists what it has", async () => {
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    for (let i = 0; i < 10; i++) FakeRec.all[0]!.emit(100);
++    await flush();
++    const [m] = await store.list();
++    expect(m).toMatchObject({ bytes: 1000, parts: 1 });
++    expect(m!.endedAt).toBeUndefined(); // never stopped: closed tab / flat battery
++  });
++});
++
++describe("camera switches", () => {
++  it("carries on in a new part when the page opens a new camera stream", async () => {
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    FakeRec.all[0]!.emit(100);
++    FakeRec.all[0]!.endByTracks(); // the old tracks stopped: it ends by itself, its last piece (7) is kept
++    expect(r.status.on).toBe(true); // still recording: waiting for the new camera
++    r.retarget(stream());
++    expect(FakeRec.all).toHaveLength(2);
++    expect(FakeRec.all[1]!.opts.videoBitsPerSecond).toBe(1000);
++    FakeRec.all[1]!.emit(50);
++    await r.stop();
++    expect(r.status.parts).toBe(2);
++    expect(await sizeOf(0)).toBe(107);
++    expect(await sizeOf(1)).toBe(55);
++    expect((await store.list())[0]).toMatchObject({ parts: 2, bytes: 162 });
++  });
++
++  it("stops the old recorder itself if the old stream is somehow still running", async () => {
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    r.retarget(stream());
++    expect(FakeRec.all[0]!.state).toBe("inactive");
++    expect(FakeRec.all[1]!.state).toBe("recording");
++    await r.stop();
++  });
++
++  it("ignores the stream it is already recording, and ignores everything when not recording", async () => {
++    const r = make();
++    const s = stream();
++    r.retarget(s); // not recording
++    expect(FakeRec.all).toHaveLength(0);
++    await r.start(s, { name: "x", kbps: 1 });
++    r.retarget(s);
++    expect(FakeRec.all).toHaveLength(1);
++    await r.stop();
++    r.retarget(stream());
++    expect(FakeRec.all).toHaveLength(1);
++  });
++
++  it("can be stopped while waiting for the camera to come back", async () => {
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    FakeRec.all[0]!.endByTracks();
++    const meta = await r.stop();
++    expect(meta).toMatchObject({ parts: 1 });
++  });
++});
++
++describe("when it cannot or must not record", () => {
++  it("says so on a browser with no recorder", async () => {
++    const r = make({ Recorder: undefined });
++    expect(await r.start(stream(), { name: "x", kbps: 1 })).toBe(false);
++    expect(r.status).toMatchObject({ on: false });
++    expect(r.status.error).toMatch(/cannot record/);
++  });
++  it("says so when there is nowhere to keep it", async () => {
++    store.begin = async () => {
++      throw new Error("denied");
++    };
++    const r = make();
++    expect(await r.start(stream(), { name: "x", kbps: 1 })).toBe(false);
++    expect(r.status.error).toMatch(/nowhere to keep/);
++    expect(FakeRec.all).toHaveLength(0);
++  });
++  it("says so when the recorder will not start", async () => {
++    FakeRec.prototype.start = () => {
++      throw new Error("no");
++    };
++    const r = make();
++    expect(await r.start(stream(), { name: "x", kbps: 1 })).toBe(false);
++    expect(r.status.error).toMatch(/could not start/);
++    FakeRec.prototype.start = function (this: FakeRec) {
++      this.state = "recording";
++    };
++  });
++  it("stops, keeping what it has, when the phone's storage is full", async () => {
++    const real = store.append;
++    let n = 0;
++    store.append = async (...a) => {
++      if (++n > 2) throw new Error("QuotaExceededError");
++      return real(...a);
++    };
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    for (let i = 0; i < 4; i++) FakeRec.all[0]!.emit(100);
++    await flush();
++    await flush();
++    expect(r.status.on).toBe(false);
++    expect(r.status.error).toMatch(/storage is full/);
++    expect((await store.list())[0]!.endedAt).toBeDefined();
++    expect(await sizeOf(0)).toBe(200); // the first two pieces are safe
++  });
++  it("stops before the phone runs out of space, so the show is never squeezed", async () => {
++    free = LOW_SPACE_BYTES - 1;
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    for (let i = 0; i < 15; i++) FakeRec.all[0]!.emit(10);
++    await flush();
++    await flush();
++    expect(r.status.on).toBe(false);
++    expect(r.status.error).toMatch(/almost out of space/);
++  });
++  it("keeps going when the browser will not say how much space is left", async () => {
++    free = null;
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    for (let i = 0; i < 30; i++) FakeRec.all[0]!.emit(10);
++    await flush();
++    expect(r.status.on).toBe(true);
++    await r.stop();
++  });
++  it("stops when the recorder itself reports an error", async () => {
++    const r = make();
++    await r.start(stream(), { name: "x", kbps: 1 });
++    FakeRec.all[0]!.onerror?.();
++    await flush();
++    expect(r.status.on).toBe(false);
++    expect(r.status.error).toMatch(/hit an error/);
++  });
++  it("forgets the old reason when a new recording starts", async () => {
++    const r = make({ Recorder: undefined });
++    await r.start(stream(), { name: "x", kbps: 1 });
++    expect(r.status.error).not.toBe("");
++    const ok = make();
++    await ok.start(stream(), { name: "x", kbps: 1 });
++    expect(ok.status.error).toBe("");
++  });
++});
++
++describe("saving and sharing", () => {
++  const meta = {
++    id: "rec1",
++    name: "FIELD 1 Ryan",
++    startedAt: new Date(2026, 10, 18, 14, 32).getTime(),
++    endedAt: 1,
++    mime: "video/mp4",
++    parts: 2,
++    bytes: 6,
++  };
++  beforeEach(async () => {
++    await store.begin(meta);
++    await store.append("rec1", 0, 0, new Blob(["abc"]));
++    await store.append("rec1", 1, 0, new Blob(["def"]));
++  });
++  afterEach(() => vi.restoreAllMocks());
++
++  it("shares every part together through the phone's share sheet", async () => {
++    const share = vi.fn(async (_d: ShareData) => {});
++    const r = await saveRecording(store, meta, { canShare: () => true, share });
++    expect(r).toBe("shared");
++    const arg = share.mock.calls[0]![0] as unknown as { files: File[]; title: string };
++    expect(arg.files.map((f) => f.name)).toEqual([
++      "FIELD-1-Ryan_2026-11-18_1432_part1.mp4",
++      "FIELD-1-Ryan_2026-11-18_1432_part2.mp4",
++    ]);
++    expect(arg.files.map((f) => f.size)).toEqual([3, 3]);
++    expect(arg.title).toBe("FIELD 1 Ryan");
++  });
++  it("does not download after the reporter closes the share sheet", async () => {
++    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
++    const share = vi.fn(async () => {
++      throw Object.assign(new Error("closed"), { name: "AbortError" });
++    });
++    expect(await saveRecording(store, meta, { canShare: () => true, share })).toBe("cancelled");
++    expect(click).not.toHaveBeenCalled();
++  });
++  it("downloads each part when there is no share sheet, or it fails", async () => {
++    const names: string[] = [];
++    URL.createObjectURL = vi.fn(() => "blob:x");
++    URL.revokeObjectURL = vi.fn();
++    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
++      this: HTMLAnchorElement,
++    ) {
++      names.push(this.download);
++    });
++    expect(await saveRecording(store, meta, {})).toBe("downloaded");
++    expect(names).toHaveLength(2);
++    names.length = 0;
++    const share = vi.fn(async () => {
++      throw new Error("sheet failed");
++    });
++    expect(await saveRecording(store, meta, { canShare: () => true, share })).toBe("downloaded");
++    expect(names).toHaveLength(2);
++  });
++  it("says so when there is nothing to save", async () => {
++    await expect(saveRecording(store, { ...meta, id: "nope" }, {})).rejects.toThrow(
++      /Nothing was recorded/,
++    );
++  });
++});
+diff --git a/src/test/uplink.test.tsx b/src/test/uplink.test.tsx
+index e06e791..6e899b9 100644
+--- a/src/test/uplink.test.tsx
++++ b/src/test/uplink.test.tsx
+@@ -36,6 +36,7 @@ vi.mock("@/lib/mk/field-units", async (orig) => ({
+       ack: 0,
+       talking: false,
+       auto: true,
++      rec: false,
+       net: null,
+       ...viewerState,
+     } satisfies FieldState,
+@@ -163,6 +164,16 @@ describe("director's unit card", () => {
+     expect(screen.getByTestId("uplink").textContent).toMatch(/waiting for numbers/);
+   });
+ 
++  it("shows REC while the phone keeps a backup, and not otherwise", () => {
++    viewerState = { link: "live", rec: true, net: net() };
++    const { unmount } = render(<UnitsDesk />);
++    expect(screen.getByText("REC")).toBeTruthy();
++    unmount();
++    viewerState = { link: "live", rec: false, net: net() };
++    render(<UnitsDesk />);
++    expect(screen.queryByText("REC")).toBeNull();
++  });
++
+   it("shows no uplink line when the unit is on standby", () => {
+     viewerState = { link: "standby", net: null };
+     render(<UnitsDesk />);

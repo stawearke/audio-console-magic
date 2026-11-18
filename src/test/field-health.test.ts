@@ -527,6 +527,17 @@ describe("reporter to studio, end to end", () => {
     expect(viewer.state).toMatchObject({ link: "standby", net: null });
   });
 
+  it("tells the studio when the phone is keeping a backup recording", async () => {
+    expect(viewer.state.rec).toBe(false);
+    reporter.setRec(true);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(viewer.state.rec).toBe(true);
+    reporter.setRec(true); // no change: nothing more to say
+    reporter.setRec(false);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(viewer.state.rec).toBe(false);
+  });
+
   it("ignores a net message with nonsense in it", async () => {
     await world(8000, 0);
     await world(8000, 0);
