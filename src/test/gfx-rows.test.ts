@@ -77,3 +77,46 @@ describe("design rows", () => {
     expect(out.find((e) => e.field === "Title")!.text).toBe("Show B");
   });
 });
+
+import { splitRemote } from "@/lib/mk/gfx-sync";
+import { packageStore } from "@/lib/mk/gfx-packages";
+
+describe("cloud merge", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("splits cloud rows by kind", () => {
+    const s = splitRemote([
+      { kind: "design", id: "a", data: { x: 1 } },
+      { kind: "package", id: "b", data: { y: 1 } },
+      { kind: "rows", id: "a", data: { rows: [], updated: 5 } },
+    ]);
+    expect(s.designs).toHaveLength(1);
+    expect(s.packages).toHaveLength(1);
+    expect(s.rowSets).toEqual([{ id: "a", rows: [], updated: 5 }]);
+  });
+
+  it("newer copy wins, unknown items are added, local-only items stay", () => {
+    const mine = gfxLibrary.save("Mine", "custom", { elements: els });
+    const before = gfxLibrary.getSnapshot().find((d) => d.id === mine.id)!;
+    gfxLibrary.mergeRemote([
+      { ...before, name: "Older", created: before.created - 1000 },
+      { id: "remote1", name: "From cloud", layer: "custom", data: { elements: els }, created: Date.now() },
+    ]);
+    const names = gfxLibrary.getSnapshot().map((d) => d.name);
+    expect(names).toContain("Mine");
+    expect(names).toContain("From cloud");
+    expect(names).not.toContain("Older");
+    gfxLibrary.mergeRemote([{ ...before, name: "Newer", created: before.created + 1000 }]);
+    expect(gfxLibrary.getSnapshot().find((d) => d.id === mine.id)!.name).toBe("Newer");
+  });
+
+  it("rows merge per design by stamp, packages by updated", () => {
+    rowStore.add("d9", "Local", { Title: "L" });
+    rowStore.mergeRemote([{ id: "d9", rows: [{ id: "r", name: "Old", values: {} }], updated: 1 }]);
+    expect(rowStore.rows("d9")[0]!.name).toBe("Local");
+    rowStore.mergeRemote([{ id: "d9", rows: [{ id: "r", name: "Cloud", values: {} }], updated: Date.now() + 5000 }]);
+    expect(rowStore.rows("d9")[0]!.name).toBe("Cloud");
+    packageStore.mergeRemote([{ id: "my-x", name: "Pack", items: [{ templateId: "clock", name: "Clock" }], updated: 10 }]);
+    expect(packageStore.get("my-x")?.name).toBe("Pack");
+  });
+});
