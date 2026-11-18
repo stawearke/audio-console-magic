@@ -18,7 +18,7 @@ export interface RecMeta {
   name: string;
   startedAt: number;
   /** Missing while recording, and on a recording that was cut short (closed tab, flat battery): it is still there to save. */
-  endedAt?: number;
+  endedAt?: number | undefined;
   /** The file type the phone's recorder produced. */
   mime: string;
   parts: number;
@@ -250,6 +250,7 @@ export class FieldRecorder {
   private kbps = 0;
   private startedAt = 0;
   private active = false;
+  private starting = false;
   private bytes = 0;
   private parts = 0;
   private seq = 0;
@@ -281,42 +282,81 @@ export class FieldRecorder {
     this.onChange(this.status);
   }
 
-  /** Starts a recording of `stream`. Returns false (and says why in `status.error`) if the phone cannot. */
-  async start(stream: MediaStream, opts: { name: string; kbps: number }): Promise<boolean> {
-    if (this.active) return true;
+  /** The recording being made right now ("" when none). The page remembers it so a refresh can carry on in it. */
+  get recordingId(): string {
+    return this.active ? this.id : "";
+  }
+
+  /**
+   * Starts a recording of `stream`. Returns false (and says why in `status.error`) if the phone cannot.
+   * With `resume` (the id of a recording left cut short by a refresh or a crash) it carries on in THAT recording, as a new part.
+   */
+  async start(
+    stream: MediaStream,
+    opts: { name: string; kbps: number; resume?: string },
+  ): Promise<boolean> {
+    if (this.active || this.starting) return true;
     const { Recorder } = this.deps;
     this.error = "";
     if (!Recorder) return this.refuse("This browser cannot record a backup.");
-    this.id = this.deps.newId();
-    this.name = opts.name;
-    this.mime = pickMime((t) => Recorder.isTypeSupported(t));
-    this.kbps = opts.kbps;
-    this.startedAt = this.deps.now();
-    this.bytes = 0;
-    this.parts = 0;
-    this.seq = 0;
-    this.chunks = 0;
+    this.starting = true;
     try {
-      await this.store.begin({
-        id: this.id,
-        name: this.name,
-        startedAt: this.startedAt,
-        mime: this.mime,
-        parts: 0,
-        bytes: 0,
-      });
-    } catch {
-      this.startedAt = 0;
-      return this.refuse("The phone has nowhere to keep a backup recording.");
+      this.mime = pickMime((t) => Recorder.isTypeSupported(t));
+      this.kbps = opts.kbps;
+      this.seq = 0;
+      this.chunks = 0;
+      const before = opts.resume
+        ? await this.store.list().then(
+            (l) => l.find((m) => m.id === opts.resume),
+            () => undefined,
+          )
+        : undefined;
+      if (before) {
+        this.id = before.id;
+        this.name = before.name;
+        this.mime = before.mime || this.mime;
+        this.startedAt = before.startedAt;
+        this.bytes = before.bytes;
+        this.parts = before.parts;
+        // The saved count can be a few seconds old: never write over a part that is already there.
+        while ((await this.store.read(this.id, this.parts).catch(() => new Blob())).size > 0)
+          this.parts++;
+        try {
+          await this.store.update(this.id, { endedAt: undefined });
+        } catch {
+          return this.refuse("The phone has nowhere to keep a backup recording.");
+        }
+      } else {
+        this.id = this.deps.newId();
+        this.name = opts.name;
+        this.startedAt = this.deps.now();
+        this.bytes = 0;
+        this.parts = 0;
+        try {
+          await this.store.begin({
+            id: this.id,
+            name: this.name,
+            startedAt: this.startedAt,
+            mime: this.mime,
+            parts: 0,
+            bytes: 0,
+          });
+        } catch {
+          this.startedAt = 0;
+          return this.refuse("The phone has nowhere to keep a backup recording.");
+        }
+      }
+      this.active = true;
+      if (!this.startPart(stream)) {
+        this.active = false;
+        return this.refuse("The backup recording could not start.");
+      }
+      void navigator.storage?.persist?.().catch(() => {}); // ask the browser not to clear it when space is short
+      this.emit();
+      return true;
+    } finally {
+      this.starting = false;
     }
-    this.active = true;
-    if (!this.startPart(stream)) {
-      this.active = false;
-      return this.refuse("The backup recording could not start.");
-    }
-    void navigator.storage?.persist?.().catch(() => {}); // ask the browser not to clear it when space is short
-    this.emit();
-    return true;
   }
 
   private refuse(why: string): false {
@@ -346,6 +386,10 @@ export class FieldRecorder {
     this.parts++;
     this.cur = rec;
     this.curStream = stream;
+    // Written at once, so a refresh right now still knows this part exists.
+    this.chain = this.chain
+      .then(() => this.store.update(this.id, { parts: this.parts }))
+      .catch(() => {});
     return true;
   }
 

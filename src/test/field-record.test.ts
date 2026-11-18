@@ -179,6 +179,69 @@ describe("recording", () => {
   });
 });
 
+describe("resuming after a refresh", () => {
+  const opts = { name: "FIELD 1", kbps: 8000 };
+
+  it("carries on in the same recording, as a new part", async () => {
+    const a = make();
+    await a.start(stream(), opts);
+    FakeRec.all[0]!.emit(100);
+    await flush();
+    // The page is refreshed: no stop, no goodbye. A new page, a new recorder.
+    t += 20_000;
+    const b = make({ newId: () => "other" });
+    await b.start(stream(), { ...opts, resume: "rec1" });
+    FakeRec.all[1]!.emit(50);
+    await flush();
+    expect(b.recordingId).toBe("rec1");
+    const list = await store.list();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ id: "rec1", startedAt: 1_000_000, parts: 2 });
+    expect(list[0]!.endedAt).toBeUndefined();
+    expect(await sizeOf(0)).toBe(100);
+    expect(await sizeOf(1)).toBe(50);
+    await b.stop();
+    expect((await store.list())[0]!.endedAt).toBe(t);
+  });
+
+  it("never writes over a part that is already there, even if the saved count is behind", async () => {
+    const a = make();
+    await a.start(stream(), opts);
+    FakeRec.all[0]!.emit(100);
+    await flush();
+    await store.update("rec1", { parts: 0 }); // the count was not saved yet when the page went
+    const b = make();
+    await b.start(stream(), { ...opts, resume: "rec1" });
+    FakeRec.all[1]!.emit(50);
+    await flush();
+    expect(await sizeOf(0)).toBe(100);
+    expect(await sizeOf(1)).toBe(50);
+  });
+
+  it("opens a recording that had been finished again", async () => {
+    const a = make();
+    await a.start(stream(), opts);
+    await a.stop();
+    expect((await store.list())[0]!.endedAt).toBeDefined();
+    const b = make();
+    await b.start(stream(), { ...opts, resume: "rec1" });
+    expect((await store.list())[0]!.endedAt).toBeUndefined();
+  });
+
+  it("starts a new recording when the one to resume is gone", async () => {
+    const b = make({ newId: () => "fresh" });
+    expect(await b.start(stream(), { ...opts, resume: "deleted" })).toBe(true);
+    expect(b.recordingId).toBe("fresh");
+    expect((await store.list()).map((m) => m.id)).toEqual(["fresh"]);
+  });
+
+  it("does not start twice when asked twice at once", async () => {
+    const a = make();
+    await Promise.all([a.start(stream(), opts), a.start(stream(), opts)]);
+    expect(FakeRec.all).toHaveLength(1);
+  });
+});
+
 describe("camera switches", () => {
   it("carries on in a new part when the page opens a new camera stream", async () => {
     const r = make();
