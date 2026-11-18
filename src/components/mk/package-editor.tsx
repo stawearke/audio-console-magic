@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, Copy, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { layerUrl } from "@/lib/mk/graphics";
+import { customTemplates } from "@/lib/mk/gfx-rows";
 import {
   TEMPLATES,
   TRANSITIONS,
@@ -237,7 +238,7 @@ export function PackageEditor({
               </ul>
               <div className="flex gap-1">
                 <select className={field} value={adding} onChange={(e) => setAdding(e.target.value)} aria-label="Graphic to add">
-                  {TEMPLATES.map((t) => (
+                  {[...TEMPLATES, ...customTemplates()].map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>

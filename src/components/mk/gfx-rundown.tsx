@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PackageEditor } from "@/components/mk/package-editor";
 import { GFX_LAYERS, layerUrl } from "@/lib/mk/graphics";
 import { isBuiltIn, packageStore, useMyPackages } from "@/lib/mk/gfx-packages";
+import { useGfxLibrary } from "@/lib/mk/gfx-library";
+import { customTemplates } from "@/lib/mk/gfx-rows";
 import {
   GRAPHIC_PACKAGES,
   TEMPLATES,
@@ -209,7 +211,8 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
-  const tplList = TEMPLATES.filter(
+  const library = useGfxLibrary();
+  const tplList = [...TEMPLATES, ...(library.length ? customTemplates() : [])].filter(
     (t) =>
       (cat === "All" || t.category === cat) && t.name.toLowerCase().includes(query.toLowerCase()),
   );
@@ -307,7 +310,7 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
               />
             </label>
             <div className="flex gap-1">
-              {["All", "News", "Sports", "General"].map((c) => (
+              {["All", "News", "Sports", "General", "Custom"].map((c) => (
                 <button
                   key={c}
                   type="button"

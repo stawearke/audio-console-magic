@@ -1,6 +1,8 @@
 import { CopyPlus, Download, Link2, Pencil, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { DesignRows } from "@/components/mk/design-rows";
+import { rowStore } from "@/lib/mk/gfx-rows";
 import { GFX_LAYERS, layerUrl } from "@/lib/mk/graphics";
 import {
   exportJson,
@@ -169,6 +171,10 @@ export function DesignLibrary({
         </div>
       )}
 
+      {loaded && loaded.layer === "custom" && (
+        <DesignRows design={loaded} draftElements={draft.custom.elements} say={say} />
+      )}
+
       <div className="flex gap-1">
         <input
           className={cn(field, "flex-1")}
@@ -260,6 +266,7 @@ export function DesignLibrary({
                 onClick={() => {
                   if (window.confirm(`Delete "${item.name}"?`)) {
                     gfxLibrary.remove(item.id);
+                    rowStore.dropDesign(item.id);
                     setPicked((p) => {
                       const n = new Set(p);
                       n.delete(item.id);
