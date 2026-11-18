@@ -139,6 +139,20 @@ class PackageStore {
     return clean;
   }
 
+  /** Merge packages from the cloud: unknown ones are added, the newer copy of a known one wins. */
+  mergeRemote(list: unknown[]) {
+    this.load();
+    const byId = new Map(this.items.map((p) => [p.id, p]));
+    for (const raw of list) {
+      const r = cleanPackage(raw);
+      if (!r) continue;
+      const cur = byId.get(r.id);
+      if (!cur || r.updated > cur.updated) byId.set(r.id, r);
+    }
+    this.items = [...byId.values()].sort((a, b) => b.updated - a.updated).slice(0, MAX_PACKS);
+    this.persist();
+  }
+
   /** Copy any package (built-in or custom) into My packages under a new id. */
   duplicate(pack: GraphicPackage, name?: string): CustomPackage {
     return this.save({

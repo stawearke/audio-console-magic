@@ -67,6 +67,7 @@ async function applySession(c: SupabaseClient, session: Session | null) {
     setAccountOwner(false);
     setAccountRole(null);
     void scripts.attachCloud(null);
+    void import("./gfx-sync").then((m) => m.gfxSync.detach());
     setAuth({ ready: true, id: null, email: null, role: null, owner: false });
     return;
   }
@@ -80,6 +81,8 @@ async function applySession(c: SupabaseClient, session: Session | null) {
   setAccountOwner(owner);
   setAccountRole(role);
   setAuth({ ready: true, id: session.user.id, email: session.user.email ?? null, role, owner });
+  // Saved graphics: everyone reads, Director and Graphics also write.
+  void import("./gfx-sync").then((m) => m.gfxSync.attach(c, session.user.id, role === "director" || role === "graphics")).catch(() => {});
   if (role === "director" || role === "prompter")
     void scripts.attachCloud(scriptCloud(c, session.user.id)).catch(() => {});
   else void scripts.attachCloud(null);

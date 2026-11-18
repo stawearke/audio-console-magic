@@ -11,6 +11,7 @@ import type { Template } from "./gfx-rundown";
 import type { CustomEl } from "./types";
 
 const KEY = "mkvision.gfx.rows.v1";
+const STAMPS = "mkvision.gfx.rows.stamps.v1";
 const MAX_ROWS = 200;
 export const CUSTOM_PREFIX = "custom:";
 
@@ -101,6 +102,7 @@ export function parseRows(text: string, fields: string[]): DesignRow[] {
 
 class RowStore {
   private map: RowMap = {};
+  private stamps: Record<string, number> = {};
   private loaded = false;
   private listeners = new Set<() => void>();
 
@@ -109,6 +111,11 @@ class RowStore {
     this.loaded = true;
     try {
       const raw = window.localStorage.getItem(KEY);
+      const st = window.localStorage.getItem(STAMPS);
+      const sp = st ? (JSON.parse(st) as unknown) : {};
+      if (sp && typeof sp === "object") {
+        for (const [k, v] of Object.entries(sp as Record<string, unknown>)) if (Number.isFinite(Number(v))) this.stamps[k] = Number(v);
+      }
       const parsed = raw ? (JSON.parse(raw) as unknown) : {};
       if (parsed && typeof parsed === "object") {
         for (const [id, list] of Object.entries(parsed as Record<string, unknown>)) {
@@ -120,10 +127,17 @@ class RowStore {
     }
   }
 
-  private commit(next: RowMap) {
+  private commit(next: RowMap, stamp = true) {
+    if (stamp) {
+      const now = Date.now();
+      for (const id of new Set([...Object.keys(next), ...Object.keys(this.map)])) {
+        if (JSON.stringify(next[id]) !== JSON.stringify(this.map[id])) this.stamps[id] = now;
+      }
+    }
     this.map = next;
     try {
       window.localStorage.setItem(KEY, JSON.stringify(this.map));
+      window.localStorage.setItem(STAMPS, JSON.stringify(this.stamps));
     } catch {
       /* storage full — keep running in memory */
     }
@@ -181,6 +195,23 @@ class RowStore {
     if (i < 0 || j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j]!, list[i]!];
     this.commit({ ...this.map, [designId]: list });
+  }
+
+  stamp(designId: string): number {
+    this.load();
+    return this.stamps[designId] ?? 0;
+  }
+
+  /** Merge rows from the cloud: per design, the newer list wins. */
+  mergeRemote(list: { id: string; rows: unknown; updated: number }[]) {
+    this.load();
+    const next = { ...this.map };
+    for (const r of list) {
+      if (!Array.isArray(r.rows) || r.updated <= (this.stamps[r.id] ?? 0)) continue;
+      next[r.id] = r.rows.slice(0, MAX_ROWS).map(cleanRow).filter((x): x is DesignRow => !!x);
+      this.stamps[r.id] = r.updated;
+    }
+    this.commit(next, false);
   }
 
   /** A deleted design takes its rows with it. */

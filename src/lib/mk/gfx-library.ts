@@ -272,6 +272,17 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
   }
 }
 
+function cleanItem(i: SavedGraphic | null | undefined): SavedGraphic | null {
+  if (!i || !GFX_IDS.includes(i.layer)) return null;
+  return {
+    id: String(i.id),
+    name: str(i.name, "Untitled", 60),
+    layer: i.layer,
+    data: sanitizeLayer(i.layer, i.data),
+    created: Number(i.created) || Date.now(),
+  };
+}
+
 // -------------------------------------------------------------------- store
 
 type Listener = () => void;
@@ -287,15 +298,7 @@ class GraphicsLibrary {
     try {
       const raw = window.localStorage.getItem(KEY);
       const list = raw ? (JSON.parse(raw) as SavedGraphic[]) : [];
-      this.items = (Array.isArray(list) ? list : [])
-        .filter((i) => i && GFX_IDS.includes(i.layer))
-        .map((i) => ({
-          id: String(i.id),
-          name: str(i.name, "Untitled", 60),
-          layer: i.layer,
-          data: sanitizeLayer(i.layer, i.data),
-          created: Number(i.created) || Date.now(),
-        }));
+      this.items = (Array.isArray(list) ? list : []).map(cleanItem).filter((i): i is SavedGraphic => !!i);
     } catch {
       this.items = [];
     }
@@ -376,7 +379,21 @@ class GraphicsLibrary {
     this.load();
     const nm = name.trim().slice(0, 60);
     if (!nm) return;
-    this.items = this.items.map((i) => (i.id === id ? { ...i, name: nm } : i));
+    this.items = this.items.map((i) => (i.id === id ? { ...i, name: nm, created: Date.now() } : i));
+    this.persist();
+  }
+
+  /** Merge designs from the cloud: unknown ones are added, the newer copy of a known one wins. */
+  mergeRemote(list: unknown[]) {
+    this.load();
+    const byId = new Map(this.items.map((i) => [i.id, i]));
+    for (const raw of list) {
+      const r = cleanItem(raw as SavedGraphic);
+      if (!r) continue;
+      const cur = byId.get(r.id);
+      if (!cur || r.created > cur.created) byId.set(r.id, r);
+    }
+    this.items = [...byId.values()].sort((a, b) => b.created - a.created).slice(0, MAX_ITEMS);
     this.persist();
   }
 
