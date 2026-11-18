@@ -8,8 +8,10 @@ import {
   formatDuration,
   LOW_SPACE_BYTES,
   memoryStore,
+  minutesOfSpace,
   pickMime,
   saveRecording,
+  spaceLeftText,
   type RecStatus,
   type RecStore,
 } from "@/lib/mk/field-record";
@@ -431,5 +433,23 @@ describe("saving and sharing", () => {
     await expect(saveRecording(store, { ...meta, id: "nope" }, {})).rejects.toThrow(
       /Nothing was recorded/,
     );
+  });
+});
+
+describe("how much room is left", () => {
+  it("works out minutes from free space and bitrate, keeping the low-space reserve free", () => {
+    // 8 Mbps video + 128 kbps sound = 1,016,000 bytes a second = about 61 MB a minute.
+    expect(minutesOfSpace(LOW_SPACE_BYTES + 6_096_000_000, 8000)).toBe(100);
+    expect(minutesOfSpace(LOW_SPACE_BYTES, 8000)).toBe(0);
+    expect(minutesOfSpace(0, 8000)).toBe(0);
+  });
+  it("lasts longer at a lower bitrate", () => {
+    const free = LOW_SPACE_BYTES + 5_000_000_000;
+    expect(minutesOfSpace(free, 3000)).toBeGreaterThan(minutesOfSpace(free, 8000));
+  });
+  it("says it in words", () => {
+    expect(spaceLeftText(0)).toBe("less than a minute");
+    expect(spaceLeftText(45)).toBe("45 min");
+    expect(spaceLeftText(90)).toBe("1.5 h");
   });
 });

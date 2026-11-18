@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RecButton, RecChip, RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
+import { RecButton, RecChip, RecordingsPanel, RecSpace, RecStatusLine } from "@/components/mk/field-recordings";
 import {
+  LOW_SPACE_BYTES,
   memoryStore,
   REC_IDLE,
   type RecMeta,
@@ -167,5 +168,21 @@ describe("the reporter's REC button", () => {
   it("cannot be pressed when the phone cannot record", () => {
     render(<RecButton on={false} disabled onToggle={() => {}} />);
     expect((screen.getByTestId("rec-button") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("space left for the backup", () => {
+  afterEach(cleanup);
+  it("says nothing when the browser will not say how much room there is", () => {
+    const { container } = render(<RecSpace freeBytes={null} kbps={8000} />);
+    expect(container.textContent).toBe("");
+  });
+  it("shows how long the phone can record, and turns amber when it is short", () => {
+    const { rerender } = render(<RecSpace freeBytes={LOW_SPACE_BYTES + 6_096_000_000} kbps={8000} />);
+    expect(screen.getByTestId("rec-space").textContent).toContain("about 1.7 h");
+    expect(screen.getByTestId("rec-space").className).not.toContain("amber");
+    rerender(<RecSpace freeBytes={LOW_SPACE_BYTES + 1_000_000_000} kbps={8000} />);
+    expect(screen.getByTestId("rec-space").textContent).toContain("about 16 min");
+    expect(screen.getByTestId("rec-space").className).toContain("amber");
   });
 });

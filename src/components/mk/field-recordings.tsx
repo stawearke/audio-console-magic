@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   formatBytes,
   formatDuration,
+  minutesOfSpace,
   saveRecording,
+  spaceLeftText,
   type RecMeta,
   type RecStatus,
   type RecStore,
@@ -47,6 +49,23 @@ export function RecButton({
       <span aria-hidden className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-red-500 align-middle" />
       {on ? "STOP REC" : "REC"}
     </button>
+  );
+}
+
+/** How long the phone can keep recording at the current quality. Amber when it is getting short. */
+export function RecSpace({ freeBytes, kbps }: { freeBytes: number | null; kbps: number }) {
+  if (freeBytes === null) return null;
+  const min = minutesOfSpace(freeBytes, kbps);
+  return (
+    <p
+      data-testid="rec-space"
+      className={cn(
+        "text-center font-mono text-[10px]",
+        min < 30 ? "text-amber-400" : "text-muted-foreground",
+      )}
+    >
+      Space for about {spaceLeftText(min)} of backup at this quality
+    </p>
   );
 }
 

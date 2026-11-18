@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { RecButton, RecordingsPanel, RecStatusLine } from "@/components/mk/field-recordings";
+import { RecButton, RecordingsPanel, RecSpace, RecStatusLine } from "@/components/mk/field-recordings";
 import { ReporterSignal } from "@/components/mk/uplink";
 import {
   captureSize,
@@ -443,14 +443,65 @@ export function FieldUnit() {
     return () => clearInterval(id);
   }, [live, p2p]);
 
-  // Keep the screen awake while live (a sleeping phone stops the stream).
+  // Keep the screen awake while live OR recording (a sleeping phone stops both), and take it back when the reporter returns to the page.
+  const awake = live || rec.on;
   useEffect(() => {
-    if (!live) return;
+    if (!awake) return;
     let lock: { release(): Promise<void> } | null = null;
+    let gone = false;
     const nav = navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<{ release(): Promise<void> }> } };
-    nav.wakeLock?.request("screen").then((l) => (lock = l), () => {});
-    return () => void lock?.release().catch(() => {});
-  }, [live]);
+    const take = () => {
+      if (gone || document.visibilityState !== "visible") return;
+      nav.wakeLock?.request("screen").then(
+        (l) => {
+          if (gone) void l.release().catch(() => {});
+          else lock = l;
+        },
+        () => {},
+      );
+    };
+    take();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") take();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      gone = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      void lock?.release().catch(() => {});
+    };
+  }, [awake]);
+
+  // Closing the page while recording: ask first (a refresh carries on by itself, but a closed tab would end the backup).
+  useEffect(() => {
+    if (!rec.on) return;
+    const ask = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", ask);
+    return () => window.removeEventListener("beforeunload", ask);
+  }, [rec.on]);
+
+  // How much room the phone has left for the backup.
+  const [free, setFree] = useState<number | null>(null);
+  useEffect(() => {
+    let gone = false;
+    const read = async () => {
+      try {
+        const e = await navigator.storage?.estimate?.();
+        if (!gone && e?.quota !== undefined && e.usage !== undefined) setFree(e.quota - e.usage);
+      } catch {
+        /* the browser does not say */
+      }
+    };
+    void read();
+    const id = setInterval(() => void read(), 20_000);
+    return () => {
+      gone = true;
+      clearInterval(id);
+    };
+  }, []);
 
   const goLive = async () => {
     setError("");
@@ -687,6 +738,7 @@ export function FieldUnit() {
         onToggle={() => void toggleRec()}
       />
       <RecStatusLine status={rec} />
+      {recStore && <RecSpace freeBytes={free} kbps={kbpsEff} />}
       {live && p2p && <ReporterSignal net={net} auto={kbpsPick === 0} topKbps={kbpsEff} />}
       {live && !p2p && (
         <p className="text-center font-mono text-[11px] text-muted-foreground">

@@ -207,6 +207,18 @@ export const REC_IDLE: RecStatus = { on: false, bytes: 0, ms: 0, parts: 0, error
 
 /** Stop before the phone has less free space than this: the show matters more than the backup. */
 export const LOW_SPACE_BYTES = 300 * 1e6;
+/** Roughly how many minutes of backup fit in the phone's free space at this video bitrate (the sound adds about 128 kbps). Keeps the low-space reserve free. */
+export function minutesOfSpace(freeBytes: number, kbps: number): number {
+  const perSecond = (Math.max(1, kbps) * 1000 + 128_000) / 8;
+  return Math.max(0, Math.floor((freeBytes - LOW_SPACE_BYTES) / perSecond / 60));
+}
+
+export function spaceLeftText(minutes: number): string {
+  if (minutes < 1) return "less than a minute";
+  if (minutes < 60) return `${minutes} min`;
+  return `${(minutes / 60).toFixed(1)} h`;
+}
+
 const SLICE_MS = 1000;
 const SAVE_META_EVERY = 10;
 const CHECK_SPACE_EVERY = 15;
