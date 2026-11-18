@@ -28,6 +28,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { CustomFields } from "@/components/mk/custom-fields";
+import { PACK_TEMPLATES } from "@/lib/mk/custom-gfx-pack";
 import { alignEls, copyEls, CUSTOM_TEMPLATES, distributeEls, makeEl, newElId, pasteEls, withGroups, type AlignHow } from "@/lib/mk/custom-gfx";
 import { BARLOW_IMPORT_CSS, CUSTOM_KEYFRAMES, customElHtml, customPoseAt, fileToLogo, NEUTRAL_POSE } from "@/lib/mk/graphics";
 import { CUSTOM_ANIMS, CUSTOM_EASES, CUSTOM_LOOPS, GFX_FONTS, type CustomEl, type CustomElType, type CustomKey } from "@/lib/mk/types";
@@ -402,7 +403,7 @@ export function CustomInspector({
           className={cn(field, "w-auto")}
           value=""
           onChange={(e) => {
-            const t = CUSTOM_TEMPLATES.find((q) => q.id === e.target.value);
+            const t = [...CUSTOM_TEMPLATES, ...PACK_TEMPLATES].find((q) => q.id === e.target.value);
             if (!t) return;
             const els = t.build();
             if (elements.length + els.length > 60) return say("Not enough room: 60 elements is the limit");
@@ -411,7 +412,7 @@ export function CustomInspector({
           }}
         >
           <option value="">Add template…</option>
-          {CUSTOM_TEMPLATES.map((t) => (
+          {[...CUSTOM_TEMPLATES, ...PACK_TEMPLATES].map((t) => (
             <option key={t.id} value={t.id}>
               {t.label}
             </option>
@@ -437,7 +438,7 @@ export function CustomInspector({
         <button type="button" className={btn} onClick={() => add("rect", { name: "Parallelogram", slant: 60 })}>+ Parallelogram</button>
         <button type="button" className={btn} onClick={() => add("ellipse")}>+ Ellipse</button>
         <button type="button" className={btn} onClick={() => add("text")}>+ Text</button>
-        <span className={cn(btn, "flex cursor-pointer items-center gap-1")}>
+        <label className={cn(btn, "flex cursor-pointer items-center gap-1")}>
           <Upload className="h-3 w-3" /> + Image
           <input
             type="file"
@@ -449,7 +450,7 @@ export function CustomInspector({
               void pickImage(f, (image) => add("image", { image, name: f?.name.replace(/\.[^.]+$/, "").slice(0, 30) || "Image" }));
             }}
           />
-        </span>
+        </label>
       </div>
 
       {picked.length > 0 && (
@@ -642,7 +643,7 @@ export function CustomInspector({
           {el.type === "image" && (
             <div className="col-span-2">
               <Row label="Image">
-                <span className={cn(btn, "flex cursor-pointer items-center justify-center gap-1")}>
+                <label className={cn(btn, "flex cursor-pointer items-center justify-center gap-1")}>
                   <Upload className="h-3 w-3" /> {el.image ? "Change image" : "Upload image"}
                   <input
                     type="file"
@@ -654,7 +655,7 @@ export function CustomInspector({
                       void pickImage(f, (image) => edit(el.id, { image }));
                     }}
                   />
-                </span>
+                </label>
               </Row>
             </div>
           )}

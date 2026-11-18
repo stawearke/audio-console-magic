@@ -89,6 +89,8 @@ import {
   type LiveState,
   type MkConfig,
   type MonitorMode,
+  isCustomLayer,
+  type CustomLayerId,
   type MonitorState,
   type MonitorType,
   type OutputCheckRow,
@@ -1246,6 +1248,21 @@ export class SwitcherEngine {
   async toggleRecord() {
     const next = !this.state.record.active;
     await this.transport?.setRecording(next).catch(() => {});
+  }
+
+  async getMonitors() {
+    const t = this.transport;
+    if (!t?.getMonitors || this.state.status !== "connected") return [];
+    return t.getMonitors().catch(() => []);
+  }
+
+  /** Open OBS's multiview on another display (-1 = window). Esc closes it on the OBS PC. */
+  async openMultiview(monitorIndex: number) {
+    if (!this.transport?.openMultiview) {
+      this.notice("Multiview: only available with a real OBS connection");
+      return;
+    }
+    await this.send("Multiview", (t) => t.openMultiview!(monitorIndex));
   }
 
   async toggleRecordPause() {
@@ -2930,7 +2947,7 @@ export class SwitcherEngine {
       return false;
     }
     if (id === "ticker") this.cancelScrollTimer();
-    if (id === "custom") this.customRun++; // a take cancels a pending exit
+    if (isCustomLayer(id)) this.customRun[id]++; // a take cancels a pending exit
     const wasOn = this.state.gfxActive[id];
     this.set({ gfxActive: { ...this.state.gfxActive, [id]: true } });
     try {
@@ -2960,7 +2977,7 @@ export class SwitcherEngine {
     const next = !this.state.gfxActive[id];
     this.set({ gfxActive: { ...this.state.gfxActive, [id]: next } });
     try {
-      if (id === "custom" && !this.state.demo) await this.toggleCustom(next);
+      if (isCustomLayer(id) && !this.state.demo) await this.toggleCustom(next, id);
       else await this.transport.setGraphicVisible(gfxName(id), next);
     } catch {
       this.set({ gfxActive: { ...this.state.gfxActive, [id]: !next } });
@@ -2968,25 +2985,25 @@ export class SwitcherEngine {
     }
   }
 
-  private customRun = 0;
+  private customRun: Record<CustomLayerId, number> = { custom: 0, custom2: 0, custom3: 0, custom4: 0 };
 
   /** The Custom layer: load the entrance page before showing it, and play the exits before hiding it. */
-  private async toggleCustom(next: boolean) {
+  private async toggleCustom(next: boolean, id: CustomLayerId) {
     const tr = this.transport;
     if (!tr) return;
-    const run = ++this.customRun;
-    const name = gfxName("custom");
+    const run = ++this.customRun[id];
+    const name = gfxName(id);
     const g = this.state.config.graphics;
     if (next) {
-      await tr.updateGraphic(name, layerUrl("custom", g));
+      await tr.updateGraphic(name, layerUrl(id, g));
       await tr.setGraphicVisible(name, true);
       return;
     }
-    const ms = customOutMs(g);
+    const ms = customOutMs(g, id);
     if (ms > 0) {
-      await tr.updateGraphic(name, layerUrl("custom", g, { out: true }));
+      await tr.updateGraphic(name, layerUrl(id, g, { out: true }));
       await new Promise((r) => setTimeout(r, ms + 150));
-      if (run !== this.customRun) return;
+      if (run !== this.customRun[id]) return;
     }
     await tr.setGraphicVisible(name, false);
   }

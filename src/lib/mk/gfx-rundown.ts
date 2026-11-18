@@ -10,8 +10,9 @@
 import { useSyncExternalStore } from "react";
 
 import { engine } from "./engine";
+import { customTemplate, CUSTOM_PREFIX, type DesignRow } from "./gfx-rows";
 import { applyTheme, GFX_THEMES, type GfxTheme } from "./gfx-themes";
-import type { GfxAnim, GfxId, GraphicsConfig } from "./types";
+import { isCustomLayer, type GfxAnim, type GfxId, type GraphicsConfig } from "./types";
 
 // ------------------------------------------------------------------ model
 
@@ -31,7 +32,7 @@ export interface Field {
   type: FieldType;
 }
 
-export type TemplateCategory = "News" | "Sports" | "General";
+export type TemplateCategory = "News" | "Sports" | "General" | "Custom";
 
 export interface Template {
   id: string;
@@ -370,7 +371,7 @@ export const TEMPLATES: Template[] = [
   },
 ];
 
-export const getTemplate = (id: string) => TEMPLATES.find((t) => t.id === id);
+export const getTemplate = (id: string) => TEMPLATES.find((t) => t.id === id) ?? customTemplate(id);
 
 const theme = (id: string): GfxTheme => GFX_THEMES.find((t) => t.id === id) ?? GFX_THEMES[0]!;
 
@@ -715,6 +716,8 @@ export function itemLayer(
     anim: item.transition,
     animMs: item.animMs,
   };
+  // A saved Custom design keeps its own look: only its elements change, never theme or transition keys.
+  if (isCustomLayer(t.layer)) return { layer: t.layer, patch: { elements: own["elements"] } };
   // The lower third keeps its saved names; the theme must not wipe the logo image.
   if (t.layer === "logo") {
     const { image: _i, ...rest } = patch;
@@ -960,6 +963,16 @@ class RundownStore {
     this.patchShow({ theme: packageTheme(pack), items: [...this.show.items, ...items] });
     if (items[0]) this.emit({ selId: items[0].id });
     this.say(`ADDED ${pack.name.toUpperCase()} PACKAGE`);
+  }
+  /** Queue rows of a saved Custom design: one rundown item per row. */
+  addDesignRows(designId: string, rows: DesignRow[]) {
+    const tid = `${CUSTOM_PREFIX}${designId}`;
+    if (!getTemplate(tid) || !rows.length) return 0;
+    const items = rows.map((r) => makeItem(tid, uid(), r.values, r.name));
+    this.patchShow({ items: [...this.show.items, ...items] });
+    this.emit({ selId: items[0]!.id });
+    this.say(`ADDED ${items.length} ROW${items.length > 1 ? "S" : ""}`);
+    return items.length;
   }
   duplicate(itemId: string) {
     const items = [...this.show.items];

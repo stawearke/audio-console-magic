@@ -1,6 +1,9 @@
 import { CopyPlus, Download, Link2, Pencil, Save, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import { DesignRows } from "@/components/mk/design-rows";
+import { rowStore } from "@/lib/mk/gfx-rows";
+import { gfxSync } from "@/lib/mk/gfx-sync";
 import { GFX_LAYERS, layerUrl } from "@/lib/mk/graphics";
 import {
   exportJson,
@@ -11,7 +14,7 @@ import {
   shareLink,
   type SavedGraphic,
 } from "@/lib/mk/gfx-library";
-import { DEFAULT_GRAPHICS, type GfxId, type GraphicsConfig } from "@/lib/mk/types";
+import { DEFAULT_GRAPHICS, isCustomLayer, type CustomLayerId, type GfxId, type GraphicsConfig } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 const field = "mk-field h-8 w-full min-w-0 rounded-[3px] px-2 text-xs";
@@ -92,6 +95,7 @@ export function DesignLibrary({
   onIncoming: (items: ReturnType<typeof parsePack>) => void;
   say: (msg: string) => void;
 }) {
+  const sync = useSyncExternalStore(gfxSync.subscribe, gfxSync.getStatus, () => "off" as const);
   const [saveName, setSaveName] = useState("");
   const [paste, setPaste] = useState("");
   const [allLayers, setAllLayers] = useState(false);
@@ -138,6 +142,11 @@ export function DesignLibrary({
     <section className="mk-panel flex max-h-none min-h-[14rem] shrink-0 flex-col gap-1.5 rounded-md p-2 fit:max-h-[46%]">
       <div className="flex items-center gap-1">
         <h2 className="mk-label mr-auto text-foreground">{allLayers ? "All my designs" : `My ${label} designs`}</h2>
+        {sync !== "off" && (
+          <span className={cn("font-mono text-[9px] uppercase", sync === "error" ? "text-red-400" : "text-muted-foreground")} title="Cloud copy of your designs, packages and rows">
+            {sync === "synced" ? "Cloud ✓" : sync === "syncing" ? "Syncing…" : sync === "read-only" ? "Cloud (read only)" : "Cloud error"}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setAllLayers((v) => !v)}
@@ -167,6 +176,10 @@ export function DesignLibrary({
             </button>
           </div>
         </div>
+      )}
+
+      {loaded && isCustomLayer(loaded.layer) && (
+        <DesignRows design={loaded} draftElements={draft[loaded.layer as CustomLayerId].elements} say={say} onChanged={onLoad} />
       )}
 
       <div className="flex gap-1">
@@ -260,6 +273,7 @@ export function DesignLibrary({
                 onClick={() => {
                   if (window.confirm(`Delete "${item.name}"?`)) {
                     gfxLibrary.remove(item.id);
+                    rowStore.dropDesign(item.id);
                     setPicked((p) => {
                       const n = new Set(p);
                       n.delete(item.id);

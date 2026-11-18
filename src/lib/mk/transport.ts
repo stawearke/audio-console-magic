@@ -54,6 +54,14 @@ export interface PlayoutStatus {
   durMs: number;
 }
 
+/** A display OBS can see (for the multiview projector). */
+export interface MonitorInfo {
+  index: number;
+  name: string;
+  width: number;
+  height: number;
+}
+
 export interface Transport {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -127,6 +135,10 @@ export interface Transport {
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;
+  /** Displays connected to the OBS PC. */
+  getMonitors?(): Promise<MonitorInfo[]>;
+  /** Open OBS's own multiview full screen on display `monitorIndex` (-1 = a normal window). */
+  openMultiview?(monitorIndex: number): Promise<void>;
   /**
    * Create / update the MK Graphics scene (one browser source per layer) and nest it
    * ONLY into `targetScenes`. Scenes in `removeFrom` get the nested copy removed.

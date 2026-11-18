@@ -2,7 +2,7 @@
 // embedded in a data: URL — nothing to host or upload. Layers live in the
 // "MK Graphics" scene and are switched on/off independently of the DSKs.
 import type { PlacePos } from "./fx";
-import { GFX_ANIMS, type Corner, type CustomEase, type CustomEl, type CustomKey, type GfxAnim, type GfxFont, type GfxId, type GraphicsConfig } from "./types";
+import { GFX_ANIMS, type Corner, type CustomEase, type CustomEl, type CustomKey, type CustomLayerId, type GfxAnim, type GfxFont, type GfxId, type GraphicsConfig } from "./types";
 
 export const GFX_SCENE = "MK Graphics";
 
@@ -19,6 +19,9 @@ export const GFX_LAYERS: { id: GfxId; name: string; label: string }[] = [
   { id: "full", name: "MK Full Screen", label: "Full Screen" },
   { id: "breaking", name: "MK Breaking", label: "Breaking" },
   { id: "custom", name: "MK Custom", label: "Custom" },
+  { id: "custom2", name: "MK Custom 2", label: "Custom 2" },
+  { id: "custom3", name: "MK Custom 3", label: "Custom 3" },
+  { id: "custom4", name: "MK Custom 4", label: "Custom 4" },
 ];
 
 export const gfxName = (id: GfxId) => GFX_LAYERS.find((l) => l.id === id)!.name;
@@ -602,8 +605,8 @@ export const CUSTOM_KEYFRAMES =
   "@keyframes lspin{to{transform:rotate(360deg)}}@keyframes lwobble{25%{transform:rotate(-6deg)}75%{transform:rotate(6deg)}}";
 
 /** How long the exit of the custom layer takes (ms); 0 = nothing animates out. */
-export function customOutMs(g: GraphicsConfig): number {
-  const els = Array.isArray(g.custom?.elements) ? g.custom.elements : [];
+export function customOutMs(g: GraphicsConfig, id: CustomLayerId = "custom"): number {
+  const els = Array.isArray(g[id]?.elements) ? g[id].elements : [];
   return els.reduce((m, e) => (e.visible && e.out !== "none" ? Math.max(m, num(e.outDelay, 0, 0, 10000) + num(e.outMs, 400, 50, 5000)) : m), 0);
 }
 
@@ -754,8 +757,8 @@ export function customElHtml(e: CustomEl, u: (px: number) => string, mode: "in" 
   return `${styleTag}<div style="position:absolute;${pos}"><div style="width:100%;height:100%;${looped}"><div style="width:100%;height:100%;${keyInline}${keyAnim}"><div style="width:100%;height:100%;${anim}${sh}"><div style="width:100%;height:100%;${vis}">${inner}</div></div></div></div></div>`;
 }
 
-function customLayer(g: GraphicsConfig, out = false) {
-  const els = Array.isArray(g.custom?.elements) ? g.custom.elements : [];
+function customLayer(g: GraphicsConfig, out = false, id: CustomLayerId = "custom") {
+  const els = Array.isArray(g[id]?.elements) ? g[id].elements : [];
   const u = (px: number) => `${(px / 19.2).toFixed(3)}vw`;
   const condensed = els.some((e) => e.type === "text" && e.font === "condensed");
   return page(
@@ -787,7 +790,10 @@ export function layerUrl(id: GfxId, g: GraphicsConfig, opts?: { out?: boolean })
     case "full":
       return full(g);
     case "custom":
-      return customLayer(g, opts?.out === true);
+    case "custom2":
+    case "custom3":
+    case "custom4":
+      return customLayer(g, opts?.out === true, id);
   }
 }
 

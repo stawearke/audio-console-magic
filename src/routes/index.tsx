@@ -307,6 +307,8 @@ function Switcher() {
                 onStream={() => void engine.toggleStream()}
                 onRecord={() => void engine.toggleRecord()}
                 onPause={() => void engine.toggleRecordPause()}
+                onLoadMonitors={() => engine.getMonitors()}
+                onOpenMultiview={(i) => void engine.openMultiview(i)}
               />
             )}
             {canSwitch && (

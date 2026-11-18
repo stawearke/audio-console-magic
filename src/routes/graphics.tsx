@@ -31,9 +31,11 @@ import {
   GFX_ANIMS,
   GFX_FONTS,
   GFX_IDS,
+  isCustomLayer,
   LOWER_STYLES,
   TICKER_STYLES,
   type Corner,
+  type CustomLayerId,
   type FullKind,
   type GfxAnim,
   type GfxId,
@@ -257,6 +259,9 @@ function GraphicsPage() {
   const edit = <K extends GfxId>(id: K, patch: Partial<GraphicsConfig[K]>) =>
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...patch } }));
 
+  const ck: CustomLayerId = isCustomLayer(active) ? active : "custom";
+  const customHist = useCustomHistory(draft[ck].elements, (elements) => edit(ck, { elements }));
+
   // News tags made here go to the News Desk too (the selected bulletin), and stay in step while they are edited.
   const toNewsDesk = (patch: Partial<GraphicsConfig["news"]>) => {
     const n = { ...draft.news, ...patch };
@@ -268,8 +273,6 @@ function GraphicsPage() {
           : `News Desk updated · ${sent.story}`,
       );
   };
-
-  const customHist = useCustomHistory(draft.custom.elements, (elements) => edit("custom", { elements }));
 
   const scenes = state.scenes.filter((s) => s !== GFX_SCENE);
   const sceneOptions = scene && !scenes.includes(scene) ? [...scenes, scene] : scenes;
@@ -406,10 +409,10 @@ function GraphicsPage() {
                 {state.gfxActive[active] ? "On air — take off" : "Take to air"}
               </button>
             </div>
-            {active === "custom" ? (
+            {isCustomLayer(active) ? (
               <div className="min-h-0 w-full overflow-y-auto fit:flex-1">
                 <CustomStage
-                  elements={draft.custom.elements}
+                  elements={draft[ck].elements}
                   onChange={customHist.change}
                   selIds={selIds}
                   setSelIds={setSelIds}
@@ -667,8 +670,8 @@ function GraphicsPage() {
                 </>
               )}
 
-              {active === "custom" && (
-                <CustomInspector elements={draft.custom.elements} onChange={customHist.change} selIds={selIds} setSelIds={setSelIds} say={say} time={timeAt} selKey={selKey} setSelKey={setSelKey} />
+              {isCustomLayer(active) && (
+                <CustomInspector elements={draft[ck].elements} onChange={customHist.change} selIds={selIds} setSelIds={setSelIds} say={say} time={timeAt} selKey={selKey} setSelKey={setSelKey} />
               )}
 
               {active === "ticker" && (

@@ -43,6 +43,9 @@ export function applyTheme(g: GraphicsConfig, t: GfxTheme): GraphicsConfig {
   return {
     // Custom designs keep their own colours.
     custom: g.custom,
+    custom2: g.custom2,
+    custom3: g.custom3,
+    custom4: g.custom4,
     // The logo mark floats over the picture (not on a coloured bar), so it stays white in every theme.
     logo: { ...g.logo, textColor: "#ffffff" },
     lower: { ...g.lower, style: t.lower, primary: t.primary, accent: t.accent, bg: t.secondary, bgOpacity: 96, text: t.onDark ?? t.text, font: t.font },
