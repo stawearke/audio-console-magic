@@ -8,6 +8,7 @@ import { rundown } from "@/lib/mk/gfx-rundown";
 import type { SavedGraphic } from "@/lib/mk/gfx-library";
 import type { CustomEl } from "@/lib/mk/types";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
+import { DesignLogos } from "@/components/mk/design-logos";
 import { cn } from "@/lib/utils";
 
 const field = "mk-field h-7 w-full min-w-0 rounded-[3px] px-1.5 text-[11px]";
@@ -17,8 +18,10 @@ export function DesignRows({
   design,
   draftElements,
   say,
+  onChanged,
 }: {
   design: SavedGraphic;
+  onChanged?: ((item: SavedGraphic) => void) | undefined;
   /** What is in the editor right now, so "Add from editor" can capture its words as a row. */
   draftElements: CustomEl[];
   say: (m: string) => void;
@@ -35,9 +38,12 @@ export function DesignRows({
 
   if (!fields.length) {
     return (
-      <p className="font-mono text-[10px] text-muted-foreground">
-        Rows need at least one text element with a field name. Name one in the editor, then Update this design.
-      </p>
+      <div className="grid gap-1">
+        <DesignLogos design={design} say={say} onChanged={onChanged} />
+        <p className="font-mono text-[10px] text-muted-foreground">
+          Rows need at least one text element with a field name. Name one in the editor, then Update this design.
+        </p>
+      </div>
     );
   }
 
@@ -85,6 +91,7 @@ export function DesignRows({
 
   return (
     <div className="grid gap-1 rounded-[3px] border border-white/10 bg-black/20 p-1.5">
+      <DesignLogos design={design} say={say} onChanged={onChanged} />
       <div className="flex flex-wrap items-center gap-1">
         <span className="mk-label mr-auto text-[9px]">Rows · {rows.length}</span>
         <button type="button" className={iconBtn} aria-label="Back" title="Previous row on air" onClick={() => step(-1)}>

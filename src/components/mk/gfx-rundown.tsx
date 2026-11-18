@@ -5,6 +5,7 @@ import { PackageEditor } from "@/components/mk/package-editor";
 import { GFX_LAYERS, layerUrl } from "@/lib/mk/graphics";
 import { isBuiltIn, packageStore, useMyPackages } from "@/lib/mk/gfx-packages";
 import { useGfxLibrary } from "@/lib/mk/gfx-library";
+import { DesignLogos } from "@/components/mk/design-logos";
 import { customTemplates } from "@/lib/mk/gfx-rows";
 import {
   GRAPHIC_PACKAGES,
@@ -770,6 +771,11 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
                   onChange={(e) => rundown.patchItem(sel.id, { name: e.target.value })}
                 />
               </Lbl>
+              {sel.templateId.startsWith("custom:") &&
+                (() => {
+                  const d = library.find((x) => x.id === sel.templateId.slice(7));
+                  return d ? <DesignLogos design={d} say={say} /> : null;
+                })()}
               {selTpl.fields.map((f) => (
                 <Lbl key={f.key} t={f.label}>
                   {f.type === "textarea" ? (
