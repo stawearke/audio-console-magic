@@ -1,7 +1,9 @@
 import {
+  airAlertText,
   autoNote,
   formatNet,
   signalOf,
+  type AirAlert,
   type FieldNet,
   type SignalLevel,
 } from "@/lib/mk/field-health";
@@ -150,6 +152,23 @@ export function ReporterSignal({
       <p className="font-mono text-[11px] text-muted-foreground">{formatNet(net)}</p>
       {note?.lowered && <p className="font-mono text-[11px] text-amber-400">{note.text}</p>}
       {hint && <p className="text-xs text-amber-300">{hint}</p>}
+    </div>
+  );
+}
+
+/** Stays at the top of the unit card while that unit is on air and in trouble. Amber for weak, red for bad or not sending. */
+export function AirAlertBanner({ alert, label }: { alert: AirAlert | null; label: string }) {
+  if (!alert) return null;
+  return (
+    <div
+      role="alert"
+      data-alert={alert}
+      className={cn(
+        "sticky top-0 z-10 animate-pulse rounded-[3px] px-3 py-2 text-center font-mono text-xs font-bold tracking-wide text-white",
+        alert === "poor" ? "bg-amber-600" : "bg-red-600",
+      )}
+    >
+      {label} · {airAlertText(alert)}
     </div>
   );
 }

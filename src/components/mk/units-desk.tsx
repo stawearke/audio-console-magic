@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { FieldCameraPanel } from "@/components/mk/field-camera-panel";
 import { FieldReturnPanel } from "@/components/mk/field-return-panel";
-import { SignalChip, UplinkLine } from "@/components/mk/uplink";
+import { AirAlertBanner, SignalChip, UplinkLine } from "@/components/mk/uplink";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { loadAlertSound, saveAlertSound, useAirAlert, useAlertBeep } from "@/lib/mk/air-alert";
+import { airAlertOf } from "@/lib/mk/field-health";
 import { DEFAULT_FIELD_FPS, DEFAULT_FIELD_ORIENT, DEFAULT_FIELD_QUALITY, fieldKbps, FIELD_FPS, FIELD_KBPS, FIELD_QUALITY, reporterUrl, viewerUrl, type FieldCtl, type FieldSetup } from "@/lib/mk/field-link";
 import { FIELD_FIRST_SLOT, fieldUnits, setupOf, useFieldUnits, useFieldViewer, useThrottledCtl, type FieldUnitInfo } from "@/lib/mk/field-units";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
@@ -70,6 +72,7 @@ export function UnitsDesk() {
       await engine.setFieldUrl(u.n, viewerUrl(fieldUnits.snapshot().base, next, u.n)).catch(() => {});
   };
   const insecure = base !== "" && !base.startsWith("https://");
+  const [beep, setBeep] = useState(loadAlertSound);
 
   const sceneOf = (n: number) => sw.config.camScenes.find((s) => s && new RegExp(`^FIELD ${n}\\b`, "i").test(s)) ?? null;
   const camOf = (n: number) => {
@@ -149,13 +152,25 @@ export function UnitsDesk() {
           <button type="button" disabled={!connected} className="mk-button h-9 rounded-[3px] px-4 text-xs" onClick={() => void cleanScenes()}>
             ALL FIELD SOUND GLOBAL (DESKTOP AUDIO)
           </button>
+          <button
+            type="button"
+            aria-pressed={beep}
+            className={cn("mk-button h-9 rounded-[3px] px-4 text-xs sm:col-span-2", beep && "mk-lit-amber")}
+            title="A short beep when a unit that is on air gets a weak or bad signal, or stops sending"
+            onClick={() => {
+              setBeep(!beep);
+              saveAlertSound(!beep);
+            }}
+          >
+            ON-AIR ALERT BEEP: {beep ? "ON" : "OFF"}
+          </button>
         </div>
       )}
 
       {units.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No field units yet. Add the first one above.</p>}
 
       {units.map((u) => (
-        <UnitCard key={u.n} u={u} room={room} base={base} cam={camOf(u.n)} connected={connected && roomReady} onAdd={() => void toSwitcher(u)} onQr={() => setQr(u)} />
+        <UnitCard key={u.n} u={u} room={room} base={base} cam={camOf(u.n)} connected={connected && roomReady} onAdd={() => void toSwitcher(u)} onQr={() => setQr(u)} beep={beep} />
       ))}
 
       <details className="mk-panel rounded-md p-3 text-xs">
@@ -216,6 +231,7 @@ function UnitCard({
   connected,
   onAdd,
   onQr,
+  beep,
 }: {
   u: FieldUnitInfo;
   room: string;
@@ -224,6 +240,7 @@ function UnitCard({
   connected: boolean;
   onAdd: () => void;
   onQr: () => void;
+  beep: boolean;
 }) {
   const [watch, setWatch] = useState(false);
   // The torch is never remembered: a light that switches itself on at the next session would surprise the reporter.
@@ -255,6 +272,9 @@ function UnitCard({
     setTally(tallyNow);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tallyNow, state.link]);
+  // On air and in trouble (weak or bad signal, or not sending): banner and red ring, and a beep when it starts or gets worse.
+  const alert = useAirAlert(airAlertOf(tallyNow === "program", state.link, state.net));
+  useAlertBeep(alert, beep);
   // What the director set wins (so a dragged slider never jumps back); otherwise what the phone reports.
   const [torch, setTorch] = useState<boolean | undefined>(undefined);
   const ctlNow: FieldCtl = { ...state.ctl, ...rememberedCtl, ...((torch ?? state.ctl.torch) !== undefined ? { torch: (torch ?? state.ctl.torch) as boolean } : {}) };
@@ -329,7 +349,8 @@ function UnitCard({
   };
 
   return (
-    <div className="mk-panel grid gap-2 rounded-md p-3">
+    <div className={cn("mk-panel grid gap-2 rounded-md p-3", alert && (alert === "poor" ? "ring-2 ring-amber-500" : "ring-2 ring-red-500"))}>
+      <AirAlertBanner alert={alert} label={`FIELD ${u.n}${u.name ? ` ${u.name}` : ""}`} />
       <div className="flex flex-wrap items-center gap-2">
         <span className="mk-button rounded-[3px] px-2 py-1 font-mono text-[11px]">FIELD {u.n}</span>
         <span className={cn("rounded-[3px] px-2 py-1 font-mono text-[10px]", chip.cls)}>{chip.text}</span>

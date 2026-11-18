@@ -109,6 +109,63 @@ export function autoNote(
   return { text: "AUTO", lowered: false };
 }
 
+// ------------------------------------------------------------------------------------------------- on-air alert
+
+/** What is wrong with a unit that is on air: a weak signal, a bad one, or no picture coming at all. */
+export type AirAlert = "poor" | "bad" | "down";
+
+/** The raw condition right now (jumpy; run it through `AlertGate` before showing or sounding anything). */
+export function airAlertOf(onAir: boolean, link: string, net: FieldNet | null): AirAlert | null {
+  if (!onAir) return null;
+  if (link !== "live") return "down"; // on air with the phone offline or not live: the picture is black
+  if (!net) return null;
+  const { level } = signalOf(net);
+  return level === "bad" ? "bad" : level === "poor" ? "poor" : null;
+}
+
+/** How long trouble must last before it is shown (a lone blip is not worth a beep), and how long calm must last before it clears. */
+export const ALERT_RAISE_MS: Record<AirAlert, number> = { poor: 4000, bad: 3000, down: 4000 };
+export const ALERT_CLEAR_MS = 6000;
+
+/** Smooths `airAlertOf` over time: raises after sustained trouble, clears after sustained calm, follows the real severity in between. */
+export class AlertGate {
+  private since: number | null = null;
+  private calmSince: number | null = null;
+  private shown: AirAlert | null = null;
+
+  /** Feed the raw condition now and then (`now` in ms, any steady clock). Returns what to show. */
+  feed(raw: AirAlert | null, now: number): AirAlert | null {
+    if (raw) {
+      this.calmSince = null;
+      this.since ??= now;
+      if (now - this.since >= ALERT_RAISE_MS[raw]) this.shown = raw;
+    } else {
+      this.since = null;
+      if (this.shown) {
+        this.calmSince ??= now;
+        if (now - this.calmSince >= ALERT_CLEAR_MS) {
+          this.shown = null;
+          this.calmSince = null;
+        }
+      }
+    }
+    return this.shown;
+  }
+}
+
+/** The banner wording. */
+export function airAlertText(a: AirAlert): string {
+  return a === "down"
+    ? "ON AIR · NOT SENDING · cut away"
+    : a === "bad"
+      ? "ON AIR · SIGNAL BAD · consider cutting away"
+      : "ON AIR · WEAK SIGNAL";
+}
+
+/** How loud an alert is: a beep sounds only when it gets worse. */
+export const alertRank = (a: AirAlert | null): number =>
+  a === "down" ? 3 : a === "bad" ? 2 : a === "poor" ? 1 : 0;
+
 // ------------------------------------------------------------------------------------------------- measuring
 
 /** The few fields of the browser's WebRTC statistics this module reads. */
