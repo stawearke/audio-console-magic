@@ -438,7 +438,7 @@ export function CustomInspector({
         <button type="button" className={btn} onClick={() => add("rect", { name: "Parallelogram", slant: 60 })}>+ Parallelogram</button>
         <button type="button" className={btn} onClick={() => add("ellipse")}>+ Ellipse</button>
         <button type="button" className={btn} onClick={() => add("text")}>+ Text</button>
-        <span className={cn(btn, "flex cursor-pointer items-center gap-1")}>
+        <label className={cn(btn, "flex cursor-pointer items-center gap-1")}>
           <Upload className="h-3 w-3" /> + Image
           <input
             type="file"
@@ -450,7 +450,7 @@ export function CustomInspector({
               void pickImage(f, (image) => add("image", { image, name: f?.name.replace(/\.[^.]+$/, "").slice(0, 30) || "Image" }));
             }}
           />
-        </span>
+        </label>
       </div>
 
       {picked.length > 0 && (
@@ -643,7 +643,7 @@ export function CustomInspector({
           {el.type === "image" && (
             <div className="col-span-2">
               <Row label="Image">
-                <span className={cn(btn, "flex cursor-pointer items-center justify-center gap-1")}>
+                <label className={cn(btn, "flex cursor-pointer items-center justify-center gap-1")}>
                   <Upload className="h-3 w-3" /> {el.image ? "Change image" : "Upload image"}
                   <input
                     type="file"
@@ -655,7 +655,7 @@ export function CustomInspector({
                       void pickImage(f, (image) => edit(el.id, { image }));
                     }}
                   />
-                </span>
+                </label>
               </Row>
             </div>
           )}

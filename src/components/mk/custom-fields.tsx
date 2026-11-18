@@ -35,7 +35,7 @@ export function CustomFields({
             />
           ) : (
             <span key={e.id} className="flex h-6 min-w-0 items-center gap-1">
-              <span className="mk-button flex h-6 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 rounded-[3px] px-1.5 text-[10px] normal-case">
+              <label className="mk-button flex h-6 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 rounded-[3px] px-1.5 text-[10px] normal-case">
                 <Upload className="h-3 w-3 shrink-0" />
                 <span className="truncate">{e.image ? `Change ${e.field}` : e.field}</span>
                 <input
@@ -53,7 +53,7 @@ export function CustomFields({
                     }
                   }}
                 />
-              </span>
+              </label>
               {e.image && (
                 <button type="button" aria-label={`Remove ${e.field}`} className="mk-button flex h-6 w-6 items-center justify-center rounded-[3px]" onClick={() => patch(e.id, { image: null })}>
                   <X className="h-3 w-3" />
