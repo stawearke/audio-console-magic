@@ -34,7 +34,7 @@ export function DesignRows({
 
   const els = (design.data as { elements: CustomEl[] }).elements;
   const fields = fieldsOf(els);
-  const onAir = state.gfxActive["custom"];
+  const onAir = state.gfxActive[design.layer];
 
   if (!fields.length) {
     return (
@@ -49,7 +49,7 @@ export function DesignRows({
 
   const air = async (row: DesignRow) => {
     setCur(row.id);
-    const ok = await engine.airGraphic("custom", { elements: applyRow(els, row.values) } as never);
+    const ok = await engine.airGraphic(design.layer, { elements: applyRow(els, row.values) } as never);
     if (ok) say(`On air: ${row.name}`);
   };
 
@@ -107,7 +107,7 @@ export function DesignRows({
           title="Take the custom graphic off air"
           onClick={() => {
             setCur(null);
-            void engine.clearGraphic("custom");
+            void engine.clearGraphic(design.layer);
           }}
         >
           <Square className="h-3 w-3" /> Clear

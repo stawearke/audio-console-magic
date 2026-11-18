@@ -5,7 +5,7 @@ import { useState } from "react";
 import { CustomFields } from "@/components/mk/custom-fields";
 import { GFX_LAYERS } from "@/lib/mk/graphics";
 import { useGfxLibrary } from "@/lib/mk/gfx-library";
-import type { GfxId, GraphicsConfig } from "@/lib/mk/types";
+import { CUSTOM_LAYERS, type GfxId, type GraphicsConfig } from "@/lib/mk/types";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,9 @@ const SHORT: Record<GfxId, string> = {
   social: "Social",
   full: "Full Screen",
   custom: "Custom",
+  custom2: "Custom 2",
+  custom3: "Custom 3",
+  custom4: "Custom 4",
 };
 
 interface GraphicsPanelProps {
@@ -123,12 +126,12 @@ export function GraphicsPanel({ graphics: g, active }: GraphicsPanelProps) {
         />
       </div>
 
-      {g.custom.elements.some((e) => e.field.trim()) && (
-        <div className="grid shrink-0 gap-0.5 border-t border-white/5 pt-1">
-          <span className="mk-label text-[8px]">Custom graphic</span>
-          <CustomFields title={false} elements={g.custom.elements} onChange={(elements) => engine.setGraphic("custom", { elements })} say={() => {}} />
+      {CUSTOM_LAYERS.filter((k) => g[k].elements.some((e) => e.field.trim())).map((k) => (
+        <div key={k} className="grid shrink-0 gap-0.5 border-t border-white/5 pt-1">
+          <span className="mk-label text-[8px]">{GFX_LAYERS.find((l) => l.id === k)?.label} graphic</span>
+          <CustomFields title={false} elements={g[k].elements} onChange={(elements) => engine.setGraphic(k, { elements })} say={() => {}} />
         </div>
-      )}
+      ))}
 
       <div className="flex min-h-0 shrink-0 items-center gap-1 overflow-x-auto">
         <button

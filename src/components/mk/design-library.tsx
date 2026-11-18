@@ -14,7 +14,7 @@ import {
   shareLink,
   type SavedGraphic,
 } from "@/lib/mk/gfx-library";
-import { DEFAULT_GRAPHICS, type GfxId, type GraphicsConfig } from "@/lib/mk/types";
+import { DEFAULT_GRAPHICS, isCustomLayer, type CustomLayerId, type GfxId, type GraphicsConfig } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 const field = "mk-field h-8 w-full min-w-0 rounded-[3px] px-2 text-xs";
@@ -178,8 +178,8 @@ export function DesignLibrary({
         </div>
       )}
 
-      {loaded && loaded.layer === "custom" && (
-        <DesignRows design={loaded} draftElements={draft.custom.elements} say={say} onChanged={onLoad} />
+      {loaded && isCustomLayer(loaded.layer) && (
+        <DesignRows design={loaded} draftElements={draft[loaded.layer as CustomLayerId].elements} say={say} onChanged={onLoad} />
       )}
 
       <div className="flex gap-1">
