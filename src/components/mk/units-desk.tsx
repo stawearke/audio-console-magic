@@ -2,7 +2,7 @@ import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 
 import { FieldCameraPanel } from "@/components/mk/field-camera-panel";
-import { RecChip } from "@/components/mk/field-recordings";
+import { RecChip, RecRemote } from "@/components/mk/field-recordings";
 import { FieldReturnPanel } from "@/components/mk/field-return-panel";
 import { AirAlertBanner, SignalChip, UplinkLine } from "@/components/mk/uplink";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -246,7 +246,7 @@ function UnitCard({
   const [watch, setWatch] = useState(false);
   // The torch is never remembered: a light that switches itself on at the next session would surprise the reporter.
   const { torch: _torch, ...rememberedCtl } = u.ctl ?? {};
-  const { state, stream, setSetup, setCtl, setTally, cue, talk } = useFieldViewer(room, u.n, watch, setupOf(u), rememberedCtl);
+  const { state, stream, setSetup, setCtl, setTally, cue, talk, setRec } = useFieldViewer(room, u.n, watch, setupOf(u), rememberedCtl);
   const sendCtl = useThrottledCtl(setCtl);
   const sw = useSwitcher();
   const inputName = `FIELD ${u.n} feed`;
@@ -485,6 +485,8 @@ function UnitCard({
           </span>
         )}
       </div>
+
+      <RecRemote online={online} on={state.rec} onToggle={() => setRec(!state.rec)} />
 
       <FieldReturnPanel online={online} talking={state.talking} ack={state.ack} onCue={cue} onTalk={talk} />
 

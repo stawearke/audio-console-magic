@@ -95,6 +95,7 @@ export function FieldUnit() {
   const resumed = useRef(false);
   const goLiveRef = useRef<() => Promise<void>>(async () => {});
   const startRecRef = useRef<(resume?: string) => Promise<void>>(async () => {});
+  const remoteRecRef = useRef<(on: boolean) => Promise<void>>(async () => {});
   const [viewers, setViewers] = useState(0);
   const [registered, setRegistered] = useState(false);
   const reporter = useRef<FieldReporter | null>(null);
@@ -368,6 +369,7 @@ export function FieldUnit() {
           }
         },
         voice: setVoice,
+        rec: (on) => void remoteRecRef.current(on),
       },
     );
     reporter.current = r;
@@ -548,6 +550,15 @@ export function FieldUnit() {
       await recorder.current?.stop();
       clearFlag(REC_KEY);
     } else await startRec();
+  };
+  // The studio's director starts or stops the backup from their desk (the REC button on this phone still works too).
+  remoteRecRef.current = async (on: boolean) => {
+    if (on) {
+      if (!recorder.current?.status.on) await startRec();
+    } else {
+      await recorder.current?.stop();
+      clearFlag(REC_KEY);
+    }
   };
   // While live / recording, note it every few seconds so a refresh can pick up where it left off.
   useEffect(() => {

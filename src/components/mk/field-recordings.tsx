@@ -19,12 +19,40 @@ export function RecChip({ on }: { on: boolean }) {
   if (!on) return null;
   return (
     <span
+      data-testid="rec-chip"
       className="mk-button inline-flex items-center gap-1.5 rounded-[3px] px-2 py-1 font-mono text-[10px]"
       title="The reporter's phone is keeping a full-quality backup recording"
     >
       <span aria-hidden className="h-2 w-2 rounded-full bg-red-500" />
       REC
     </span>
+  );
+}
+
+/** The director's REC control for one unit: starts or stops the backup on the reporter's phone. */
+export function RecRemote({
+  online,
+  on,
+  onToggle,
+}: {
+  online: boolean;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="mk-label text-[9px]">PHONE BACKUP</span>
+      <button
+        type="button"
+        data-testid="rec-remote"
+        disabled={!online}
+        onClick={onToggle}
+        title="Start or stop the full-quality backup recording on the reporter's phone"
+        className={cn("mk-button h-8 rounded-[3px] px-3 text-xs", on && "mk-lit-program")}
+      >
+        {on ? "STOP REC" : "REC"}
+      </button>
+    </div>
   );
 }
 

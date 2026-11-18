@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RecButton, RecChip, RecordingsPanel, RecSpace, RecStatusLine } from "@/components/mk/field-recordings";
+import { RecButton, RecChip, RecordingsPanel, RecRemote, RecSpace, RecStatusLine } from "@/components/mk/field-recordings";
 import {
   LOW_SPACE_BYTES,
   memoryStore,
@@ -184,5 +184,22 @@ describe("space left for the backup", () => {
     rerender(<RecSpace freeBytes={LOW_SPACE_BYTES + 1_000_000_000} kbps={8000} />);
     expect(screen.getByTestId("rec-space").textContent).toContain("about 16 min");
     expect(screen.getByTestId("rec-space").className).toContain("amber");
+  });
+});
+
+describe("the director's REC control", () => {
+  afterEach(cleanup);
+  it("starts the phone's backup, and shows STOP REC while it runs", () => {
+    const onToggle = vi.fn();
+    const { rerender } = render(<RecRemote online on={false} onToggle={onToggle} />);
+    expect(screen.getByTestId("rec-remote").textContent).toBe("REC");
+    fireEvent.click(screen.getByTestId("rec-remote"));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    rerender(<RecRemote online on onToggle={onToggle} />);
+    expect(screen.getByTestId("rec-remote").textContent).toBe("STOP REC");
+  });
+  it("cannot be pressed when the reporter's phone is offline", () => {
+    render(<RecRemote online={false} on={false} onToggle={() => {}} />);
+    expect((screen.getByTestId("rec-remote") as HTMLButtonElement).disabled).toBe(true);
   });
 });

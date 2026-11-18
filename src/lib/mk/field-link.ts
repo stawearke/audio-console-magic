@@ -313,7 +313,13 @@ type ToViewer =
   | { t: "lvl"; v: number }
   | { t: "ack"; seq: number };
 /** Director -> reporter. `quality` is the older single-setting message, still understood. `ctl` = camera + mic controls. */
-type ToReporter = { t: "quality"; id: string } | ({ t: "setup" } & Partial<FieldSetup>) | ({ t: "ctl" } & FieldCtl) | { t: "tally"; state: FieldTally } | { t: "cue"; text: string; seq: number };
+type ToReporter = { t: "quality"; id: string } | ({ t: "setup" } & Partial<FieldSetup>) | ({ t: "ctl" } & FieldCtl) | { t: "tally"; state: FieldTally } | { t: "cue"; text: string; seq: number } | { t: "rec"; on: boolean };
+
+/** A "start / stop the backup recording" order from the studio: true = start, false = stop, null = not a valid order. */
+export function cleanRecOrder(m: unknown): boolean | null {
+  const on = (m as { on?: unknown } | null)?.on;
+  return typeof on === "boolean" ? on : null;
+}
 
 const RETRY_MS = 3000;
 const NO_PICTURE_MS = 12000;
@@ -400,6 +406,11 @@ export class FieldViewer {
   setTally(t: FieldTally) {
     this.wantTally = t;
     this.sendRaw({ t: "tally", state: t });
+  }
+
+  /** The director starts (true) or stops (false) the backup recording on the reporter's phone. Returns false if the phone is not reachable. */
+  setRec(on: boolean): boolean {
+    return this.sendRaw({ t: "rec", on });
   }
 
   /** Put a short written cue on the reporter's phone. Returns its number (0 = not sent, the reporter is offline). */
@@ -752,7 +763,7 @@ export class FieldReporter {
     /** The director moved the camera or mic: the phone follows. */
     private onCtl: (c: FieldCtl) => void = () => {},
     /** What the studio sends back: tally light, written cues, and the director's voice (null = voice stopped). */
-    private studio: { tally?: (t: FieldTally) => void; cue?: (text: string, seq: number) => void; voice?: (s: MediaStream | null) => void } = {},
+    private studio: { tally?: (t: FieldTally) => void; cue?: (text: string, seq: number) => void; voice?: (s: MediaStream | null) => void; rec?: (on: boolean) => void } = {},
   ) {}
 
   private voiceCall: MediaConnection | null = null;
@@ -803,7 +814,10 @@ export class FieldReporter {
           const c = cleanFieldCtl(m);
           if (Object.keys(c).length) this.onCtl(c);
         } else if (m?.t === "tally" && isFieldTally(m.state)) this.studio.tally?.(m.state);
-        else if (m?.t === "cue") {
+        else if (m?.t === "rec") {
+          const on = cleanRecOrder(m);
+          if (on !== null) this.studio.rec?.(on);
+        } else if (m?.t === "cue") {
           const text = cleanCue(m.text);
           if (text && Number.isInteger(m.seq)) this.studio.cue?.(text, m.seq);
         }

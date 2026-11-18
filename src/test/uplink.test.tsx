@@ -167,11 +167,11 @@ describe("director's unit card", () => {
   it("shows REC while the phone keeps a backup, and not otherwise", () => {
     viewerState = { link: "live", rec: true, net: net() };
     const { unmount } = render(<UnitsDesk />);
-    expect(screen.getByText("REC")).toBeTruthy();
+    expect(screen.getByTestId("rec-chip")).toBeTruthy();
     unmount();
     viewerState = { link: "live", rec: false, net: net() };
     render(<UnitsDesk />);
-    expect(screen.queryByText("REC")).toBeNull();
+    expect(screen.queryByTestId("rec-chip")).toBeNull();
   });
 
   it("shows no uplink line when the unit is on standby", () => {

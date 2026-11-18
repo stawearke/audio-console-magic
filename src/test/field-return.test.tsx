@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FieldReturnPanel, QUICK_CUES } from "@/components/mk/field-return-panel";
-import { CUE_MAX, cleanBattery, cleanCue, cleanLevel, isFieldTally } from "@/lib/mk/field-link";
+import { CUE_MAX, cleanBattery, cleanCue, cleanLevel, cleanRecOrder, isFieldTally } from "@/lib/mk/field-link";
 
 describe("field return channel helpers", () => {
   it("cleans cue text from the network", () => {
@@ -14,6 +14,14 @@ describe("field return channel helpers", () => {
   it("accepts only real tally states", () => {
     expect(["program", "preview", "off"].every(isFieldTally)).toBe(true);
     expect(isFieldTally("red")).toBe(false);
+  });
+
+  it("accepts only a real start or stop order for the backup", () => {
+    expect(cleanRecOrder({ t: "rec", on: true })).toBe(true);
+    expect(cleanRecOrder({ t: "rec", on: false })).toBe(false);
+    expect(cleanRecOrder({ t: "rec", on: "yes" })).toBeNull();
+    expect(cleanRecOrder({ t: "rec" })).toBeNull();
+    expect(cleanRecOrder(null)).toBeNull();
   });
 
   it("reads battery and mic level safely", () => {

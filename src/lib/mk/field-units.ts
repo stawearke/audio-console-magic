@@ -168,6 +168,7 @@ export function useFieldViewer(room: string, unit: number, video: boolean, setup
     // These read the viewer when called, so a call from an effect never meets a stale (null) viewer.
     setTally: (t: FieldTally) => ref.current?.setTally(t),
     cue: (text: string) => ref.current?.cue(text) ?? 0,
+    setRec: (on: boolean) => ref.current?.setRec(on) ?? false,
     talk: (on: boolean) => ref.current?.talk(on) ?? Promise.resolve<string | null>("The reporter is offline."),
   };
 }
