@@ -2,6 +2,7 @@
 // Every piece of text or logo with a `field` can be changed from the live panel without opening the editor.
 // Colours are set once at the top of each builder, so re-branding a graphic is a one-line change.
 import { makeEl } from "./custom-gfx";
+import { PACK2_TEMPLATES } from "./custom-gfx-pack2";
 import type { CustomEl } from "./types";
 
 type O = Partial<CustomEl>;
@@ -279,7 +280,7 @@ function endCard(): CustomEl[] {
   ];
 }
 
-export const PACK_TEMPLATES: { id: string; label: string; build: () => CustomEl[] }[] = [
+const PACK1_TEMPLATES: { id: string; label: string; build: () => CustomEl[] }[] = [
   { id: "p01-lower-classic", label: "01 Lower third: Classic (name + role)", build: lowerClassic },
   { id: "p02-lower-slant", label: "02 Lower third: Slant gold", build: lowerSlant },
   { id: "p03-lower-glass", label: "03 Name plate: Glass", build: lowerGlass },
@@ -301,3 +302,4 @@ export const PACK_TEMPLATES: { id: string; label: string; build: () => CustomEl[
   { id: "p19-guests", label: "19 Three-guest panel", build: threeGuests },
   { id: "p20-endcard", label: "20 Thank you / end card (full screen)", build: endCard },
 ];
+export const PACK_TEMPLATES = [...PACK1_TEMPLATES, ...PACK2_TEMPLATES];
