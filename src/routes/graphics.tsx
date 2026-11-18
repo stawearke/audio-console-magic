@@ -6,6 +6,7 @@ import { CustomInspector, CustomStage, useCustomHistory } from "@/components/mk/
 import { DesignLibrary } from "@/components/mk/design-library";
 import { GfxRundown } from "@/components/mk/gfx-rundown";
 import { NewsDesk } from "@/components/mk/news-desk";
+import { newsDesk } from "@/lib/mk/news-desk";
 import { LiveSetup } from "@/components/mk/live-setup";
 import { PlacePicker } from "@/components/mk/place-picker";
 import { fileToLogo, GFX_LAYERS, GFX_SCENE, layerUrl } from "@/lib/mk/graphics";
@@ -255,6 +256,18 @@ function GraphicsPage() {
 
   const edit = <K extends GfxId>(id: K, patch: Partial<GraphicsConfig[K]>) =>
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...patch } }));
+
+  // News tags made here go to the News Desk too (the selected bulletin), and stay in step while they are edited.
+  const toNewsDesk = (patch: Partial<GraphicsConfig["news"]>) => {
+    const n = { ...draft.news, ...patch };
+    const sent = newsDesk.sendFromStudio(n);
+    if (sent)
+      say(
+        sent.added
+          ? `Sent to the News Desk · ${sent.bulletin} · ${sent.story}`
+          : `News Desk updated · ${sent.story}`,
+      );
+  };
 
   const customHist = useCustomHistory(draft.custom.elements, (elements) => edit("custom", { elements }));
 
@@ -806,10 +819,10 @@ function GraphicsPage() {
               {active === "news" && (
                 <>
                   <Row label="Updates tag">
-                    <input className={field} value={c.news.kicker} maxLength={40} onChange={(e) => edit("news", { kicker: e.target.value })} />
+                    <input className={field} value={c.news.kicker} maxLength={40} onChange={(e) => edit("news", { kicker: e.target.value })} onBlur={(e) => toNewsDesk({ kicker: e.target.value })} />
                   </Row>
                   <Row label={`Seconds per tag ${c.news.seconds}`}>
-                    <input type="range" className="mk-range h-8" min={2} max={30} step={1} value={c.news.seconds} onChange={(e) => edit("news", { seconds: Number(e.target.value) })} />
+                    <input type="range" className="mk-range h-8" min={2} max={30} step={1} value={c.news.seconds} onChange={(e) => edit("news", { seconds: Number(e.target.value) })} onPointerUp={(e) => toNewsDesk({ seconds: Number(e.currentTarget.value) })} onKeyUp={(e) => toNewsDesk({ seconds: Number(e.currentTarget.value) })} />
                   </Row>
                   <div className="col-span-2 grid gap-1">
                     <span className="mk-label text-[9px]">Tags (main tag | below tag, one per line)</span>
@@ -817,21 +830,26 @@ function GraphicsPage() {
                       className="mk-field min-h-[5.5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 font-mono text-xs"
                       defaultValue={c.news.tags.map((t) => (t.below ? `${t.main} | ${t.below}` : t.main)).join("\n")}
                       key={loadedId ?? "news"}
-                      onBlur={(e) =>
-                        edit("news", {
-                          tags: e.target.value
-                            .split("\n")
-                            .map((l) => l.trim())
-                            .filter(Boolean)
-                            .slice(0, 20)
-                            .map((l) => {
-                              const [main = "", ...rest] = l.split("|");
-                              return { main: main.trim().slice(0, 160), below: rest.join("|").trim().slice(0, 200) };
-                            }),
-                        })
-                      }
+                      onBlur={(e) => {
+                        const tags = e.target.value
+                          .split("\n")
+                          .map((l) => l.trim())
+                          .filter(Boolean)
+                          .slice(0, 20)
+                          .map((l) => {
+                            const [main = "", ...rest] = l.split("|");
+                            return { main: main.trim().slice(0, 160), below: rest.join("|").trim().slice(0, 200) };
+                          });
+                        edit("news", { tags });
+                        toNewsDesk({ tags });
+                      }}
                     />
-                    <span className="font-mono text-[9px] text-engrave">For real bulletins use the News Desk tab — it holds every story and tag.</span>
+                    <span className="font-mono text-[9px] text-engrave">
+                      Tags you make here go straight to the News Desk tab (the selected bulletin), as the story "Studio: …".
+                      <button type="button" className="mk-button ml-2 h-6 rounded-[3px] px-2 text-[9px]" onClick={() => setMode("news")}>
+                        OPEN NEWS DESK
+                      </button>
+                    </span>
                   </div>
                   <Anim value={c.news.anim} onChange={(anim) => edit("news", { anim })} />
                   <Row label="Font">
@@ -853,7 +871,7 @@ function GraphicsPage() {
                     <Range label="Size" value={c.news.size} min={30} max={300} step={5} onChange={(size) => edit("news", { size })} />
                   </div>
                   <div className="col-span-2">
-                    <Toggle label={c.news.loop ? "KEEPS GOING ROUND" : "HOLDS THE LAST TAG"} checked={c.news.loop} onChange={(loop) => edit("news", { loop })} />
+                    <Toggle label={c.news.loop ? "KEEPS GOING ROUND" : "HOLDS THE LAST TAG"} checked={c.news.loop} onChange={(loop) => { edit("news", { loop }); toNewsDesk({ loop }); }} />
                   </div>
                 </>
               )}
