@@ -3,6 +3,7 @@
 // Colours are set once at the top of each builder, so re-branding a graphic is a one-line change.
 import { makeEl } from "./custom-gfx";
 import { PACK2_TEMPLATES } from "./custom-gfx-pack2";
+import { PACK3_TEMPLATES } from "./custom-gfx-pack3";
 import type { CustomEl } from "./types";
 
 type O = Partial<CustomEl>;
@@ -302,4 +303,4 @@ const PACK1_TEMPLATES: { id: string; label: string; build: () => CustomEl[] }[] 
   { id: "p19-guests", label: "19 Three-guest panel", build: threeGuests },
   { id: "p20-endcard", label: "20 Thank you / end card (full screen)", build: endCard },
 ];
-export const PACK_TEMPLATES = [...PACK1_TEMPLATES, ...PACK2_TEMPLATES];
+export const PACK_TEMPLATES = [...PACK1_TEMPLATES, ...PACK2_TEMPLATES, ...PACK3_TEMPLATES];
