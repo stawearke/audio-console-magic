@@ -643,6 +643,23 @@ export class ObsTransport implements Transport {
     await this.obs.call(paused ? "PauseRecord" : "ResumeRecord");
   }
 
+  async getMonitors() {
+    const { monitors } = await this.obs.call("GetMonitorList");
+    return monitors.map((m) => ({
+      index: Number(m["monitorIndex"]),
+      name: String(m["monitorName"] ?? `Display ${Number(m["monitorIndex"]) + 1}`),
+      width: Number(m["monitorWidth"] ?? 0),
+      height: Number(m["monitorHeight"] ?? 0),
+    }));
+  }
+
+  async openMultiview(monitorIndex: number) {
+    await this.obs.call("OpenVideoMixProjector", {
+      videoMixType: "OBS_WEBSOCKET_VIDEO_MIX_TYPE_MULTIVIEW",
+      monitorIndex,
+    });
+  }
+
   async disconnect() {
     this.manualClose = true;
     try {

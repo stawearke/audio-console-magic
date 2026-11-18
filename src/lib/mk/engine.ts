@@ -1250,6 +1250,21 @@ export class SwitcherEngine {
     await this.transport?.setRecording(next).catch(() => {});
   }
 
+  async getMonitors() {
+    const t = this.transport;
+    if (!t?.getMonitors || this.state.status !== "connected") return [];
+    return t.getMonitors().catch(() => []);
+  }
+
+  /** Open OBS's multiview on another display (-1 = window). Esc closes it on the OBS PC. */
+  async openMultiview(monitorIndex: number) {
+    if (!this.transport?.openMultiview) {
+      this.notice("Multiview: only available with a real OBS connection");
+      return;
+    }
+    await this.send("Multiview", (t) => t.openMultiview!(monitorIndex));
+  }
+
   async toggleRecordPause() {
     if (!this.state.record.active) return;
     await this.transport?.setRecordPaused(!this.state.record.paused).catch(() => {});

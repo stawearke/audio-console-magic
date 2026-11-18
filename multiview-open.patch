@@ -1,0 +1,180 @@
+diff --git a/src/components/mk/output-controls.tsx b/src/components/mk/output-controls.tsx
+index 44923f9..4eddee5 100644
+--- a/src/components/mk/output-controls.tsx
++++ b/src/components/mk/output-controls.tsx
+@@ -1,6 +1,8 @@
+-import { Pause, Play, Radio } from "lucide-react";
++import { LayoutGrid, Pause, Play, Radio } from "lucide-react";
++import { useState } from "react";
+ 
+ import { formatDuration, useClock } from "@/components/mk/use-clock";
++import type { MonitorInfo } from "@/lib/mk/transport";
+ import type { OutputState } from "@/lib/mk/types";
+ import { cn } from "@/lib/utils";
+ 
+@@ -14,9 +16,59 @@ interface OutputControlsProps {
+   onStream: () => void;
+   onRecord: () => void;
+   onPause: () => void;
++  /** Lists the displays on the OBS PC. */
++  onLoadMonitors?: () => Promise<MonitorInfo[]>;
++  /** Opens OBS multiview on that display (-1 = window). */
++  onOpenMultiview?: (monitorIndex: number) => void;
+ }
+ 
+-export function OutputControls({ stream, record, onStream, onRecord, onPause }: OutputControlsProps) {
++/** MULTIVIEW row: pick the other display, press OPEN. */
++function MultiviewRow({
++  load,
++  open,
++}: {
++  load: () => Promise<MonitorInfo[]>;
++  open: (monitorIndex: number) => void;
++}) {
++  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
++  const [pick, setPick] = useState<number>(-1);
++  const refresh = () =>
++    void load().then((list) => {
++      setMonitors(list);
++      // default to the LAST display = usually the second screen
++      setPick(list.length > 1 ? list[list.length - 1]!.index : -1);
++    });
++  return (
++    <div className="flex gap-1">
++      <select
++        value={pick}
++        onFocus={refresh}
++        onChange={(e) => setPick(Number(e.target.value))}
++        aria-label="Multiview display"
++        title="Which display gets the multiview"
++        className="mk-button h-8 min-w-0 flex-1 rounded-[3px] px-1 text-[11px]"
++      >
++        <option value={-1}>Window</option>
++        {monitors.map((m) => (
++          <option key={m.index} value={m.index}>
++            {`Display ${m.index + 1}${m.width ? ` (${m.width}×${m.height})` : ""}`}
++          </option>
++        ))}
++      </select>
++      <button
++        type="button"
++        onClick={() => open(pick)}
++        title="Open the OBS multiview on that display. Press Esc on the OBS PC to close it."
++        className="mk-button flex h-8 items-center gap-1.5 rounded-[3px] px-2 text-[11px]"
++      >
++        <LayoutGrid className="h-3.5 w-3.5" />
++        MULTIVIEW
++      </button>
++    </div>
++  );
++}
++
++export function OutputControls({ stream, record, onStream, onRecord, onPause, onLoadMonitors, onOpenMultiview }: OutputControlsProps) {
+   const now = useClock(500);
+   const confirmStop = (label: string, fn: () => void) => () => {
+     if (window.confirm(`Stop ${label}?`)) fn();
+@@ -60,6 +112,7 @@ export function OutputControls({ stream, record, onStream, onRecord, onPause }:
+           {record.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+         </button>
+       </div>
++      {onLoadMonitors && onOpenMultiview && <MultiviewRow load={onLoadMonitors} open={onOpenMultiview} />}
+     </section>
+   );
+ }
+diff --git a/src/lib/mk/engine.ts b/src/lib/mk/engine.ts
+index cd5ce72..76d8d57 100644
+--- a/src/lib/mk/engine.ts
++++ b/src/lib/mk/engine.ts
+@@ -1250,6 +1250,21 @@ export class SwitcherEngine {
+     await this.transport?.setRecording(next).catch(() => {});
+   }
+ 
++  async getMonitors() {
++    const t = this.transport;
++    if (!t?.getMonitors || this.state.status !== "connected") return [];
++    return t.getMonitors().catch(() => []);
++  }
++
++  /** Open OBS's multiview on another display (-1 = window). Esc closes it on the OBS PC. */
++  async openMultiview(monitorIndex: number) {
++    if (!this.transport?.openMultiview) {
++      this.notice("Multiview: only available with a real OBS connection");
++      return;
++    }
++    await this.send("Multiview", (t) => t.openMultiview!(monitorIndex));
++  }
++
+   async toggleRecordPause() {
+     if (!this.state.record.active) return;
+     await this.transport?.setRecordPaused(!this.state.record.paused).catch(() => {});
+diff --git a/src/lib/mk/obs-transport.ts b/src/lib/mk/obs-transport.ts
+index 8543739..7940db7 100644
+--- a/src/lib/mk/obs-transport.ts
++++ b/src/lib/mk/obs-transport.ts
+@@ -643,6 +643,23 @@ export class ObsTransport implements Transport {
+     await this.obs.call(paused ? "PauseRecord" : "ResumeRecord");
+   }
+ 
++  async getMonitors() {
++    const { monitors } = await this.obs.call("GetMonitorList");
++    return monitors.map((m) => ({
++      index: Number(m["monitorIndex"]),
++      name: String(m["monitorName"] ?? `Display ${Number(m["monitorIndex"]) + 1}`),
++      width: Number(m["monitorWidth"] ?? 0),
++      height: Number(m["monitorHeight"] ?? 0),
++    }));
++  }
++
++  async openMultiview(monitorIndex: number) {
++    await this.obs.call("OpenVideoMixProjector", {
++      videoMixType: "OBS_WEBSOCKET_VIDEO_MIX_TYPE_MULTIVIEW",
++      monitorIndex,
++    });
++  }
++
+   async disconnect() {
+     this.manualClose = true;
+     try {
+diff --git a/src/lib/mk/transport.ts b/src/lib/mk/transport.ts
+index 5f1013d..e750113 100644
+--- a/src/lib/mk/transport.ts
++++ b/src/lib/mk/transport.ts
+@@ -54,6 +54,14 @@ export interface PlayoutStatus {
+   durMs: number;
+ }
+ 
++/** A display OBS can see (for the multiview projector). */
++export interface MonitorInfo {
++  index: number;
++  name: string;
++  width: number;
++  height: number;
++}
++
+ export interface Transport {
+   connect(): Promise<void>;
+   disconnect(): Promise<void>;
+@@ -127,6 +135,10 @@ export interface Transport {
+   setStreaming(on: boolean): Promise<void>;
+   setRecording(on: boolean): Promise<void>;
+   setRecordPaused(paused: boolean): Promise<void>;
++  /** Displays connected to the OBS PC. */
++  getMonitors?(): Promise<MonitorInfo[]>;
++  /** Open OBS's own multiview full screen on display `monitorIndex` (-1 = a normal window). */
++  openMultiview?(monitorIndex: number): Promise<void>;
+   /**
+    * Create / update the MK Graphics scene (one browser source per layer) and nest it
+    * ONLY into `targetScenes`. Scenes in `removeFrom` get the nested copy removed.
+diff --git a/src/routes/index.tsx b/src/routes/index.tsx
+index 40f8a23..b375408 100644
+--- a/src/routes/index.tsx
++++ b/src/routes/index.tsx
+@@ -307,6 +307,8 @@ function Switcher() {
+                 onStream={() => void engine.toggleStream()}
+                 onRecord={() => void engine.toggleRecord()}
+                 onPause={() => void engine.toggleRecordPause()}
++                onLoadMonitors={() => engine.getMonitors()}
++                onOpenMultiview={(i) => void engine.openMultiview(i)}
+               />
+             )}
+             {canSwitch && (
