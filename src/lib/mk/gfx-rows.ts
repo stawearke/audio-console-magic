@@ -8,7 +8,7 @@ import { useSyncExternalStore } from "react";
 
 import { gfxLibrary } from "./gfx-library";
 import type { Template } from "./gfx-rundown";
-import type { CustomEl } from "./types";
+import { isCustomLayer, type CustomEl } from "./types";
 
 const KEY = "mkvision.gfx.rows.v1";
 const STAMPS = "mkvision.gfx.rows.stamps.v1";
@@ -239,14 +239,14 @@ export function useDesignRows(designId: string): DesignRow[] {
 export function customTemplate(id: string): Template | undefined {
   if (!id.startsWith(CUSTOM_PREFIX)) return undefined;
   const designId = id.slice(CUSTOM_PREFIX.length);
-  const design = gfxLibrary.getSnapshot().find((d) => d.id === designId && d.layer === "custom");
+  const design = gfxLibrary.getSnapshot().find((d) => d.id === designId && isCustomLayer(d.layer));
   if (!design) return undefined;
   const els = (design.data as { elements: CustomEl[] }).elements;
   return {
     id,
     name: design.name,
     category: "Custom",
-    layer: "custom",
+    layer: design.layer,
     durationSec: 0,
     fields: fieldsOf(els).map((f) => ({ key: f, label: f, type: "text" as const })),
     defaults: defaultsOf(els),
@@ -257,7 +257,7 @@ export function customTemplate(id: string): Template | undefined {
 export function customTemplates(): Template[] {
   return gfxLibrary
     .getSnapshot()
-    .filter((d) => d.layer === "custom")
+    .filter((d) => isCustomLayer(d.layer))
     .map((d) => customTemplate(`${CUSTOM_PREFIX}${d.id}`))
     .filter((t): t is Template => !!t);
 }

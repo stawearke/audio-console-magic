@@ -245,6 +245,9 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
       } as LayerData<K>;
     }
     case "custom":
+    case "custom2":
+    case "custom3":
+    case "custom4":
       return { elements: cleanCustomEls((r["elements"] as unknown) ?? []) } as LayerData<K>;
     case "full": {
       const d = D.full;

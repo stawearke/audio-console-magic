@@ -12,7 +12,7 @@ import { useSyncExternalStore } from "react";
 import { engine } from "./engine";
 import { customTemplate, CUSTOM_PREFIX, type DesignRow } from "./gfx-rows";
 import { applyTheme, GFX_THEMES, type GfxTheme } from "./gfx-themes";
-import type { GfxAnim, GfxId, GraphicsConfig } from "./types";
+import { isCustomLayer, type GfxAnim, type GfxId, type GraphicsConfig } from "./types";
 
 // ------------------------------------------------------------------ model
 
@@ -717,7 +717,7 @@ export function itemLayer(
     animMs: item.animMs,
   };
   // A saved Custom design keeps its own look: only its elements change, never theme or transition keys.
-  if (t.layer === "custom") return { layer: t.layer, patch: { elements: own["elements"] } };
+  if (isCustomLayer(t.layer)) return { layer: t.layer, patch: { elements: own["elements"] } };
   // The lower third keeps its saved names; the theme must not wipe the logo image.
   if (t.layer === "logo") {
     const { image: _i, ...rest } = patch;

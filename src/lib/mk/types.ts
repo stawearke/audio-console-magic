@@ -28,7 +28,7 @@ export interface DskTarget {
 
 export type Corner = "tl" | "tr" | "bl" | "br";
 export type GfxId =
-  "logo" | "lower" | "ticker" | "clock" | "badge" | "news" | "breaking" | "score" | "social" | "full" | "custom";
+  "logo" | "lower" | "ticker" | "clock" | "badge" | "news" | "breaking" | "score" | "social" | "full" | "custom" | "custom2" | "custom3" | "custom4";
 export const GFX_IDS: GfxId[] = [
   "logo",
   "lower",
@@ -41,7 +41,15 @@ export const GFX_IDS: GfxId[] = [
   "social",
   "full",
   "custom",
+  "custom2",
+  "custom3",
+  "custom4",
 ];
+
+/** Four independent Custom layers: each goes on air by itself, so a strap, a bug and a scorebug can run together. */
+export const CUSTOM_LAYERS = ["custom", "custom2", "custom3", "custom4"] as const satisfies readonly GfxId[];
+export type CustomLayerId = (typeof CUSTOM_LAYERS)[number];
+export const isCustomLayer = (id: string): id is CustomLayerId => (CUSTOM_LAYERS as readonly string[]).includes(id);
 
 /** What the full-screen layer shows. */
 export type FullKind =
@@ -289,6 +297,9 @@ export interface GraphicsConfig {
     titleColor: string;
   };
   custom: { elements: CustomEl[] };
+  custom2: { elements: CustomEl[] };
+  custom3: { elements: CustomEl[] };
+  custom4: { elements: CustomEl[] };
   ticker: {
     /** Hand-placed spot; only the vertical (y) part is used — the bar always spans the width. null = use `pos`. */
     at: PlacePos | null;
@@ -542,6 +553,9 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     anim: "slide",
   },
   custom: { elements: [] },
+  custom2: { elements: [] },
+  custom3: { elements: [] },
+  custom4: { elements: [] },
   full: {
     kind: "headline",
     kicker: "TOP STORY",
@@ -577,6 +591,9 @@ export const IDLE_GFX: Record<GfxId, boolean> = {
   social: false,
   full: false,
   custom: false,
+  custom2: false,
+  custom3: false,
+  custom4: false,
 };
 
 export interface MkConfig {

@@ -56,6 +56,9 @@ interface LooseGraphics {
   accent?: string;
   // Current format
   custom?: { elements?: unknown };
+  custom2?: { elements?: unknown };
+  custom3?: { elements?: unknown };
+  custom4?: { elements?: unknown };
   lower?: Partial<GraphicsConfig["lower"]>;
   ticker?: Partial<GraphicsConfig["ticker"]>;
   clock?: Partial<GraphicsConfig["clock"]>;
@@ -138,6 +141,9 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
     social: { ...D.social, ...(r.social ?? {}) },
     full: { ...D.full, ...(r.full ?? {}) },
     custom: { elements: cleanCustomEls(r.custom?.elements) },
+    custom2: { elements: cleanCustomEls(r.custom2?.elements) },
+    custom3: { elements: cleanCustomEls(r.custom3?.elements) },
+    custom4: { elements: cleanCustomEls(r.custom4?.elements) },
   };
 }
 
