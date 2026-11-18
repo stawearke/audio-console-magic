@@ -120,3 +120,34 @@ describe("cloud merge", () => {
     expect(packageStore.get("my-x")?.name).toBe("Pack");
   });
 });
+
+import { layerUrl, gfxName } from "@/lib/mk/graphics";
+import { isCustomLayer } from "@/lib/mk/types";
+
+describe("multi custom layers", () => {
+  it("has four independent custom layers with their own OBS sources", () => {
+    expect(["custom", "custom2", "custom3", "custom4"].every(isCustomLayer)).toBe(true);
+    expect(isCustomLayer("lower")).toBe(false);
+    expect(new Set(["custom", "custom2", "custom3", "custom4"].map((i) => gfxName(i as never))).size).toBe(4);
+  });
+
+  it("each layer renders only its own elements", () => {
+    const g = {
+      ...DEFAULT_GRAPHICS,
+      custom: { elements: [makeEl("text", { text: "ONE-STRAP" })] },
+      custom2: { elements: [makeEl("text", { text: "TWO-BADGE" })] },
+    };
+    expect(decodeURIComponent(layerUrl("custom", g))).toContain("ONE-STRAP");
+    expect(decodeURIComponent(layerUrl("custom", g))).not.toContain("TWO-BADGE");
+    expect(decodeURIComponent(layerUrl("custom2", g))).toContain("TWO-BADGE");
+    expect(decodeURIComponent(layerUrl("custom2", g))).not.toContain("ONE-STRAP");
+  });
+
+  it("a design saved on Custom 2 queues in the rundown on Custom 2", () => {
+    const d = gfxLibrary.save("Badge", "custom2", { elements: els });
+    const t = getTemplate(`custom:${d.id}`);
+    expect(t?.layer).toBe("custom2");
+    const r = itemLayer(makeItem(`custom:${d.id}`, "x", { Title: "Z" }), GFX_THEMES[0]!, DEFAULT_GRAPHICS)!;
+    expect(r.layer).toBe("custom2");
+  });
+});
