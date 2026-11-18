@@ -30,6 +30,8 @@ export interface NewsStory {
   seconds: number;
   /** true = keep going round the tags until the next story, false = play once and hold the last tag. */
   loop: boolean;
+  /** This is the story the Graphics Studio's News Tags editor feeds: tags made there land here. */
+  fromStudio?: boolean | undefined;
 }
 
 export interface NewsBulletin {
@@ -135,6 +137,7 @@ function cleanStory(raw: unknown): NewsStory | null {
     tags: tags.length ? tags : [makeTag()],
     seconds: clampNum(r["seconds"], 0, 0, 120),
     loop: r["loop"] !== false,
+    ...(r["fromStudio"] === true ? { fromStudio: true } : {}),
   };
 }
 
@@ -418,6 +421,39 @@ class NewsStore {
   }
   setTags(storyId: string, tags: NewsTag[]) {
     this.patchStory(storyId, { tags: tags.slice(0, MAX_TAGS) });
+  }
+
+  /**
+   * Tags made in the Graphics Studio (News Tags editor) go to the selected bulletin as a story of their own.
+   * The first time it adds the story; after that it keeps that same story up to date (no copies pile up).
+   */
+  sendFromStudio(n: {
+    kicker: string;
+    tags: NewsTag[];
+    seconds: number;
+    loop: boolean;
+  }): { bulletin: string; story: string; added: boolean } | null {
+    const tags = n.tags
+      .filter((t) => t.main.trim() || t.below.trim())
+      .slice(0, MAX_TAGS)
+      .map((t) => makeTag(t.main.slice(0, 160), t.below.slice(0, 200), t.full === true));
+    if (!tags.length) return null;
+    const b = this.bulletin;
+    const existing = b.stories.find((s) => s.fromStudio);
+    const fields = {
+      kicker: n.kicker.slice(0, 40),
+      tags,
+      seconds: clampNum(n.seconds, 0, 0, 120),
+      loop: n.loop,
+    };
+    if (existing) {
+      this.patchStory(existing.id, fields);
+      return { bulletin: b.name, story: existing.name, added: false };
+    }
+    const name = `Studio: ${tags[0]!.main.trim().slice(0, 40) || "News tags"}`;
+    const story: NewsStory = { id: uid(), name, ...fields, fromStudio: true };
+    this.patchBulletin({ stories: [...b.stories, story].slice(0, MAX_STORIES) });
+    return { bulletin: b.name, story: name, added: true };
   }
 
   exportJson(): string {
